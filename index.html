@@ -50,15 +50,24 @@ p{margin:0;color:var(--muted);line-height:1.5}
 body.xr-active{background:transparent!important;overflow:hidden}
 body.xr-active .shell{display:none!important}
 body.xr-active canvas{background:transparent!important}
+
+#result.show{
+  display:block !important;
+  border-color:rgba(107,92,255,.45);
+}
+#introCard[style*="display: none"] + #result{
+  margin-top:15px;
+}
+
 </style>
 </head>
 <body>
-<main class="shell">
+<main class="shell" id="mainShell">
   <div class="eyebrow">EVENTVISION · HELLOXR TEST</div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
-  <section class="card">
+  <section class="card" id="introCard">
     <strong>Scan workflow</strong>
     <div class="steps">
       <div class="step"><div class="num">1</div><div><b>Enter AR</b><div class="small">Move the phone slowly until the floor target appears.</div></div></div>
@@ -78,6 +87,7 @@ body.xr-active canvas{background:transparent!important}
       <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
     </div>
     <div id="walls"></div>
+    <button id="scanAgain" class="primary" style="margin-top:12px">Scan another room</button>
   </section>
 </main>
 
@@ -112,7 +122,9 @@ const el = {
   plan: document.getElementById('plan'),
   cornerMetric: document.getElementById('cornerMetric'),
   areaMetric: document.getElementById('areaMetric'),
-  walls: document.getElementById('walls')
+  walls: document.getElementById('walls'),
+  introCard: document.getElementById('introCard'),
+  scanAgain: document.getElementById('scanAgain')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -122,6 +134,7 @@ let completed = false;
 let floorY = null;
 let corners = [];
 let objects = [];
+let finishedCorners = [];
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
 
@@ -189,7 +202,9 @@ async function enterAR(){
 
   completed=false;
   corners=[];
+  finishedCorners=[];
   floorY=null;
+  if(el.introCard) el.introCard.style.display='block';
   clearObjects();
   el.result.classList.remove('show');
 
@@ -316,11 +331,20 @@ function updateControls(){
 
 function closeRoom(){
   if(corners.length<3) return;
+
   completed=true;
+  finishedCorners=corners.map(p=>p.clone());
+
   rebuildObjects();
   updateControls();
   el.hint.textContent='Room complete ✓';
-  setTimeout(()=>session?.end(),400);
+
+  // Prepare the result while XR is still alive.
+  drawResult(finishedCorners);
+
+  setTimeout(()=>{
+    if(session) session.end();
+  },500);
 }
 
 el.addCorner.addEventListener('click',e=>{
@@ -354,18 +378,22 @@ function areaXZ(points){
   return Math.abs(sum)/2;
 }
 
-function drawResult(){
-  el.result.classList.add('show');
-  el.cornerMetric.textContent=corners.length;
-  el.areaMetric.textContent=areaXZ(corners).toFixed(2)+' m²';
+function drawResult(points = finishedCorners.length ? finishedCorners : corners){
+  if(!points || points.length < 3) return;
 
-  const xs=corners.map(p=>p.x), zs=corners.map(p=>p.z);
+  el.result.classList.add('show');
+  if(el.introCard) el.introCard.style.display='none';
+
+  el.cornerMetric.textContent=points.length;
+  el.areaMetric.textContent=areaXZ(points).toFixed(2)+' m²';
+
+  const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
   const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
   const k=Math.min(400/w,240/h);
   const cx=250,cy=165;
 
-  const mapped=corners.map(p=>({
+  const mapped=points.map(p=>({
     x:(p.x-(minX+maxX)/2)*k+cx,
     y:(p.z-(minZ+maxZ)/2)*k+cy
   }));
@@ -393,15 +421,13 @@ function drawResult(){
   });
 
   el.walls.innerHTML='';
-  corners.forEach((p,i)=>{
-    const q=corners[(i+1)%corners.length];
+  points.forEach((p,i)=>{
+    const q=points[(i+1)%points.length];
     const item=document.createElement('div');
     item.className='wall';
     item.innerHTML=`<small>Wall ${i+1}</small><b>${distanceXZ(p,q).toFixed(2)} m</b>`;
     el.walls.appendChild(item);
   });
-
-  el.result.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 
@@ -416,12 +442,34 @@ function endAR(){
   renderer?.setAnimationLoop(null);
   el.hud.classList.remove('active');
   document.body.classList.remove('xr-active');
+
   if(renderer?.domElement) renderer.domElement.style.display='none';
+
   session=null;
   hitSource=null;
 
-  if(completed) drawResult();
+  if(completed && finishedCorners.length>=3){
+    drawResult(finishedCorners);
+
+    requestAnimationFrame(()=>{
+      el.result.scrollIntoView({
+        behavior:'smooth',
+        block:'start'
+      });
+    });
+  }
 }
+
+
+el.scanAgain.addEventListener('click',()=>{
+  completed=false;
+  corners=[];
+  finishedCorners=[];
+  floorY=null;
+  el.result.classList.remove('show');
+  if(el.introCard) el.introCard.style.display='block';
+  window.scrollTo({top:0,behavior:'smooth'});
+});
 
 el.start.addEventListener('click',()=>{
   if(renderer?.domElement) renderer.domElement.style.display='block';
