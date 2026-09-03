@@ -103,11 +103,171 @@ body.xr-active canvas{background:transparent!important}
 body.modal-open{overflow:hidden}
 @media (min-width:520px){.furnitureGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
+
+/* v6 — floor-plan furniture editing */
+.planEditor{
+  position:relative;
+  width:calc(100% + 12px);
+  margin-left:-6px;
+}
+
+.planEditor #plan{
+  width:100%;
+  margin-left:0;
+  display:block;
+  touch-action:none;
+}
+
+#furnitureLayer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  border-radius:16px;
+}
+
+.furnitureItem{
+  position:absolute;
+  width:44px;
+  height:44px;
+  transform-origin:center center;
+  pointer-events:auto;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  display:grid;
+  place-items:center;
+  cursor:grab;
+}
+
+.furnitureItem:active{
+  cursor:grabbing;
+}
+
+.furnitureVisual{
+  position:relative;
+  width:34px;
+  height:34px;
+  border:2px solid #fff;
+  border-radius:8px 8px 6px 6px;
+  background:rgba(107,92,255,.22);
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+
+.furnitureVisual.chair:before{
+  content:"";
+  position:absolute;
+  left:5px;
+  right:5px;
+  top:4px;
+  height:8px;
+  border:2px solid #fff;
+  border-bottom:0;
+  border-radius:5px 5px 0 0;
+}
+
+.furnitureVisual.chair:after{
+  content:"";
+  position:absolute;
+  left:7px;
+  right:7px;
+  bottom:5px;
+  height:10px;
+  border:2px solid #fff;
+  border-radius:4px;
+}
+
+.furnitureItem.selected .furnitureVisual{
+  outline:2px solid #6b5cff;
+  outline-offset:4px;
+}
+
+.furnitureItem.selected:after{
+  content:"";
+  position:absolute;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#6b5cff;
+  top:-4px;
+  left:50%;
+  transform:translateX(-50%);
+}
+
+#furnitureToolbar{
+  display:none;
+  grid-template-columns:1fr auto auto auto;
+  gap:7px;
+  align-items:center;
+  margin-top:10px;
+  padding:8px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--panel);
+}
+
+#furnitureToolbar.visible{
+  display:grid;
+}
+
+#furnitureToolbar .selectedLabel{
+  min-width:0;
+  font-size:12px;
+  font-weight:800;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.toolBtn{
+  min-width:44px;
+  height:44px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--panel2);
+  color:#fff;
+  font-size:17px;
+  font-weight:800;
+}
+
+.toolBtn.delete{
+  font-size:14px;
+}
+
+#furnitureCount{
+  margin-top:7px;
+  color:var(--muted);
+  font-size:11px;
+}
+
+.furnitureHint{
+  margin-top:8px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.4;
+}
+
+/* furniture picker add action */
+#furnitureAddSelected{
+  width:100%;
+  height:50px;
+  border:0;
+  border-radius:14px;
+  margin-top:12px;
+  background:var(--accent);
+  color:#fff;
+  font-weight:800;
+}
+
+#furnitureAddSelected:disabled{
+  opacity:.4;
+}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v5</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v6</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -131,7 +291,19 @@ body.modal-open{overflow:hidden}
       <button id="scanAgain" class="resultScanAgain">Scan again</button>
     </div>
 
-    <svg id="plan" viewBox="0 0 500 430"></svg>
+    <div class="planEditor" id="planEditor">
+      <svg id="plan" viewBox="0 0 500 430"></svg>
+      <div id="furnitureLayer" aria-label="Furniture layout layer"></div>
+    </div>
+
+    <div id="furnitureToolbar" aria-live="polite">
+      <div class="selectedLabel" id="selectedFurnitureLabel">Chair selected</div>
+      <button type="button" class="toolBtn" id="rotateLeft" aria-label="Rotate left">↺</button>
+      <button type="button" class="toolBtn" id="rotateRight" aria-label="Rotate right">↻</button>
+      <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
+    </div>
+    <div id="furnitureCount"></div>
+    <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
 
     <button id="addFurniture" class="addFurnitureBtn">
       <span class="addFurnitureIcon">＋</span>
@@ -175,7 +347,7 @@ body.modal-open{overflow:hidden}
         <span>Table</span>
       </button>
       <button class="furnitureType" data-type="Lounge">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22v-5c0-3 2-5 5-5h14c3 0 5 2 5 5v5M9 22v13h30V22M14 35v4M34 35v4M15 27h18"/></svg>
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22v-5c0-3 2-5 5-5h14c3 0 5 2 5 5v6M9 22v13h30V22M14 35v4M34 35v4M15 27h18"/></svg>
         <span>Lounge</span>
       </button>
       <button class="furnitureType" data-type="Bar">
@@ -183,7 +355,7 @@ body.modal-open{overflow:hidden}
         <span>Bar</span>
       </button>
       <button class="furnitureType" data-type="Stage / DJ">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 29h32v9H8zM14 29V17h20v12M19 23h10M24 12v5"/></svg>
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 29h32v9H8zM14 29V17h20v12M19 23h10M24 12v6"/></svg>
         <span>Stage / DJ</span>
       </button>
       <button class="furnitureType" data-type="Decoration">
@@ -191,7 +363,7 @@ body.modal-open{overflow:hidden}
         <span>Decoration</span>
       </button>
       <button class="furnitureType" data-type="Lighting">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 18a7 7 0 0114 0c0 4-3 6-4 9h-6c-1-3-4-5-4-9zM21 31h6M22 35h4M24 5v5M8 19h5M35 19h5M13 8l4 4M35 8l-4 4"/></svg>
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 18a7 7 0 0114 0c0 4-3 6-4 9h-6c-1-3-4-5-4-9zM21 31h6M22 35h4M24 5v6M8 19h5M35 19h5M13 8l4 4M35 8l-4 4"/></svg>
         <span>Lighting</span>
       </button>
       <button class="furnitureType" data-type="Plant">
@@ -647,6 +819,280 @@ window.addEventListener('resize',()=>{
 });
 
 check();
+
+// ===== EventVision v6 furniture layout editor =====
+const furnitureLayer = document.getElementById('furnitureLayer');
+const planEditor = document.getElementById('planEditor');
+const furnitureToolbar = document.getElementById('furnitureToolbar');
+const selectedFurnitureLabel = document.getElementById('selectedFurnitureLabel');
+const rotateLeftBtn = document.getElementById('rotateLeft');
+const rotateRightBtn = document.getElementById('rotateRight');
+const deleteFurnitureBtn = document.getElementById('deleteFurniture');
+const furnitureCountEl = document.getElementById('furnitureCount');
+const furnitureAddSelected = document.getElementById('furnitureAddSelected');
+
+let furnitureItems = [];
+let selectedFurnitureId = null;
+let furnitureIdCounter = 1;
+
+function getFurnitureItem(id){
+  return furnitureItems.find(item => item.id === id) || null;
+}
+
+function setSelectedFurniture(id){
+  selectedFurnitureId = id;
+
+  if(furnitureLayer){
+    furnitureLayer.querySelectorAll('.furnitureItem').forEach(node => {
+      node.classList.toggle('selected', node.dataset.id === String(id));
+    });
+  }
+
+  const item = getFurnitureItem(id);
+
+  if(item && furnitureToolbar){
+    furnitureToolbar.classList.add('visible');
+    selectedFurnitureLabel.textContent =
+      `${item.type.charAt(0).toUpperCase() + item.type.slice(1)} selected`;
+  } else if(furnitureToolbar){
+    furnitureToolbar.classList.remove('visible');
+  }
+}
+
+function updateFurnitureCount(){
+  if(!furnitureCountEl) return;
+
+  const count = furnitureItems.length;
+  furnitureCountEl.textContent = count
+    ? `${count} furniture item${count === 1 ? '' : 's'} on plan`
+    : '';
+}
+
+function clamp01(v){
+  return Math.max(0.03, Math.min(0.97, v));
+}
+
+function makeFurnitureNode(item){
+  const node = document.createElement('div');
+  node.className = 'furnitureItem';
+  node.dataset.id = String(item.id);
+  node.setAttribute('role','button');
+  node.setAttribute('aria-label',`${item.type} furniture item`);
+  node.tabIndex = 0;
+
+  const visual = document.createElement('div');
+  visual.className = `furnitureVisual ${item.type}`;
+  node.appendChild(visual);
+
+  function paint(){
+    node.style.left = `calc(${item.x * 100}% - 22px)`;
+    node.style.top = `calc(${item.y * 100}% - 22px)`;
+    node.style.transform = `rotate(${item.rotation}deg)`;
+  }
+
+  let dragging = false;
+
+  node.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = true;
+    setSelectedFurniture(item.id);
+    node.setPointerCapture?.(e.pointerId);
+  });
+
+  node.addEventListener('pointermove', e => {
+    if(!dragging || !planEditor) return;
+
+    const rect = planEditor.getBoundingClientRect();
+    if(!rect.width || !rect.height) return;
+
+    item.x = clamp01((e.clientX - rect.left) / rect.width);
+    item.y = clamp01((e.clientY - rect.top) / rect.height);
+
+    paint();
+  });
+
+  const finishDrag = e => {
+    dragging = false;
+    try { node.releasePointerCapture?.(e.pointerId); } catch (_) {}
+  };
+
+  node.addEventListener('pointerup', finishDrag);
+  node.addEventListener('pointercancel', finishDrag);
+
+  node.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedFurniture(item.id);
+  });
+
+  node.addEventListener('keydown', e => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      setSelectedFurniture(item.id);
+    }
+
+    // Accessible non-drag alternative: arrow keys move selected item.
+    const step = e.shiftKey ? 0.03 : 0.01;
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+      e.preventDefault();
+      if(e.key === 'ArrowLeft') item.x = clamp01(item.x - step);
+      if(e.key === 'ArrowRight') item.x = clamp01(item.x + step);
+      if(e.key === 'ArrowUp') item.y = clamp01(item.y - step);
+      if(e.key === 'ArrowDown') item.y = clamp01(item.y + step);
+      paint();
+    }
+  });
+
+  paint();
+  return node;
+}
+
+function renderFurniture(){
+  if(!furnitureLayer) return;
+
+  furnitureLayer.innerHTML = '';
+
+  furnitureItems.forEach(item => {
+    const node = makeFurnitureNode(item);
+    furnitureLayer.appendChild(node);
+  });
+
+  setSelectedFurniture(selectedFurnitureId);
+  updateFurnitureCount();
+}
+
+function addFurniture(type='chair'){
+  if(!furnitureLayer) return;
+
+  const item = {
+    id: furnitureIdCounter++,
+    type,
+    x: 0.5,
+    y: 0.5,
+    rotation: 0
+  };
+
+  // Offset subsequent chairs slightly so multiple adds do not perfectly overlap.
+  const sameTypeCount = furnitureItems.filter(x => x.type === type).length;
+  if(sameTypeCount){
+    const offset = Math.min(0.18, sameTypeCount * 0.035);
+    item.x = clamp01(0.5 + offset);
+    item.y = clamp01(0.5 + offset);
+  }
+
+  furnitureItems.push(item);
+  selectedFurnitureId = item.id;
+  renderFurniture();
+}
+
+function rotateSelected(delta){
+  const item = getFurnitureItem(selectedFurnitureId);
+  if(!item) return;
+
+  item.rotation = (item.rotation + delta + 360) % 360;
+  renderFurniture();
+}
+
+function deleteSelectedFurniture(){
+  if(selectedFurnitureId == null) return;
+
+  furnitureItems = furnitureItems.filter(item => item.id !== selectedFurnitureId);
+  selectedFurnitureId = furnitureItems.length
+    ? furnitureItems[furnitureItems.length - 1].id
+    : null;
+
+  renderFurniture();
+}
+
+rotateLeftBtn?.addEventListener('click', () => rotateSelected(-15));
+rotateRightBtn?.addEventListener('click', () => rotateSelected(15));
+deleteFurnitureBtn?.addEventListener('click', deleteSelectedFurniture);
+
+planEditor?.addEventListener('pointerdown', e => {
+  if(e.target === planEditor || e.target?.id === 'plan' || e.target?.id === 'furnitureLayer'){
+    setSelectedFurniture(null);
+  }
+});
+
+// Hook into the furniture category buttons from v6.
+// We detect buttons/cards by their visible label and preserve the v6 selection behavior.
+let selectedFurnitureType = null;
+
+function normalizeFurnitureType(text){
+  const value = String(text || '').trim().toLowerCase();
+  if(value.includes('chair')) return 'chair';
+  if(value.includes('table')) return 'table';
+  if(value.includes('lounge')) return 'lounge';
+  if(value.includes('bar')) return 'bar';
+  if(value.includes('stage') || value.includes('dj')) return 'stage';
+  if(value.includes('decor')) return 'decoration';
+  if(value.includes('light')) return 'lighting';
+  if(value.includes('plant')) return 'plant';
+  return null;
+}
+
+document.querySelectorAll('button, [role="button"]').forEach(control => {
+  const type = normalizeFurnitureType(control.textContent);
+
+  if(!type || control.id === 'furnitureAddSelected') return;
+
+  control.addEventListener('click', () => {
+    selectedFurnitureType = type;
+
+    if(furnitureAddSelected){
+      furnitureAddSelected.disabled = false;
+      furnitureAddSelected.style.display = '';
+      furnitureAddSelected.textContent =
+        `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+    }
+  });
+});
+
+furnitureAddSelected?.addEventListener('click', () => {
+  if(!selectedFurnitureType) return;
+
+  addFurniture(selectedFurnitureType);
+
+  // Close common v6 furniture sheets/modals if present.
+  const modal =
+    document.getElementById('furnitureModal') ||
+    document.getElementById('furnitureSheet') ||
+    document.querySelector('.furnitureModal, .furnitureSheet, .furniture-picker');
+
+  if(modal){
+    modal.classList.remove('open','show','visible');
+    if(modal.style) modal.style.display = 'none';
+  }
+
+  // Re-enable page scrolling in case the v6 modal locked it.
+  document.body.style.overflow = '';
+});
+
+// If v6's Continue button survived under a different id, make chair selection useful anyway.
+document.addEventListener('click', e => {
+  const target = e.target.closest?.('button');
+  if(!target) return;
+
+  const txt = (target.textContent || '').trim().toLowerCase();
+
+  if((txt === 'continue' || txt.includes('add selected furniture')) &&
+     selectedFurnitureType &&
+     target !== furnitureAddSelected){
+    addFurniture(selectedFurnitureType);
+  }
+});
+
+// Reset furniture when a completely new room scan is started.
+const originalScanAgain = document.getElementById('scanAgain');
+originalScanAgain?.addEventListener('click', () => {
+  furnitureItems = [];
+  selectedFurnitureId = null;
+  selectedFurnitureType = null;
+  renderFurniture();
+});
+
 </script>
+<button id="furnitureAddSelected" type="button" disabled style="display:none">Add selected furniture</button>
 </body>
 </html>
