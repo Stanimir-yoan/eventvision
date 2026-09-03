@@ -3,152 +3,136 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0a0a0c">
-<title>EventVision AR Scan</title>
+<meta name="theme-color" content="#0b0b0e">
+<title>EventVision — HelloXR Scan</title>
 <style>
-:root{--bg:#0a0a0c;--panel:#151519;--panel2:#1d1d22;--text:#fff;--muted:#aaaab4;--line:#303039;--accent:#6c5cff;--good:#45d27e}
+:root{--bg:#0b0b0e;--panel:#15151a;--panel2:#1e1e24;--text:#fff;--muted:#a7a7b0;--line:#303038;--accent:#6b5cff;--good:#43d47c}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 body{min-height:100vh}
 button{font:inherit}
-.shell{max-width:720px;margin:0 auto;padding:20px 16px 36px}
-.eyebrow{font-size:12px;letter-spacing:.1em;font-weight:800;color:var(--muted)}
-h1{font-size:30px;line-height:1.05;margin:8px 0}
-p{color:var(--muted);line-height:1.5}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px;margin-top:14px}
+.shell{max-width:720px;margin:0 auto;padding:22px 16px 40px}
+.eyebrow{font-size:11px;letter-spacing:.12em;font-weight:800;color:var(--muted)}
+h1{margin:7px 0 8px;font-size:30px;line-height:1.05}
+p{margin:0;color:var(--muted);line-height:1.5}
+.card{margin-top:15px;padding:16px;border:1px solid var(--line);border-radius:20px;background:var(--panel)}
 .steps{display:grid;gap:10px;margin-top:14px}
-.step{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:start}
-.n{width:32px;height:32px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;font-weight:800}
-.primary{width:100%;height:56px;border:0;border-radius:15px;background:var(--accent);color:white;font-weight:800;margin-top:14px}
+.step{display:grid;grid-template-columns:34px 1fr;gap:10px}
+.num{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--panel2);font-weight:800}
+.small{font-size:12px;color:var(--muted);line-height:1.4;margin-top:3px}
+.primary{width:100%;height:56px;border:0;border-radius:15px;background:var(--accent);color:#fff;font-weight:800;margin-top:15px}
 .primary:disabled{opacity:.4}
-.secondary{height:44px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:#fff;padding:0 13px;font-weight:700}
-.status{font-size:13px;color:var(--muted);margin-top:10px}
-.result{display:none}
-.result.show{display:block}
-#plan{width:100%;height:auto;background:#0e0e11;border-radius:14px;display:block}
-.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
-.metric{background:#0f0f12;border:1px solid var(--line);border-radius:12px;padding:10px}
-.metric small{display:block;color:var(--muted);font-size:11px}.metric b{display:block;margin-top:3px}
-#arHud{position:fixed;inset:0;display:none;pointer-events:none;z-index:10001}
-#arHud.active{display:block}
-.hudTop{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;right:8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
-.pill{background:rgba(15,15,18,.72);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.14);padding:7px 9px;border-radius:999px;font-size:11px;font-weight:800;max-width:72%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hudBottom{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;pointer-events:auto}
-.hudBottom button{flex:1;max-width:160px;height:48px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(15,15,18,.85);color:#fff;font-weight:800}
-.hudBottom .close{background:rgba(108,92,255,.9)}
+#support{margin-top:10px;font-size:12px;color:var(--muted)}
+.good{color:#8bf0ae}.warn{color:#ffd08a}
+#result{display:none}.show{display:block}
+#plan{width:100%;display:block;background:#0d0d10;border-radius:14px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.metric,.wall{border:1px solid var(--line);background:#0f0f13;border-radius:12px;padding:10px}
+.metric small,.wall small{display:block;color:var(--muted);font-size:10px}
+.metric b,.wall b{display:block;margin-top:3px;font-size:14px}
+#walls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+
+#hud{position:fixed;inset:0;display:none;pointer-events:none;z-index:99999}
+#hud.active{display:block}
+.hudTop{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;right:8px;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.pill{background:rgba(15,15,18,.70);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.15);padding:8px 10px;border-radius:999px;font-size:11px;font-weight:800}
+#hint{max-width:72%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cross{position:absolute;left:50%;top:54%;width:54px;height:54px;transform:translate(-50%,-50%);pointer-events:none}
+.cross:before,.cross:after{content:"";position:absolute;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.cross:before{left:26px;top:0;width:2px;height:54px}
+.cross:after{left:0;top:26px;width:54px;height:2px}
+.crossDot{position:absolute;left:19px;top:19px;width:16px;height:16px;border-radius:50%;border:2px solid #fff}
+.hudBottom{position:absolute;left:10px;right:10px;bottom:calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.4fr;gap:8px;pointer-events:auto}
+.hudBottom button{height:50px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(16,16,20,.78);color:#fff;font-weight:800;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.hudBottom .finish{background:rgba(107,92,255,.93)}
 .hudBottom button:disabled{opacity:.4}
-.warn{color:#ffd38a}
-.ok{color:#8ef0b2}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 
-body.ar-active{overflow:hidden}
-body.ar-active .shell{display:none}
-body.ar-active canvas{z-index:10000!important}
-
-
-html.xr-running,
-html.xr-running body,
-body.ar-active,
-body:--xr-overlay,
-body:xr-overlay {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-body.ar-active #home,
-body:--xr-overlay #home,
-body:xr-overlay #home {
-  display: none !important;
-}
-
-body.ar-active canvas,
-body:--xr-overlay canvas,
-body:xr-overlay canvas {
-  background: transparent !important;
-}
-
+body.xr-active{background:transparent!important;overflow:hidden}
+body.xr-active .shell{display:none!important}
+body.xr-active canvas{background:transparent!important}
 </style>
 </head>
 <body>
-<div class="shell" id="home">
-  <div class="eyebrow">EVENTVISION · AR SCAN TEST</div>
-  <h1>Trace the real floor perimeter</h1>
-  <p>This version uses WebXR hit testing. Each corner is stored in 3D world space in metres, not as a pixel on the camera image.</p>
+<main class="shell">
+  <div class="eyebrow">EVENTVISION · HELLOXR TEST</div>
+  <h1>Scan the real floor</h1>
+  <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
-  <div class="card">
-    <strong>How to scan</strong>
+  <section class="card">
+    <strong>Scan workflow</strong>
     <div class="steps">
-      <div class="step"><div class="n">1</div><div><b>Enter AR</b><br><span class="status">Move the phone slowly until a floor surface is detected.</span></div></div>
-      <div class="step"><div class="n">2</div><div><b>Aim at a floor corner</b><br><span class="status">Tap the screen / select to add the corner.</span></div></div>
-      <div class="step"><div class="n">3</div><div><b>Walk around the room</b><br><span class="status">Add each corner in order. Aim back near the first point to finish.</span></div></div>
+      <div class="step"><div class="num">1</div><div><b>Enter AR</b><div class="small">Move the phone slowly until the floor target appears.</div></div></div>
+      <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner and tap the camera view.</div></div></div>
+      <div class="step"><div class="num">3</div><div><b>Close room</b><div class="small">Finish after at least 3 corners to create the measured top view.</div></div></div>
     </div>
+    <button id="start" class="primary" disabled>Enter AR scan</button>
+    <div id="support">Checking WebXR…</div>
+  </section>
 
-    <button class="primary" id="startBtn">Enter AR scan</button>
-    <div class="status" id="support">Checking WebXR support…</div>
-  </div>
-
-  <div class="card result" id="resultCard">
-    <div class="eyebrow">SCAN RESULT</div>
+  <section id="result" class="card">
+    <div class="eyebrow">SCAN COMPLETE</div>
     <h2 style="margin:6px 0 12px">Measured floor plan</h2>
-    <svg id="plan" viewBox="0 0 500 340" aria-label="Measured floor plan"></svg>
+    <svg id="plan" viewBox="0 0 500 330"></svg>
     <div class="metrics">
       <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
       <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
     </div>
     <div id="walls"></div>
-  </div>
-</div>
+  </section>
+</main>
 
-<div id="arHud">
+<div id="hud">
   <div class="hudTop">
-    <div class="pill" id="arHint">Move phone slowly</div>
-    <div class="pill" id="blendPill">AR</div><div class="pill" id="arCount">0 corners</div>
+    <div class="pill" id="hint">Finding floor…</div>
+    <div class="pill" id="count">0 corners</div>
   </div>
+
+  <div class="cross"><div class="crossDot"></div></div>
+
   <div class="hudBottom">
-    <button id="undoBtn" disabled>Undo</button>
-    <button class="close" id="finishBtn" disabled>Finish room</button>
+    <button id="undo" disabled>Undo</button>
+    <button id="finish" class="finish" disabled>Finish room</button>
   </div>
 </div>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
 
-const startBtn = document.getElementById('startBtn');
-const support = document.getElementById('support');
-const arHud = document.getElementById('arHud');
-const arHint = document.getElementById('arHint');
-const arCount = document.getElementById('arCount');
-const blendPill = document.getElementById('blendPill');
-const undoBtn = document.getElementById('undoBtn');
-const finishBtn = document.getElementById('finishBtn');
-const resultCard = document.getElementById('resultCard');
-const plan = document.getElementById('plan');
-const cornerMetric = document.getElementById('cornerMetric');
-const areaMetric = document.getElementById('areaMetric');
-const walls = document.getElementById('walls');
+const el = {
+  start: document.getElementById('start'),
+  support: document.getElementById('support'),
+  hud: document.getElementById('hud'),
+  hint: document.getElementById('hint'),
+  count: document.getElementById('count'),
+  undo: document.getElementById('undo'),
+  finish: document.getElementById('finish'),
+  result: document.getElementById('result'),
+  plan: document.getElementById('plan'),
+  cornerMetric: document.getElementById('cornerMetric'),
+  areaMetric: document.getElementById('areaMetric'),
+  walls: document.getElementById('walls')
+};
 
-let renderer, scene, camera, session, hitTestSource = null, refSpace = null;
-let reticle, hitValid = false;
-let corners = [];
-let markerMeshes = [];
-let lineMeshes = [];
-let floorY = null;
+let renderer, scene, camera, session, refSpace, hitSource, reticle;
+let hitValid = false;
 let completed = false;
+let floorY = null;
+let corners = [];
+let objects = [];
 
-const meterDistance = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
+const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
 
-function setHint(msg){ arHint.textContent = msg; }
-
-function makeRenderer(){
-  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-  renderer.setClearColor(0x000000, 0);
-  renderer.setClearAlpha(0);
+function createRenderer(){
+  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
   renderer.xr.enabled = true;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000,0);
+  renderer.setClearAlpha(0);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
   renderer.domElement.style.position='fixed';
   renderer.domElement.style.inset='0';
-  renderer.domElement.style.zIndex='10000';
+  renderer.domElement.style.zIndex='1000';
+  renderer.domElement.style.background='transparent';
   renderer.domElement.style.touchAction='none';
   document.body.appendChild(renderer.domElement);
 
@@ -156,275 +140,276 @@ function makeRenderer(){
   scene.background = null;
   camera = new THREE.PerspectiveCamera();
 
-  const light = new THREE.HemisphereLight(0xffffff, 0x666666, 2.0);
-  scene.add(light);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x666666,2));
 
   reticle = new THREE.Mesh(
-    new THREE.RingGeometry(0.055,0.075,32).rotateX(-Math.PI/2),
-    new THREE.MeshBasicMaterial({color:0xffffff})
+    new THREE.RingGeometry(.05,.072,32).rotateX(-Math.PI/2),
+    new THREE.MeshBasicMaterial({color:0xffffff,depthTest:false})
   );
-  reticle.matrixAutoUpdate = false;
-  reticle.visible = false;
+  reticle.matrixAutoUpdate=false;
+  reticle.visible=false;
+  reticle.renderOrder=999;
   scene.add(reticle);
 }
 
-async function checkSupport(){
+async function check(){
   if(!navigator.xr){
-    support.innerHTML = '<span class="warn">WebXR is not available in this browser. Open this GitHub Pages URL inside Mozilla WebXR Viewer on the iPhone.</span>';
-    startBtn.disabled = true;
+    el.support.innerHTML='<span class="warn">No WebXR API. Open this URL in HelloXR, not Safari.</span>';
     return;
   }
   try{
-    const ok = await navigator.xr.isSessionSupported('immersive-ar');
-    if(ok){
-      support.innerHTML = '<span class="ok">Immersive AR available ✓</span>';
-      startBtn.disabled = false;
+    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+    if(supported){
+      el.start.disabled=false;
+      el.support.innerHTML='<span class="good">Immersive AR available ✓</span>';
     } else {
-      support.innerHTML = '<span class="warn">Immersive AR is not supported here. Use Mozilla WebXR Viewer.</span>';
-      startBtn.disabled = true;
+      el.support.innerHTML='<span class="warn">AR unavailable here. Open the page inside HelloXR.</span>';
     }
-  }catch(e){
-    support.textContent = 'Could not check AR support: ' + e.message;
-    startBtn.disabled = true;
+  }catch(err){
+    el.support.textContent='WebXR check failed: '+err.message;
   }
 }
 
-async function startAR(){
-  if(!renderer) makeRenderer();
-
-  const options = {
-    requiredFeatures:['hit-test','local-floor'],
-    optionalFeatures:['dom-overlay'],
-    domOverlay:{root:document.body}
-  };
+async function enterAR(){
+  if(!renderer) createRenderer();
 
   try{
-    session = await navigator.xr.requestSession('immersive-ar', options);
+    session = await navigator.xr.requestSession('immersive-ar',{
+      requiredFeatures:['hit-test'],
+      optionalFeatures:['local-floor','dom-overlay'],
+      domOverlay:{root:document.body}
+    });
   }catch(err){
-    // Some experimental iOS viewers may not accept local-floor as required.
-    try{
-      session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures:['hit-test'],
-        optionalFeatures:['local-floor','dom-overlay'],
-        domOverlay:{root:document.body}
-      });
-    }catch(err2){
-      alert('Could not start immersive AR: ' + err2.message);
-      return;
-    }
+    alert('Could not start AR: '+err.message);
+    return;
   }
 
-  completed = false;
-  corners = [];
-  floorY = null;
-  clearGeometry();
-  resultCard.classList.remove('show');
+  completed=false;
+  corners=[];
+  floorY=null;
+  clearObjects();
+  el.result.classList.remove('show');
 
   await renderer.xr.setSession(session);
-  if (blendPill) blendPill.textContent = session.environmentBlendMode || 'AR';
-  refSpace = await session.requestReferenceSpace('local-floor').catch(
-    ()=>session.requestReferenceSpace('local')
-  );
-  const viewerSpace = await session.requestReferenceSpace('viewer');
-  hitTestSource = await session.requestHitTestSource({space:viewerSpace});
 
-  document.documentElement.classList.add('xr-running');
-  document.body.classList.add('ar-active');
-  arHud.classList.add('active');
-  setHint('Move phone slowly — finding floor');
+  refSpace = await session.requestReferenceSpace('local-floor')
+    .catch(()=>session.requestReferenceSpace('local'));
+
+  const viewerSpace = await session.requestReferenceSpace('viewer');
+  hitSource = await session.requestHitTestSource({space:viewerSpace});
+
+  document.body.classList.add('xr-active');
+  el.hud.classList.add('active');
   updateControls();
 
-  session.addEventListener('select', onSelect);
-  session.addEventListener('end', onSessionEnd);
+  session.addEventListener('select',placePoint);
+  session.addEventListener('end',endAR);
 
   renderer.setAnimationLoop(render);
 }
 
-function render(_t, frame){
-  if(frame && hitTestSource && refSpace){
-    const hits = frame.getHitTestResults(hitTestSource);
-    if(hits.length){
-      const pose = hits[0].getPose(refSpace);
-      if(pose){
-        reticle.visible = true;
-        reticle.matrix.fromArray(pose.transform.matrix);
-        hitValid = true;
+function render(_time,frame){
+  if(frame && hitSource && refSpace){
+    const hits=frame.getHitTestResults(hitSource);
 
-        const p = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-        if(corners.length>=3 && meterDistance(p,corners[0])<0.28){
-          reticle.material.color.set(0x45d27e);
-          setHint('Near first corner — tap to close room');
-        } else {
+    if(hits.length){
+      const pose=hits[0].getPose(refSpace);
+      if(pose){
+        reticle.visible=true;
+        reticle.matrix.fromArray(pose.transform.matrix);
+        hitValid=true;
+
+        const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+
+        if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
+          reticle.material.color.set(0x43d47c);
+          el.hint.textContent='Near first corner — tap to close';
+        }else{
           reticle.material.color.set(0xffffff);
-          setHint(corners.length ? 'Aim at next floor corner' : 'Floor found — aim at first corner');
+          el.hint.textContent=corners.length?'Aim at next floor corner':'Floor found — aim at first corner';
         }
       }
-    } else {
-      reticle.visible = false;
-      hitValid = false;
-      setHint('Move phone slowly — finding floor');
+    }else{
+      reticle.visible=false;
+      hitValid=false;
+      el.hint.textContent='Finding floor — move slowly';
     }
   }
   renderer.render(scene,camera);
 }
 
-function onSelect(){
+function placePoint(){
   if(!hitValid || completed || !reticle.visible) return;
 
-  const p = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+  const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
 
-  if(corners.length>=3 && meterDistance(p,corners[0])<0.28){
+  if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
     closeRoom();
     return;
   }
 
-  if(floorY===null) floorY = p.y;
-  p.y = floorY;
+  if(floorY===null) floorY=p.y;
+  p.y=floorY;
 
-  if(corners.length && meterDistance(p,corners[corners.length-1])<0.12){
-    setHint('Move farther from previous corner');
+  if(corners.length && distanceXZ(p,corners[corners.length-1])<.10){
+    el.hint.textContent='Move farther from previous corner';
     return;
   }
 
   corners.push(p.clone());
-  rebuildGeometry();
+  rebuildObjects();
   updateControls();
 }
 
-function addMarker(p,index){
-  const geo = new THREE.SphereGeometry(0.045,16,12);
-  const mat = new THREE.MeshBasicMaterial({color:index===0?0x6c5cff:0xffffff});
-  const m = new THREE.Mesh(geo,mat);
-  m.position.copy(p);
-  scene.add(m);
-  markerMeshes.push(m);
+function marker(p,index){
+  const mesh=new THREE.Mesh(
+    new THREE.SphereGeometry(.035,16,12),
+    new THREE.MeshBasicMaterial({color:index===0?0x6b5cff:0xffffff})
+  );
+  mesh.position.copy(p);
+  scene.add(mesh);
+  objects.push(mesh);
 }
 
-function addLine(a,b){
-  const pts=[a.clone(),b.clone()];
-  const g = new THREE.BufferGeometry().setFromPoints(pts);
-  const m = new THREE.LineBasicMaterial({color:0xffffff});
-  const l = new THREE.Line(g,m);
-  scene.add(l);
-  lineMeshes.push(l);
+function line(a,b){
+  const geometry=new THREE.BufferGeometry().setFromPoints([a.clone(),b.clone()]);
+  const object=new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({color:0xffffff})
+  );
+  scene.add(object);
+  objects.push(object);
 }
 
-function clearGeometry(){
-  [...markerMeshes,...lineMeshes].forEach(o=>{
+function clearObjects(){
+  objects.forEach(o=>{
     scene.remove(o);
     o.geometry?.dispose();
     o.material?.dispose();
   });
-  markerMeshes=[];
-  lineMeshes=[];
+  objects=[];
 }
 
-function rebuildGeometry(){
-  clearGeometry();
-  corners.forEach(addMarker);
-  for(let i=0;i<corners.length-1;i++) addLine(corners[i],corners[i+1]);
-  if(completed && corners.length>=3) addLine(corners[corners.length-1],corners[0]);
+function rebuildObjects(){
+  clearObjects();
+  corners.forEach(marker);
+  for(let i=0;i<corners.length-1;i++) line(corners[i],corners[i+1]);
+  if(completed && corners.length>=3) line(corners[corners.length-1],corners[0]);
 }
 
 function updateControls(){
-  arCount.textContent = `${corners.length} corner${corners.length===1?'':'s'}`;
-  undoBtn.disabled = completed || corners.length===0;
-  finishBtn.disabled = completed || corners.length<3;
+  el.count.textContent=`${corners.length} corner${corners.length===1?'':'s'}`;
+  el.undo.disabled=completed || corners.length===0;
+  el.finish.disabled=completed || corners.length<3;
 }
 
 function closeRoom(){
   if(corners.length<3) return;
   completed=true;
-  rebuildGeometry();
+  rebuildObjects();
   updateControls();
-  setHint('Room complete ✓');
-  setTimeout(()=>session?.end(),500);
+  el.hint.textContent='Room complete ✓';
+  setTimeout(()=>session?.end(),400);
 }
 
-undoBtn.addEventListener('click',()=>{
+el.undo.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
   if(completed || !corners.length) return;
   corners.pop();
   if(!corners.length) floorY=null;
-  rebuildGeometry();
+  rebuildObjects();
   updateControls();
 });
 
-finishBtn.addEventListener('click',closeRoom);
+el.finish.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  closeRoom();
+});
 
-function onSessionEnd(){
-  renderer.setAnimationLoop(null);
-  arHud.classList.remove('active');
-  document.body.classList.remove('ar-active');
-  document.documentElement.classList.remove('xr-running');
-  if(renderer?.domElement) renderer.domElement.style.display='none';
-  session=null;
-  hitTestSource=null;
-  if(completed) showResult();
-}
-
-function polygonAreaXZ(arr){
-  let s=0;
-  for(let i=0;i<arr.length;i++){
-    const a=arr[i], b=arr[(i+1)%arr.length];
-    s += a.x*b.z-b.x*a.z;
+function areaXZ(points){
+  let sum=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length];
+    sum+=a.x*b.z-b.x*a.z;
   }
-  return Math.abs(s)/2;
+  return Math.abs(sum)/2;
 }
 
-function showResult(){
-  resultCard.classList.add('show');
-  cornerMetric.textContent = String(corners.length);
-  areaMetric.textContent = polygonAreaXZ(corners).toFixed(2)+' m²';
+function drawResult(){
+  el.result.classList.add('show');
+  el.cornerMetric.textContent=corners.length;
+  el.areaMetric.textContent=areaXZ(corners).toFixed(2)+' m²';
 
   const xs=corners.map(p=>p.x), zs=corners.map(p=>p.z);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
   const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
-  const k=Math.min(400/w,250/h);
-  const cx=250,cy=170;
+  const k=Math.min(400/w,240/h);
+  const cx=250,cy=165;
+
   const mapped=corners.map(p=>({
     x:(p.x-(minX+maxX)/2)*k+cx,
     y:(p.z-(minZ+maxZ)/2)*k+cy
   }));
 
-  plan.innerHTML='';
+  el.plan.innerHTML='';
   const ns='http://www.w3.org/2000/svg';
+
   const poly=document.createElementNS(ns,'polygon');
   poly.setAttribute('points',mapped.map(p=>`${p.x},${p.y}`).join(' '));
-  poly.setAttribute('fill','#19191e');
+  poly.setAttribute('fill','#18181d');
   poly.setAttribute('stroke','#fff');
   poly.setAttribute('stroke-width','4');
   poly.setAttribute('stroke-linejoin','round');
-  plan.appendChild(poly);
+  el.plan.appendChild(poly);
 
   mapped.forEach((p,i)=>{
     const c=document.createElementNS(ns,'circle');
-    c.setAttribute('cx',p.x);c.setAttribute('cy',p.y);c.setAttribute('r','6');
-    c.setAttribute('fill','#0a0a0c');
-    c.setAttribute('stroke',i===0?'#6c5cff':'#fff');
+    c.setAttribute('cx',p.x);
+    c.setAttribute('cy',p.y);
+    c.setAttribute('r','6');
+    c.setAttribute('fill','#0d0d10');
+    c.setAttribute('stroke',i===0?'#6b5cff':'#fff');
     c.setAttribute('stroke-width','3');
-    plan.appendChild(c);
+    el.plan.appendChild(c);
   });
 
-  walls.innerHTML='';
+  el.walls.innerHTML='';
   corners.forEach((p,i)=>{
     const q=corners[(i+1)%corners.length];
-    const d=meterDistance(p,q);
-    const el=document.createElement('div');
-    el.className='metric';
-    el.style.marginTop='8px';
-    el.innerHTML=`<small>Wall ${i+1}</small><b>${d.toFixed(2)} m</b>`;
-    walls.appendChild(el);
+    const item=document.createElement('div');
+    item.className='wall';
+    item.innerHTML=`<small>Wall ${i+1}</small><b>${distanceXZ(p,q).toFixed(2)} m</b>`;
+    el.walls.appendChild(item);
   });
 
-  resultCard.scrollIntoView({behavior:'smooth',block:'start'});
+  el.result.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-startBtn.addEventListener('click',()=>{
+function endAR(){
+  renderer?.setAnimationLoop(null);
+  el.hud.classList.remove('active');
+  document.body.classList.remove('xr-active');
+  if(renderer?.domElement) renderer.domElement.style.display='none';
+  session=null;
+  hitSource=null;
+
+  if(completed) drawResult();
+}
+
+el.start.addEventListener('click',()=>{
   if(renderer?.domElement) renderer.domElement.style.display='block';
-  startAR();
+  enterAR();
 });
 
-checkSupport();
+window.addEventListener('resize',()=>{
+  if(renderer){
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  }
+});
+
+check();
 </script>
 </body>
 </html>
