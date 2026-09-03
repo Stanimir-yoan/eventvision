@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b0b0d">
+<title>EventVision — Camera Scan Prototype</title>
+<style>
+:root{
+  --bg:#0b0b0d; --panel:#151519; --panel2:#1c1c21; --text:#fff;
+  --muted:#a7a7b2; --line:#31313a; --accent:#6c5cff; --ok:#41c77a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{min-height:100vh}
+button,input{font:inherit}
+button{border:0}
+.app{max-width:820px;margin:0 auto;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 16px 12px}
+.eyebrow{font-size:12px;color:var(--muted);letter-spacing:.08em;font-weight:700}
+h1{font-size:25px;line-height:1.05;margin:5px 0 6px}
+.sub{font-size:13px;line-height:1.4;color:var(--muted);margin:0}
+.reset{min-width:64px;height:42px;border-radius:12px;background:var(--panel2);color:#fff}
+.stage{position:relative;background:#000;aspect-ratio:3/4;overflow:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#overlay{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.hud{position:absolute;left:12px;right:12px;top:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.pill{padding:8px 11px;border-radius:999px;background:rgba(15,15,18,.78);backdrop-filter:blur(10px);font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.12)}
+.centerMark{position:absolute;left:50%;top:57%;transform:translate(-50%,-50%);width:48px;height:48px;pointer-events:none;opacity:.9}
+.centerMark:before,.centerMark:after{content:"";position:absolute;background:#fff}
+.centerMark:before{left:23px;top:0;width:2px;height:48px}
+.centerMark:after{left:0;top:23px;width:48px;height:2px}
+.centerDot{position:absolute;left:18px;top:18px;width:12px;height:12px;border:2px solid white;border-radius:50%}
+.bottomActions{position:absolute;left:12px;right:12px;bottom:14px;display:grid;grid-template-columns:1fr 1.45fr;gap:10px}
+.action{height:52px;border-radius:14px;font-weight:800}
+.secondary{background:rgba(20,20,24,.88);color:#fff;border:1px solid rgba(255,255,255,.14)}
+.primary{background:var(--accent);color:#fff}
+.primary:disabled,.secondary:disabled{opacity:.42}
+.cameraGate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px;background:linear-gradient(180deg,#111,#090909);z-index:10}
+.gateCard{width:min(430px,100%);text-align:center}
+.cameraIcon{font-size:44px;margin-bottom:10px}
+.gateCard h2{font-size:22px;margin:0 0 8px}
+.gateCard p{font-size:14px;line-height:1.45;color:var(--muted);margin:0 0 18px}
+.big{width:100%;height:54px;border-radius:14px;background:var(--accent);color:#fff;font-weight:800}
+.fallback{margin-top:10px;width:100%;height:50px;border-radius:14px;background:var(--panel2);color:#fff;font-weight:700}
+.help{padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.help strong{display:block;font-size:14px;margin-bottom:3px}
+.help span{font-size:12px;color:var(--muted);line-height:1.4}
+.result{display:none;padding:16px}
+.result.show{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px}
+.resultHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+.resultHead h2{font-size:20px;margin:3px 0 0}
+.ok{font-size:11px;color:#dff8e9;background:rgba(65,199,122,.16);border:1px solid rgba(65,199,122,.32);padding:7px 9px;border-radius:999px;font-weight:800}
+.plan{background:#0f0f12;border-radius:14px;padding:8px}
+.plan svg{width:100%;height:auto;display:block}
+.scaleRow{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+.scaleRow input{width:100%;height:48px;border:1px solid var(--line);border-radius:12px;background:#0f0f12;color:#fff;padding:0 13px;font-size:16px}
+.unit{display:flex;align-items:center;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#0f0f12;color:#fff}
+.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.metric{background:#0f0f12;border:1px solid var(--line);border-radius:12px;padding:10px}
+.metric small{display:block;color:var(--muted);font-size:11px}
+.metric b{display:block;margin-top:3px;font-size:15px}
+.note{font-size:12px;line-height:1.45;color:var(--muted);margin:12px 2px 0}
+.next{width:100%;height:52px;border-radius:14px;background:var(--accent);color:#fff;font-weight:800;margin-top:12px}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#202026;color:#fff;padding:10px 13px;border-radius:999px;font-size:12px;border:1px solid var(--line);display:none;z-index:50}
+.toast.show{display:block}
+@media (min-width:700px){
+  .stage{aspect-ratio:16/10;border-radius:18px;margin:0 16px;border:1px solid var(--line)}
+  .help{margin:12px 16px 0;border:1px solid var(--line);border-radius:14px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">STEP 1 OF 3 · SCAN SPACE</div>
+      <h1>Trace the floor perimeter</h1>
+      <p class="sub">Use the rear camera. Tap each visible floor corner as you move around the room.</p>
+    </div>
+    <button class="reset" id="resetBtn">Reset</button>
+  </header>
+
+  <section class="stage" id="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <svg id="overlay" viewBox="0 0 1000 1333" preserveAspectRatio="none" aria-label="Floor tracing overlay"></svg>
+
+    <div class="hud">
+      <div class="pill" id="hint">Tap first corner</div>
+      <div class="pill" id="count">0 corners</div>
+    </div>
+
+    <div class="centerMark"><div class="centerDot"></div></div>
+
+    <div class="bottomActions">
+      <button class="action secondary" id="undoBtn" disabled>Undo</button>
+      <button class="action primary" id="closeBtn" disabled>Close room</button>
+    </div>
+
+    <div class="cameraGate" id="cameraGate">
+      <div class="gateCard">
+        <div class="cameraIcon">📷</div>
+        <h2>Start room scan</h2>
+        <p>This prototype requests your phone’s rear camera. Camera access normally requires HTTPS.</p>
+        <button class="big" id="startCamera">Open rear camera</button>
+        <button class="fallback" id="photoFallback">Use a photo instead</button>
+        <input id="fallbackInput" type="file" accept="image/*" capture="environment" hidden>
+      </div>
+    </div>
+  </section>
+
+  <div class="help">
+    <strong>How to test it</strong>
+    <span>Stand near one side of the room. Tap a floor corner, move/turn toward the next corner, tap again, then continue around the perimeter. This prototype records screen positions, not real AR world coordinates.</span>
+  </div>
+
+  <section class="result" id="result">
+    <div class="card">
+      <div class="resultHead">
+        <div>
+          <div class="eyebrow">SCAN COMPLETE</div>
+          <h2>Floor-plan shape</h2>
+        </div>
+        <div class="ok">Ready</div>
+      </div>
+
+      <div class="plan">
+        <svg id="planSvg" viewBox="0 0 500 340" aria-label="Generated top-view floor plan"></svg>
+      </div>
+
+      <div class="scaleRow">
+        <input id="wallLength" inputmode="decimal" type="number" min="0.5" step="0.1" placeholder="Real length of wall 1">
+        <div class="unit">m</div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><small>Corners</small><b id="metricCorners">0</b></div>
+        <div class="metric"><small>Estimated area</small><b id="metricArea">Add scale</b></div>
+      </div>
+
+      <p class="note">The real ARKit version would replace the manual scale field with true meter-based 3D coordinates from the phone camera.</p>
+      <button class="next" id="nextBtn">Continue to layout →</button>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const video = document.getElementById('video');
+  const stage = document.getElementById('stage');
+  const overlay = document.getElementById('overlay');
+  const startCamera = document.getElementById('startCamera');
+  const cameraGate = document.getElementById('cameraGate');
+  const fallbackBtn = document.getElementById('photoFallback');
+  const fallbackInput = document.getElementById('fallbackInput');
+  const hint = document.getElementById('hint');
+  const count = document.getElementById('count');
+  const undoBtn = document.getElementById('undoBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const result = document.getElementById('result');
+  const planSvg = document.getElementById('planSvg');
+  const wallLength = document.getElementById('wallLength');
+  const metricCorners = document.getElementById('metricCorners');
+  const metricArea = document.getElementById('metricArea');
+  const toast = document.getElementById('toast');
+  const nextBtn = document.getElementById('nextBtn');
+
+  let pts = [];
+  let closed = false;
+  let stream = null;
+  let fallbackUrl = null;
+
+  function toastMsg(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=>toast.classList.remove('show'), 1800);
+  }
+
+  async function openCamera(){
+    try{
+      if(!navigator.mediaDevices?.getUserMedia){
+        throw new Error('Camera API unavailable');
+      }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio:false
+      });
+      video.srcObject = stream;
+      await video.play();
+      cameraGate.style.display = 'none';
+    }catch(err){
+      toastMsg('Live camera blocked here. Try HTTPS hosting or use photo mode.');
+    }
+  }
+
+  startCamera.addEventListener('click', openCamera);
+
+  fallbackBtn.addEventListener('click', ()=>fallbackInput.click());
+  fallbackInput.addEventListener('change', ()=>{
+    const file = fallbackInput.files?.[0];
+    if(!file) return;
+    if(fallbackUrl) URL.revokeObjectURL(fallbackUrl);
+    fallbackUrl = URL.createObjectURL(file);
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    video.srcObject = null;
+    video.poster = fallbackUrl;
+    video.style.background = `url("${fallbackUrl}") center/cover no-repeat`;
+    cameraGate.style.display = 'none';
+    toastMsg('Photo loaded');
+  });
+
+  function stagePoint(e){
+    const r = stage.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1000, (e.clientX-r.left)/r.width*1000)),
+      y: Math.max(0, Math.min(1333, (e.clientY-r.top)/r.height*1333))
+    };
+  }
+
+  function svgEl(tag, attrs={}){
+    const el = document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
+    return el;
+  }
+
+  function renderOverlay(){
+    overlay.innerHTML = '';
+    if(pts.length){
+      const polyPts = pts.map(p=>`${p.x},${p.y}`).join(' ');
+      const pl = svgEl(closed ? 'polygon':'polyline',{
+        points: polyPts,
+        fill: closed ? 'rgba(108,92,255,.14)' : 'none',
+        stroke: '#ffffff',
+        'stroke-width': '7',
+        'stroke-linecap':'round',
+        'stroke-linejoin':'round'
+      });
+      overlay.appendChild(pl);
+    }
+    pts.forEach((p,i)=>{
+      if(i===0 && pts.length>=3 && !closed){
+        overlay.appendChild(svgEl('circle',{
+          cx:p.x, cy:p.y, r:28, fill:'none', stroke:'#6c5cff',
+          'stroke-width':5, 'stroke-dasharray':'9 7'
+        }));
+      }
+      overlay.appendChild(svgEl('circle',{
+        cx:p.x, cy:p.y, r:i===0?16:13,
+        fill:'#111', stroke:'#fff', 'stroke-width':6
+      }));
+    });
+    count.textContent = `${pts.length} corner${pts.length===1?'':'s'}`;
+    undoBtn.disabled = !pts.length || closed;
+    closeBtn.disabled = pts.length < 3 || closed;
+    if(closed) hint.textContent = 'Room closed ✓';
+    else if(pts.length===0) hint.textContent = 'Tap first corner';
+    else if(pts.length<3) hint.textContent = 'Tap next corner';
+    else hint.textContent = 'Continue or close room';
+  }
+
+  stage.addEventListener('pointerup',(e)=>{
+    if(closed) return;
+    if(e.target.closest('button')) return;
+    if(cameraGate.style.display !== 'none') return;
+    pts.push(stagePoint(e));
+    renderOverlay();
+  });
+
+  undoBtn.addEventListener('click',()=>{
+    if(closed) return;
+    pts.pop();
+    renderOverlay();
+  });
+
+  function polygonArea(arr){
+    let s=0;
+    for(let i=0;i<arr.length;i++){
+      const a=arr[i], b=arr[(i+1)%arr.length];
+      s += a.x*b.y-b.x*a.y;
+    }
+    return Math.abs(s)/2;
+  }
+
+  function pxDist(a,b){ return Math.hypot(b.x-a.x,b.y-a.y); }
+
+  function renderPlan(){
+    planSvg.innerHTML = '';
+    if(pts.length<3) return;
+    const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+    const minX=Math.min(...xs), maxX=Math.max(...xs);
+    const minY=Math.min(...ys), maxY=Math.max(...ys);
+    const w=Math.max(1,maxX-minX), h=Math.max(1,maxY-minY);
+    const k=Math.min(400/w,250/h);
+    const cx=250,cy=170;
+    const mapped=pts.map(p=>({
+      x:(p.x-(minX+maxX)/2)*k+cx,
+      y:(p.y-(minY+maxY)/2)*k+cy
+    }));
+    planSvg.appendChild(svgEl('polygon',{
+      points:mapped.map(p=>`${p.x},${p.y}`).join(' '),
+      fill:'#18181d', stroke:'#fff', 'stroke-width':4, 'stroke-linejoin':'round'
+    }));
+    mapped.forEach((p,i)=>{
+      planSvg.appendChild(svgEl('circle',{
+        cx:p.x,cy:p.y,r:6,fill:'#0b0b0d',stroke:i===0?'#6c5cff':'#fff','stroke-width':3
+      }));
+    });
+    metricCorners.textContent = String(pts.length);
+    updateArea();
+  }
+
+  function updateArea(){
+    const m = Number(wallLength.value);
+    if(!Number.isFinite(m) || m<=0 || pts.length<3){
+      metricArea.textContent='Add scale';
+      return;
+    }
+    const firstPx = pxDist(pts[0],pts[1]);
+    if(firstPx<=0){
+      metricArea.textContent='—';
+      return;
+    }
+    const scale = m/firstPx;
+    const area = polygonArea(pts)*scale*scale;
+    metricArea.textContent = `${area.toFixed(area<100?1:0)} m²`;
+  }
+
+  closeBtn.addEventListener('click',()=>{
+    if(pts.length<3) return;
+    closed=true;
+    renderOverlay();
+    renderPlan();
+    result.classList.add('show');
+    result.scrollIntoView({behavior:'smooth',block:'start'});
+  });
+
+  wallLength.addEventListener('input',updateArea);
+
+  resetBtn.addEventListener('click',()=>{
+    pts=[];closed=false;
+    wallLength.value='';
+    result.classList.remove('show');
+    renderOverlay();
+  });
+
+  nextBtn.addEventListener('click',()=>{
+    toastMsg('Next: furniture layout editor');
+  });
+
+  window.addEventListener('beforeunload',()=>{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    if(fallbackUrl) URL.revokeObjectURL(fallbackUrl);
+  });
+
+  renderOverlay();
+})();
+</script>
+</body>
+</html>
