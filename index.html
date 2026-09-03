@@ -104,7 +104,7 @@ body.modal-open{overflow:hidden}
 @media (min-width:520px){.furnitureGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 
-/* v6 — floor-plan furniture editing */
+/* v6.1 — floor-plan furniture editing */
 .planEditor{
   position:relative;
   width:calc(100% + 12px);
@@ -787,10 +787,28 @@ el.furnitureGrid.addEventListener('click',e=>{
   el.confirmFurniture.textContent=`Continue with ${selectedFurnitureType}`;
 });
 
+function normalizeFurnitureType(text){
+  const value=String(text || '').trim().toLowerCase();
+  if(value.includes('chair')) return 'chair';
+  if(value.includes('table')) return 'table';
+  if(value.includes('lounge')) return 'lounge';
+  if(value.includes('bar')) return 'bar';
+  if(value.includes('stage') || value.includes('dj')) return 'stage';
+  if(value.includes('decor')) return 'decoration';
+  if(value.includes('light')) return 'lighting';
+  if(value.includes('plant')) return 'plant';
+  return null;
+}
+
 el.confirmFurniture.addEventListener('click',()=>{
   if(!selectedFurnitureType) return;
+
+  const normalizedType = normalizeFurnitureType(selectedFurnitureType) || 'chair';
+  addFurniture(normalizedType);
+
   closeFurniturePicker();
-  el.addFurniture.innerHTML=`<span class="addFurnitureIcon">＋</span><span>Add ${selectedFurnitureType}</span>`;
+  el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add furniture</span>';
+  selectedFurnitureType=null;
 });
 
 
@@ -829,7 +847,6 @@ const rotateLeftBtn = document.getElementById('rotateLeft');
 const rotateRightBtn = document.getElementById('rotateRight');
 const deleteFurnitureBtn = document.getElementById('deleteFurniture');
 const furnitureCountEl = document.getElementById('furnitureCount');
-const furnitureAddSelected = document.getElementById('furnitureAddSelected');
 
 let furnitureItems = [];
 let selectedFurnitureId = null;
@@ -1015,74 +1032,6 @@ planEditor?.addEventListener('pointerdown', e => {
   }
 });
 
-// Hook into the furniture category buttons from v6.
-// We detect buttons/cards by their visible label and preserve the v6 selection behavior.
-let selectedFurnitureType = null;
-
-function normalizeFurnitureType(text){
-  const value = String(text || '').trim().toLowerCase();
-  if(value.includes('chair')) return 'chair';
-  if(value.includes('table')) return 'table';
-  if(value.includes('lounge')) return 'lounge';
-  if(value.includes('bar')) return 'bar';
-  if(value.includes('stage') || value.includes('dj')) return 'stage';
-  if(value.includes('decor')) return 'decoration';
-  if(value.includes('light')) return 'lighting';
-  if(value.includes('plant')) return 'plant';
-  return null;
-}
-
-document.querySelectorAll('button, [role="button"]').forEach(control => {
-  const type = normalizeFurnitureType(control.textContent);
-
-  if(!type || control.id === 'furnitureAddSelected') return;
-
-  control.addEventListener('click', () => {
-    selectedFurnitureType = type;
-
-    if(furnitureAddSelected){
-      furnitureAddSelected.disabled = false;
-      furnitureAddSelected.style.display = '';
-      furnitureAddSelected.textContent =
-        `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`;
-    }
-  });
-});
-
-furnitureAddSelected?.addEventListener('click', () => {
-  if(!selectedFurnitureType) return;
-
-  addFurniture(selectedFurnitureType);
-
-  // Close common v6 furniture sheets/modals if present.
-  const modal =
-    document.getElementById('furnitureModal') ||
-    document.getElementById('furnitureSheet') ||
-    document.querySelector('.furnitureModal, .furnitureSheet, .furniture-picker');
-
-  if(modal){
-    modal.classList.remove('open','show','visible');
-    if(modal.style) modal.style.display = 'none';
-  }
-
-  // Re-enable page scrolling in case the v6 modal locked it.
-  document.body.style.overflow = '';
-});
-
-// If v6's Continue button survived under a different id, make chair selection useful anyway.
-document.addEventListener('click', e => {
-  const target = e.target.closest?.('button');
-  if(!target) return;
-
-  const txt = (target.textContent || '').trim().toLowerCase();
-
-  if((txt === 'continue' || txt.includes('add selected furniture')) &&
-     selectedFurnitureType &&
-     target !== furnitureAddSelected){
-    addFurniture(selectedFurnitureType);
-  }
-});
-
 // Reset furniture when a completely new room scan is started.
 const originalScanAgain = document.getElementById('scanAgain');
 originalScanAgain?.addEventListener('click', () => {
@@ -1093,6 +1042,5 @@ originalScanAgain?.addEventListener('click', () => {
 });
 
 </script>
-<button id="furnitureAddSelected" type="button" disabled style="display:none">Add selected furniture</button>
 </body>
 </html>
