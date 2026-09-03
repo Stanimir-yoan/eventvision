@@ -31,7 +31,7 @@ p{color:var(--muted);line-height:1.5}
 .metric small{display:block;color:var(--muted);font-size:11px}.metric b{display:block;margin-top:3px}
 #arHud{position:fixed;inset:0;display:none;pointer-events:none;z-index:10001}
 #arHud.active{display:block}
-.hudTop{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;right:8px;display:flex;justify-content:space-between;gap:6px}
+.hudTop{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;right:8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
 .pill{background:rgba(15,15,18,.72);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.14);padding:7px 9px;border-radius:999px;font-size:11px;font-weight:800;max-width:72%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hudBottom{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;pointer-events:auto}
 .hudBottom button{flex:1;max-width:160px;height:48px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(15,15,18,.85);color:#fff;font-weight:800}
@@ -44,6 +44,28 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 body.ar-active{overflow:hidden}
 body.ar-active .shell{display:none}
 body.ar-active canvas{z-index:10000!important}
+
+
+html.xr-running,
+html.xr-running body,
+body.ar-active,
+body:--xr-overlay,
+body:xr-overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+body.ar-active #home,
+body:--xr-overlay #home,
+body:xr-overlay #home {
+  display: none !important;
+}
+
+body.ar-active canvas,
+body:--xr-overlay canvas,
+body:xr-overlay canvas {
+  background: transparent !important;
+}
 
 </style>
 </head>
@@ -80,7 +102,7 @@ body.ar-active canvas{z-index:10000!important}
 <div id="arHud">
   <div class="hudTop">
     <div class="pill" id="arHint">Move phone slowly</div>
-    <div class="pill" id="arCount">0 corners</div>
+    <div class="pill" id="blendPill">AR</div><div class="pill" id="arCount">0 corners</div>
   </div>
   <div class="hudBottom">
     <button id="undoBtn" disabled>Undo</button>
@@ -96,6 +118,7 @@ const support = document.getElementById('support');
 const arHud = document.getElementById('arHud');
 const arHint = document.getElementById('arHint');
 const arCount = document.getElementById('arCount');
+const blendPill = document.getElementById('blendPill');
 const undoBtn = document.getElementById('undoBtn');
 const finishBtn = document.getElementById('finishBtn');
 const resultCard = document.getElementById('resultCard');
@@ -118,6 +141,8 @@ function setHint(msg){ arHint.textContent = msg; }
 
 function makeRenderer(){
   renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setClearColor(0x000000, 0);
+  renderer.setClearAlpha(0);
   renderer.xr.enabled = true;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -128,6 +153,7 @@ function makeRenderer(){
   document.body.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
+  scene.background = null;
   camera = new THREE.PerspectiveCamera();
 
   const light = new THREE.HemisphereLight(0xffffff, 0x666666, 2.0);
@@ -195,12 +221,14 @@ async function startAR(){
   resultCard.classList.remove('show');
 
   await renderer.xr.setSession(session);
+  if (blendPill) blendPill.textContent = session.environmentBlendMode || 'AR';
   refSpace = await session.requestReferenceSpace('local-floor').catch(
     ()=>session.requestReferenceSpace('local')
   );
   const viewerSpace = await session.requestReferenceSpace('viewer');
   hitTestSource = await session.requestHitTestSource({space:viewerSpace});
 
+  document.documentElement.classList.add('xr-running');
   document.body.classList.add('ar-active');
   arHud.classList.add('active');
   setHint('Move phone slowly — finding floor');
@@ -327,6 +355,7 @@ function onSessionEnd(){
   renderer.setAnimationLoop(null);
   arHud.classList.remove('active');
   document.body.classList.remove('ar-active');
+  document.documentElement.classList.remove('xr-running');
   if(renderer?.domElement) renderer.domElement.style.display='none';
   session=null;
   hitTestSource=null;
