@@ -81,11 +81,33 @@ body.xr-active canvas{background:transparent!important}
   .resultTitle{font-size:20px}
 }
 
+
+.homeMeta{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.versionBadge{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:26px;padding:0 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em}
+.addFurnitureBtn{width:100%;height:54px;margin-top:12px;border:0;border-radius:14px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:800}
+.addFurnitureIcon{font-size:22px;line-height:1;font-weight:400}
+.furnitureModal{position:fixed;inset:0;z-index:120000;display:none;align-items:flex-end;background:rgba(0,0,0,.55);padding-top:60px;pointer-events:auto}
+.furnitureModal.open{display:flex}
+.furnitureSheet{width:100%;max-width:720px;margin:0 auto;background:#121217;border:1px solid var(--line);border-bottom:0;border-radius:24px 24px 0 0;padding:8px 14px calc(14px + env(safe-area-inset-bottom));max-height:86%;overflow:auto;box-shadow:0 -20px 60px rgba(0,0,0,.45)}
+.furnitureHandle{width:42px;height:4px;border-radius:999px;background:#3b3b43;margin:2px auto 13px}
+.furnitureHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.furnitureHeader h3{margin:5px 0 0;font-size:22px}
+.closeFurniture{width:42px;height:42px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:#fff;font-size:24px;line-height:1}
+.furnitureGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.furnitureType{min-height:112px;border:1px solid var(--line);border-radius:15px;background:#19191e;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font-size:13px;font-weight:750}
+.furnitureType svg{width:39px;height:39px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;color:#d6d6dc}
+.furnitureType.selected{border-color:var(--accent);background:rgba(107,92,255,.16);box-shadow:inset 0 0 0 1px var(--accent)}
+.furnitureType.selected svg{color:#fff}
+.confirmFurniture{width:100%;height:52px;margin-top:12px;border:0;border-radius:14px;background:var(--accent);color:#fff;font-weight:800}
+.confirmFurniture:disabled{opacity:.38}
+body.modal-open{overflow:hidden}
+@media (min-width:520px){.furnitureGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="eyebrow">EVENTVISION · HELLOXR TEST</div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v5</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -111,6 +133,11 @@ body.xr-active canvas{background:transparent!important}
 
     <svg id="plan" viewBox="0 0 500 430"></svg>
 
+    <button id="addFurniture" class="addFurnitureBtn">
+      <span class="addFurnitureIcon">＋</span>
+      <span>Add furniture</span>
+    </button>
+
     <details id="detailsPanel">
       <summary>
         <span>Details</span>
@@ -126,6 +153,56 @@ body.xr-active canvas{background:transparent!important}
     </details>
   </section>
 </main>
+
+<div id="furnitureModal" class="furnitureModal" aria-hidden="true">
+  <div class="furnitureSheet" role="dialog" aria-modal="true" aria-labelledby="furnitureTitle">
+    <div class="furnitureHandle"></div>
+    <div class="furnitureHeader">
+      <div>
+        <div class="eyebrow">ADD FURNITURE</div>
+        <h3 id="furnitureTitle">Choose a type</h3>
+      </div>
+      <button id="closeFurniture" class="closeFurniture" aria-label="Close furniture picker">×</button>
+    </div>
+
+    <div class="furnitureGrid" id="furnitureGrid">
+      <button class="furnitureType" data-type="Chair">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M16 9v15h18V9M14 24h22v6H14zM18 30v9M32 30v9"/></svg>
+        <span>Chair</span>
+      </button>
+      <button class="furnitureType" data-type="Table">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 17h30v8H9zM14 25v14M34 25v14"/></svg>
+        <span>Table</span>
+      </button>
+      <button class="furnitureType" data-type="Lounge">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22v-5c0-3 2-5 5-5h14c3 0 5 2 5 5v5M9 22v13h30V22M14 35v4M34 35v4M15 27h18"/></svg>
+        <span>Lounge</span>
+      </button>
+      <button class="furnitureType" data-type="Bar">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 13h30l-4 10H13zM13 23h22v15H13zM18 29h12"/></svg>
+        <span>Bar</span>
+      </button>
+      <button class="furnitureType" data-type="Stage / DJ">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 29h32v9H8zM14 29V17h20v12M19 23h10M24 12v5"/></svg>
+        <span>Stage / DJ</span>
+      </button>
+      <button class="furnitureType" data-type="Decoration">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8l3.7 8.5L37 17l-7 6 2.3 9L24 27l-8.3 5 2.3-9-7-6 9.3-.5z"/></svg>
+        <span>Decoration</span>
+      </button>
+      <button class="furnitureType" data-type="Lighting">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 18a7 7 0 0114 0c0 4-3 6-4 9h-6c-1-3-4-5-4-9zM21 31h6M22 35h4M24 5v5M8 19h5M35 19h5M13 8l4 4M35 8l-4 4"/></svg>
+        <span>Lighting</span>
+      </button>
+      <button class="furnitureType" data-type="Plant">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 38V20M24 27c-8 0-12-5-12-12 8 0 12 5 12 12zM24 22c8 0 12-5 12-12-8 0-12 5-12 12zM17 38h14"/></svg>
+        <span>Plant</span>
+      </button>
+    </div>
+
+    <button id="confirmFurniture" class="confirmFurniture" disabled>Choose furniture type</button>
+  </div>
+</div>
 
 <div id="hud">
   <div class="hudTop">
@@ -160,7 +237,12 @@ const el = {
   areaMetric: document.getElementById('areaMetric'),
   walls: document.getElementById('walls'),
   introCard: document.getElementById('introCard'),
-  scanAgain: document.getElementById('scanAgain')
+  scanAgain: document.getElementById('scanAgain'),
+  addFurniture: document.getElementById('addFurniture'),
+  furnitureModal: document.getElementById('furnitureModal'),
+  closeFurniture: document.getElementById('closeFurniture'),
+  furnitureGrid: document.getElementById('furnitureGrid'),
+  confirmFurniture: document.getElementById('confirmFurniture')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -171,6 +253,7 @@ let floorY = null;
 let corners = [];
 let objects = [];
 let finishedCorners = [];
+let selectedFurnitureType = null;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
 
@@ -499,12 +582,55 @@ function endAR(){
 }
 
 
+function openFurniturePicker(){
+  selectedFurnitureType=null;
+  el.furnitureGrid.querySelectorAll('.furnitureType').forEach(btn=>btn.classList.remove('selected'));
+  el.confirmFurniture.disabled=true;
+  el.confirmFurniture.textContent='Choose furniture type';
+  el.furnitureModal.classList.add('open');
+  el.furnitureModal.setAttribute('aria-hidden','false');
+  document.body.classList.add('modal-open');
+}
+
+function closeFurniturePicker(){
+  el.furnitureModal.classList.remove('open');
+  el.furnitureModal.setAttribute('aria-hidden','true');
+  document.body.classList.remove('modal-open');
+}
+
+el.addFurniture.addEventListener('click',openFurniturePicker);
+el.closeFurniture.addEventListener('click',closeFurniturePicker);
+
+el.furnitureModal.addEventListener('click',e=>{
+  if(e.target===el.furnitureModal) closeFurniturePicker();
+});
+
+el.furnitureGrid.addEventListener('click',e=>{
+  const btn=e.target.closest('.furnitureType');
+  if(!btn) return;
+  el.furnitureGrid.querySelectorAll('.furnitureType').forEach(item=>item.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedFurnitureType=btn.dataset.type;
+  el.confirmFurniture.disabled=false;
+  el.confirmFurniture.textContent=`Continue with ${selectedFurnitureType}`;
+});
+
+el.confirmFurniture.addEventListener('click',()=>{
+  if(!selectedFurnitureType) return;
+  closeFurniturePicker();
+  el.addFurniture.innerHTML=`<span class="addFurnitureIcon">＋</span><span>Add ${selectedFurnitureType}</span>`;
+});
+
+
 el.scanAgain.addEventListener('click',()=>{
   completed=false;
   corners=[];
   finishedCorners=[];
   floorY=null;
   el.result.classList.remove('show');
+  closeFurniturePicker();
+  selectedFurnitureType=null;
+  el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add furniture</span>';
   if(el.introCard) el.introCard.style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
 });
