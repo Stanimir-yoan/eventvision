@@ -42,7 +42,7 @@ p{margin:0;color:var(--muted);line-height:1.5}
 .cross:before{left:26px;top:0;width:2px;height:54px}
 .cross:after{left:0;top:26px;width:54px;height:2px}
 .crossDot{position:absolute;left:19px;top:19px;width:16px;height:16px;border-radius:50%;border:2px solid #fff}
-.hudBottom{position:absolute;left:10px;right:10px;bottom:calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.4fr;gap:8px;pointer-events:auto}
+.hudBottom{position:absolute;left:10px;right:10px;bottom:calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:.8fr 1.35fr 1fr;gap:8px;pointer-events:auto}
 .hudBottom button{height:50px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(16,16,20,.78);color:#fff;font-weight:800;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .hudBottom .finish{background:rgba(107,92,255,.93)}
 .hudBottom button:disabled{opacity:.4}
@@ -62,7 +62,7 @@ body.xr-active canvas{background:transparent!important}
     <strong>Scan workflow</strong>
     <div class="steps">
       <div class="step"><div class="num">1</div><div><b>Enter AR</b><div class="small">Move the phone slowly until the floor target appears.</div></div></div>
-      <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner and tap the camera view.</div></div></div>
+      <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner and press Add corner.</div></div></div>
       <div class="step"><div class="num">3</div><div><b>Close room</b><div class="small">Finish after at least 3 corners to create the measured top view.</div></div></div>
     </div>
     <button id="start" class="primary" disabled>Enter AR scan</button>
@@ -91,7 +91,8 @@ body.xr-active canvas{background:transparent!important}
 
   <div class="hudBottom">
     <button id="undo" disabled>Undo</button>
-    <button id="finish" class="finish" disabled>Finish room</button>
+    <button id="addCorner" class="finish" disabled>Add corner</button>
+    <button id="finish" disabled>Finish</button>
   </div>
 </div>
 
@@ -105,6 +106,7 @@ const el = {
   hint: document.getElementById('hint'),
   count: document.getElementById('count'),
   undo: document.getElementById('undo'),
+  addCorner: document.getElementById('addCorner'),
   finish: document.getElementById('finish'),
   result: document.getElementById('result'),
   plan: document.getElementById('plan'),
@@ -115,6 +117,7 @@ const el = {
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
 let hitValid = false;
+let latestHit = null;
 let completed = false;
 let floorY = null;
 let corners = [];
@@ -202,7 +205,6 @@ async function enterAR(){
   el.hud.classList.add('active');
   updateControls();
 
-  session.addEventListener('select',placePoint);
   session.addEventListener('end',endAR);
 
   renderer.setAnimationLoop(render);
@@ -218,8 +220,10 @@ function render(_time,frame){
         reticle.visible=true;
         reticle.matrix.fromArray(pose.transform.matrix);
         hitValid=true;
+        el.addCorner.disabled=completed ? true : false;
 
         const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+        latestHit = p.clone();
 
         if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
           reticle.material.color.set(0x43d47c);
@@ -232,16 +236,21 @@ function render(_time,frame){
     }else{
       reticle.visible=false;
       hitValid=false;
+      latestHit=null;
+      el.addCorner.disabled=true;
       el.hint.textContent='Finding floor — move slowly';
     }
   }
   renderer.render(scene,camera);
 }
 
-function placePoint(){
-  if(!hitValid || completed || !reticle.visible) return;
+function placeCurrentHit(){
+  if(!hitValid || !latestHit || completed) {
+    el.hint.textContent='No floor point yet — move phone slowly';
+    return;
+  }
 
-  const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+  const p=latestHit.clone();
 
   if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
     closeRoom();
@@ -259,6 +268,7 @@ function placePoint(){
   corners.push(p.clone());
   rebuildObjects();
   updateControls();
+  el.hint.textContent='Corner added ✓';
 }
 
 function marker(p,index){
@@ -300,6 +310,7 @@ function rebuildObjects(){
 function updateControls(){
   el.count.textContent=`${corners.length} corner${corners.length===1?'':'s'}`;
   el.undo.disabled=completed || corners.length===0;
+  el.addCorner.disabled=completed || !hitValid;
   el.finish.disabled=completed || corners.length<3;
 }
 
@@ -311,6 +322,12 @@ function closeRoom(){
   el.hint.textContent='Room complete ✓';
   setTimeout(()=>session?.end(),400);
 }
+
+el.addCorner.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  placeCurrentHit();
+});
 
 el.undo.addEventListener('click',e=>{
   e.preventDefault();
@@ -386,6 +403,14 @@ function drawResult(){
 
   el.result.scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+
+document.addEventListener('pointerup',e=>{
+  if(!document.body.classList.contains('xr-active')) return;
+  if(e.target.closest && e.target.closest('#hud button')) return;
+  // Fallback for HelloXR builds that expose DOM pointer events rather than XR select.
+  placeCurrentHit();
+});
 
 function endAR(){
   renderer?.setAnimationLoop(null);
