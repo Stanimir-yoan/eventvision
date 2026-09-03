@@ -29,10 +29,10 @@ p{color:var(--muted);line-height:1.5}
 .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
 .metric{background:#0f0f12;border:1px solid var(--line);border-radius:12px;padding:10px}
 .metric small{display:block;color:var(--muted);font-size:11px}.metric b{display:block;margin-top:3px}
-#arHud{position:fixed;inset:0;display:none;pointer-events:none;z-index:9999}
+#arHud{position:fixed;inset:0;display:none;pointer-events:none;z-index:10001}
 #arHud.active{display:block}
-.hudTop{position:absolute;top:calc(12px + env(safe-area-inset-top));left:12px;right:12px;display:flex;justify-content:space-between;gap:8px}
-.pill{background:rgba(15,15,18,.78);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.15);padding:8px 11px;border-radius:999px;font-size:12px;font-weight:800}
+.hudTop{position:absolute;top:calc(8px + env(safe-area-inset-top));left:8px;right:8px;display:flex;justify-content:space-between;gap:6px}
+.pill{background:rgba(15,15,18,.72);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.14);padding:7px 9px;border-radius:999px;font-size:11px;font-weight:800;max-width:72%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hudBottom{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;pointer-events:auto}
 .hudBottom button{flex:1;max-width:160px;height:48px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(15,15,18,.85);color:#fff;font-weight:800}
 .hudBottom .close{background:rgba(108,92,255,.9)}
@@ -40,6 +40,11 @@ p{color:var(--muted);line-height:1.5}
 .warn{color:#ffd38a}
 .ok{color:#8ef0b2}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+body.ar-active{overflow:hidden}
+body.ar-active .shell{display:none}
+body.ar-active canvas{z-index:10000!important}
+
 </style>
 </head>
 <body>
@@ -118,7 +123,7 @@ function makeRenderer(){
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.domElement.style.position='fixed';
   renderer.domElement.style.inset='0';
-  renderer.domElement.style.zIndex='1';
+  renderer.domElement.style.zIndex='10000';
   renderer.domElement.style.touchAction='none';
   document.body.appendChild(renderer.domElement);
 
@@ -196,6 +201,7 @@ async function startAR(){
   const viewerSpace = await session.requestReferenceSpace('viewer');
   hitTestSource = await session.requestHitTestSource({space:viewerSpace});
 
+  document.body.classList.add('ar-active');
   arHud.classList.add('active');
   setHint('Move phone slowly — finding floor');
   updateControls();
@@ -320,6 +326,7 @@ finishBtn.addEventListener('click',closeRoom);
 function onSessionEnd(){
   renderer.setAnimationLoop(null);
   arHud.classList.remove('active');
+  document.body.classList.remove('ar-active');
   if(renderer?.domElement) renderer.domElement.style.display='none';
   session=null;
   hitTestSource=null;
