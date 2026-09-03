@@ -51,12 +51,34 @@ body.xr-active{background:transparent!important;overflow:hidden}
 body.xr-active .shell{display:none!important}
 body.xr-active canvas{background:transparent!important}
 
-#result.show{
-  display:block !important;
-  border-color:rgba(107,92,255,.45);
+
+
+
+#result{
+  display:none;
+  margin-top:18px;
+  padding:0;
+  background:transparent;
+  border:0;
 }
-#introCard[style*="display: none"] + #result{
-  margin-top:15px;
+#result.show{display:block !important;border:0 !important}
+.resultTop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.resultTitle{margin:5px 0 0;font-size:22px;line-height:1.1}
+.resultScanAgain{min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:#fff;font-weight:750;white-space:nowrap}
+#plan{width:calc(100% + 12px);margin-left:-6px;display:block;background:#0d0d10;border-radius:16px}
+#detailsPanel{margin-top:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#detailsPanel summary{min-height:50px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;font-size:14px;font-weight:800;user-select:none}
+#detailsPanel summary::-webkit-details-marker{display:none}
+.detailsChevron{font-size:18px;color:var(--muted);transition:transform .18s ease}
+#detailsPanel[open] .detailsChevron{transform:rotate(180deg)}
+.detailsBody{padding:0 0 12px}
+#detailsPanel .metrics{margin-top:0}
+#detailsPanel #walls{margin-top:8px}
+@media (max-width:420px){
+  .shell{padding-left:10px;padding-right:10px}
+  #plan{width:calc(100% + 8px);margin-left:-4px}
+  .resultTop{align-items:center}
+  .resultTitle{font-size:20px}
 }
 
 </style>
@@ -78,16 +100,30 @@ body.xr-active canvas{background:transparent!important}
     <div id="support">Checking WebXR…</div>
   </section>
 
-  <section id="result" class="card">
-    <div class="eyebrow">SCAN COMPLETE</div>
-    <h2 style="margin:6px 0 12px">Measured floor plan</h2>
-    <svg id="plan" viewBox="0 0 500 330"></svg>
-    <div class="metrics">
-      <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
-      <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
+  <section id="result">
+    <div class="resultTop">
+      <div>
+        <div class="eyebrow">SCAN COMPLETE</div>
+        <h2 class="resultTitle">Measured floor plan</h2>
+      </div>
+      <button id="scanAgain" class="resultScanAgain">Scan again</button>
     </div>
-    <div id="walls"></div>
-    <button id="scanAgain" class="primary" style="margin-top:12px">Scan another room</button>
+
+    <svg id="plan" viewBox="0 0 500 430"></svg>
+
+    <details id="detailsPanel">
+      <summary>
+        <span>Details</span>
+        <span class="detailsChevron">⌄</span>
+      </summary>
+      <div class="detailsBody">
+        <div class="metrics">
+          <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
+          <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
+        </div>
+        <div id="walls"></div>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -383,6 +419,8 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
   el.result.classList.add('show');
   if(el.introCard) el.introCard.style.display='none';
+  const detailsPanel=document.getElementById('detailsPanel');
+  if(detailsPanel) detailsPanel.open=false;
 
   el.cornerMetric.textContent=points.length;
   el.areaMetric.textContent=areaXZ(points).toFixed(2)+' m²';
@@ -390,8 +428,8 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
   const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
-  const k=Math.min(400/w,240/h);
-  const cx=250,cy=165;
+  const k=Math.min(455/w,385/h);
+  const cx=250,cy=215;
 
   const mapped=points.map(p=>({
     x:(p.x-(minX+maxX)/2)*k+cx,
