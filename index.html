@@ -104,7 +104,7 @@ body.modal-open{overflow:hidden}
 @media (min-width:520px){.furnitureGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 
-/* v6.1 — floor-plan furniture editing */
+/* v7 — floor-plan furniture editing */
 .planEditor{
   position:relative;
   width:calc(100% + 12px);
@@ -263,11 +263,115 @@ body.modal-open{overflow:hidden}
   opacity:.4;
 }
 
+
+/* v7 — keep XR tracking alive behind the finished plan */
+body.xr-active.layout-mode{
+  overflow:auto;
+  background:var(--bg) !important;
+}
+
+body.xr-active.layout-mode .shell{
+  display:block !important;
+  position:relative;
+  z-index:20000;
+  min-height:100vh;
+  background:var(--bg);
+}
+
+body.xr-active.layout-mode #hud{
+  display:none !important;
+}
+
+body.xr-active.layout-mode canvas{
+  opacity:0 !important;
+  pointer-events:none !important;
+}
+
+.resultHeaderActions{
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+
+.trackingBadge{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:0 10px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel2);
+  color:#fff;
+  font-size:11px;
+  font-weight:750;
+  white-space:nowrap;
+}
+
+.trackingDot{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#43d47c;
+  box-shadow:0 0 0 3px rgba(67,212,124,.13);
+}
+
+.trackingBadge.paused .trackingDot{
+  background:#888894;
+  box-shadow:none;
+}
+
+#plan{
+  overflow:visible;
+}
+
+.phonePoseMarker .phoneHalo{
+  fill:rgba(67,212,124,.13);
+  stroke:rgba(67,212,124,.42);
+  stroke-width:1.5;
+}
+
+.phonePoseMarker .phoneDot{
+  fill:#43d47c;
+  stroke:#fff;
+  stroke-width:2.5;
+}
+
+.phonePoseMarker .phoneArrow{
+  fill:#43d47c;
+  stroke:#fff;
+  stroke-width:1.5;
+  stroke-linejoin:round;
+}
+
+.phonePoseMarker .phoneLabel{
+  fill:#fff;
+  font-size:11px;
+  font-weight:700;
+  paint-order:stroke;
+  stroke:#0d0d10;
+  stroke-width:3px;
+  stroke-linejoin:round;
+}
+
+.phonePoseMarker.paused{
+  opacity:.55;
+}
+
+@media (max-width:420px){
+  .trackingBadge{
+    padding:0 8px;
+  }
+  #trackingText{
+    display:none;
+  }
+}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v6</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v7</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -288,7 +392,13 @@ body.modal-open{overflow:hidden}
         <div class="eyebrow">SCAN COMPLETE</div>
         <h2 class="resultTitle">Measured floor plan</h2>
       </div>
-      <button id="scanAgain" class="resultScanAgain">Scan again</button>
+      <div class="resultHeaderActions">
+        <div id="trackingBadge" class="trackingBadge">
+          <span class="trackingDot"></span>
+          <span id="trackingText">Live phone</span>
+        </div>
+        <button id="scanAgain" class="resultScanAgain">Scan again</button>
+      </div>
     </div>
 
     <div class="planEditor" id="planEditor">
@@ -408,6 +518,8 @@ const el = {
   cornerMetric: document.getElementById('cornerMetric'),
   areaMetric: document.getElementById('areaMetric'),
   walls: document.getElementById('walls'),
+  trackingBadge: document.getElementById('trackingBadge'),
+  trackingText: document.getElementById('trackingText'),
   introCard: document.getElementById('introCard'),
   scanAgain: document.getElementById('scanAgain'),
   addFurniture: document.getElementById('addFurniture'),
@@ -425,6 +537,11 @@ let floorY = null;
 let corners = [];
 let objects = [];
 let finishedCorners = [];
+let latestViewerPosition = null;
+let latestViewerOrientation = null;
+let planTransform = null;
+let phonePoseGroup = null;
+
 let selectedFurnitureType = null;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
@@ -494,6 +611,11 @@ async function enterAR(){
   completed=false;
   corners=[];
   finishedCorners=[];
+  latestViewerPosition=null;
+  latestViewerOrientation=null;
+  planTransform=null;
+  phonePoseGroup=null;
+  document.body.classList.remove('layout-mode');
   floorY=null;
   if(el.introCard) el.introCard.style.display='block';
   clearObjects();
@@ -517,7 +639,24 @@ async function enterAR(){
 }
 
 function render(_time,frame){
-  if(frame && hitSource && refSpace){
+  if(frame && refSpace){
+    const viewerPose = frame.getViewerPose(refSpace);
+
+    if(viewerPose){
+      const tp = viewerPose.transform.position;
+      const tq = viewerPose.transform.orientation;
+
+      latestViewerPosition = new THREE.Vector3(tp.x,tp.y,tp.z);
+      latestViewerOrientation = new THREE.Quaternion(tq.x,tq.y,tq.z,tq.w);
+
+      if(completed && planTransform){
+        updatePhonePoseMarker();
+      }
+    }
+  }
+
+  // Hit testing is only needed while tracing the room.
+  if(!completed && frame && hitSource && refSpace){
     const hits=frame.getHitTestResults(hitSource);
 
     if(hits.length){
@@ -526,10 +665,10 @@ function render(_time,frame){
         reticle.visible=true;
         reticle.matrix.fromArray(pose.transform.matrix);
         hitValid=true;
-        el.addCorner.disabled=completed ? true : false;
+        el.addCorner.disabled=false;
 
         const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-        latestHit = p.clone();
+        latestHit=p.clone();
 
         if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
           reticle.material.color.set(0x43d47c);
@@ -546,7 +685,12 @@ function render(_time,frame){
       el.addCorner.disabled=true;
       el.hint.textContent='Finding floor — move slowly';
     }
+  }else if(completed){
+    reticle.visible=false;
+    hitValid=false;
+    latestHit=null;
   }
+
   renderer.render(scene,camera);
 }
 
@@ -628,14 +772,27 @@ function closeRoom(){
 
   rebuildObjects();
   updateControls();
-  el.hint.textContent='Room complete ✓';
+  reticle.visible=false;
 
-  // Prepare the result while XR is still alive.
+  // Draw the plan but KEEP this exact XR session alive.
   drawResult(finishedCorners);
 
-  setTimeout(()=>{
-    if(session) session.end();
-  },500);
+  document.body.classList.add('layout-mode');
+  el.hud.classList.remove('active');
+
+  if(el.trackingBadge){
+    el.trackingBadge.classList.remove('paused');
+  }
+  if(el.trackingText){
+    el.trackingText.textContent='Live phone';
+  }
+
+  requestAnimationFrame(()=>{
+    el.result.scrollIntoView({
+      behavior:'smooth',
+      block:'start'
+    });
+  });
 }
 
 el.addCorner.addEventListener('click',e=>{
@@ -674,6 +831,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
   el.result.classList.add('show');
   if(el.introCard) el.introCard.style.display='none';
+
   const detailsPanel=document.getElementById('detailsPanel');
   if(detailsPanel) detailsPanel.open=false;
 
@@ -681,14 +839,25 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   el.areaMetric.textContent=areaXZ(points).toFixed(2)+' m²';
 
   const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
-  const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+  const minX=Math.min(...xs),maxX=Math.max(...xs);
+  const minZ=Math.min(...zs),maxZ=Math.max(...zs);
   const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
   const k=Math.min(455/w,385/h);
   const cx=250,cy=215;
+  const worldCenterX=(minX+maxX)/2;
+  const worldCenterZ=(minZ+maxZ)/2;
+
+  planTransform={
+    k,
+    cx,
+    cy,
+    worldCenterX,
+    worldCenterZ
+  };
 
   const mapped=points.map(p=>({
-    x:(p.x-(minX+maxX)/2)*k+cx,
-    y:(p.z-(minZ+maxZ)/2)*k+cy
+    x:(p.x-worldCenterX)*k+cx,
+    y:(p.z-worldCenterZ)*k+cy
   }));
 
   el.plan.innerHTML='';
@@ -713,6 +882,40 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
     el.plan.appendChild(c);
   });
 
+  // Live phone position + direction marker.
+  phonePoseGroup=document.createElementNS(ns,'g');
+  phonePoseGroup.setAttribute('class','phonePoseMarker');
+  phonePoseGroup.setAttribute('aria-label','Current phone position and direction');
+
+  const halo=document.createElementNS(ns,'circle');
+  halo.setAttribute('class','phoneHalo');
+  halo.setAttribute('cx','0');
+  halo.setAttribute('cy','0');
+  halo.setAttribute('r','18');
+  phonePoseGroup.appendChild(halo);
+
+  const arrow=document.createElementNS(ns,'path');
+  arrow.setAttribute('class','phoneArrow');
+  arrow.setAttribute('d','M 0 -30 L 8 -14 L -8 -14 Z');
+  phonePoseGroup.appendChild(arrow);
+
+  const dot=document.createElementNS(ns,'circle');
+  dot.setAttribute('class','phoneDot');
+  dot.setAttribute('cx','0');
+  dot.setAttribute('cy','0');
+  dot.setAttribute('r','8');
+  phonePoseGroup.appendChild(dot);
+
+  const label=document.createElementNS(ns,'text');
+  label.setAttribute('class','phoneLabel');
+  label.setAttribute('x','14');
+  label.setAttribute('y','4');
+  label.textContent='Phone';
+  phonePoseGroup.appendChild(label);
+
+  phonePoseGroup.style.display='none';
+  el.plan.appendChild(phonePoseGroup);
+
   el.walls.innerHTML='';
   points.forEach((p,i)=>{
     const q=points[(i+1)%points.length];
@@ -721,11 +924,49 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
     item.innerHTML=`<small>Wall ${i+1}</small><b>${distanceXZ(p,q).toFixed(2)} m</b>`;
     el.walls.appendChild(item);
   });
+
+  updatePhonePoseMarker();
+}
+
+function updatePhonePoseMarker(){
+  if(!phonePoseGroup || !planTransform || !latestViewerPosition || !latestViewerOrientation){
+    return;
+  }
+
+  const {k,cx,cy,worldCenterX,worldCenterZ}=planTransform;
+
+  const px=(latestViewerPosition.x-worldCenterX)*k+cx;
+  const py=(latestViewerPosition.z-worldCenterZ)*k+cy;
+
+  // WebXR camera forward is local -Z. Convert it into world space.
+  const forward=new THREE.Vector3(0,0,-1)
+    .applyQuaternion(latestViewerOrientation)
+    .normalize();
+
+  // Our SVG uses +X right and +Z downward.
+  // Marker artwork points upward at 0deg.
+  const angle=Math.atan2(forward.x,-forward.z)*180/Math.PI;
+
+  phonePoseGroup.setAttribute(
+    'transform',
+    `translate(${px.toFixed(2)} ${py.toFixed(2)}) rotate(${angle.toFixed(2)})`
+  );
+  phonePoseGroup.style.display='';
+
+  // Keep the text readable instead of rotating with the arrow.
+  const label=phonePoseGroup.querySelector('.phoneLabel');
+  if(label){
+    label.setAttribute(
+      'transform',
+      `rotate(${-angle.toFixed(2)} 14 4)`
+    );
+  }
 }
 
 
 document.addEventListener('pointerup',e=>{
   if(!document.body.classList.contains('xr-active')) return;
+  if(document.body.classList.contains('layout-mode')) return;
   if(e.target.closest && e.target.closest('#hud button')) return;
   // Fallback for HelloXR builds that expose DOM pointer events rather than XR select.
   placeCurrentHit();
@@ -735,6 +976,7 @@ function endAR(){
   renderer?.setAnimationLoop(null);
   el.hud.classList.remove('active');
   document.body.classList.remove('xr-active');
+  document.body.classList.remove('layout-mode');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
@@ -743,6 +985,16 @@ function endAR(){
 
   if(completed && finishedCorners.length>=3){
     drawResult(finishedCorners);
+
+    if(phonePoseGroup){
+      phonePoseGroup.classList.add('paused');
+    }
+    if(el.trackingBadge){
+      el.trackingBadge.classList.add('paused');
+    }
+    if(el.trackingText){
+      el.trackingText.textContent='Tracking paused';
+    }
 
     requestAnimationFrame(()=>{
       el.result.scrollIntoView({
@@ -817,12 +1069,27 @@ el.scanAgain.addEventListener('click',()=>{
   corners=[];
   finishedCorners=[];
   floorY=null;
+  planTransform=null;
+  phonePoseGroup=null;
+
+  clearObjects();
   el.result.classList.remove('show');
   closeFurniturePicker();
+
   selectedFurnitureType=null;
   el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add furniture</span>';
-  if(el.introCard) el.introCard.style.display='block';
-  window.scrollTo({top:0,behavior:'smooth'});
+
+  if(session){
+    // Return directly to tracing while preserving the same XR world origin.
+    document.body.classList.remove('layout-mode');
+    el.hud.classList.add('active');
+    reticle.visible=false;
+    updateControls();
+    el.hint.textContent='Finding floor — move slowly';
+  }else{
+    if(el.introCard) el.introCard.style.display='block';
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
 });
 
 el.start.addEventListener('click',()=>{
