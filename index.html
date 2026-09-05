@@ -705,7 +705,7 @@ body.xr-active.photo-mode canvas{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.3</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -856,7 +856,7 @@ body.xr-active.photo-mode canvas{
   <div class="photoHudTop">
     <div class="pill">PHOTO VIEW · AR OVERLAY</div>
     <div class="photoHudStatus">
-      <div class="pill" id="nativeFrameStatus">Waiting cv_data…</div>
+      <div class="pill" id="nativeFrameStatus">Camera frame optional</div>
       <div class="pill" id="photoPoseText">Live pose</div>
     </div>
   </div>
@@ -1021,30 +1021,13 @@ function setNativeFrameStatus(text,state=''){
 }
 
 
+
 function installCVDispatchInterceptor(){
   if(cvDispatchInterceptorInstalled) return;
 
-  const proto=EventTarget?.prototype;
-
-  if(!proto || typeof proto.dispatchEvent!=='function'){
-    setNativeFrameStatus('CV event hook unavailable','error');
-    return;
-  }
-
-  const originalDispatch=proto.dispatchEvent;
-
-  if(originalDispatch.__eventVisionCVInterceptor){
-    cvDispatchInterceptorInstalled=true;
-    return;
-  }
-
-  const wrappedDispatch=function(event){
+  const receiveFrame=event=>{
     try{
-      if(
-        event &&
-        event.type==='cv_data' &&
-        event.detail
-      ){
+      if(event?.type==='cv_data' && event.detail){
         latestNativeCameraFrame=event.detail;
         nativeCameraFrameCount++;
 
@@ -1053,16 +1036,14 @@ function installCVDispatchInterceptor(){
         }
       }
     }catch(err){
-      console.warn('EventVision cv_data interception failed',err);
+      console.warn('EventVision passive cv_data listener failed',err);
     }
-
-    return originalDispatch.call(this,event);
   };
 
-  wrappedDispatch.__eventVisionCVInterceptor=true;
-  wrappedDispatch.__eventVisionOriginal=originalDispatch;
+  // Passive only: never patch EventTarget.prototype or HelloXR internals.
+  window.addEventListener('cv_data',receiveFrame,true);
+  document.addEventListener('cv_data',receiveFrame,true);
 
-  proto.dispatchEvent=wrappedDispatch;
   cvDispatchInterceptorInstalled=true;
 }
 
@@ -1540,8 +1521,8 @@ async function enterAR(){
 
   try{
     session = await navigator.xr.requestSession('immersive-ar',{
-      requiredFeatures:['hit-test','computerVision'],
-      optionalFeatures:['local-floor','dom-overlay'],
+      requiredFeatures:['hit-test'],
+      optionalFeatures:['local-floor','dom-overlay','computerVision'],
       domOverlay:{root:document.body}
     });
   }catch(err){
@@ -1573,23 +1554,43 @@ async function enterAR(){
   clearObjects();
   el.result.classList.remove('show');
 
-  await renderer.xr.setSession(session);
+  try{
+    await renderer.xr.setSession(session);
+  }catch(err){
+    console.error('renderer.xr.setSession failed',err);
+    try{ await session.end(); }catch(_){}
+    alert('AR renderer could not start: '+err.message);
+    return;
+  }
 
   installCVDispatchInterceptor();
 
-  refSpace = await session.requestReferenceSpace('local-floor')
-    .catch(()=>session.requestReferenceSpace('local'));
-
-  const viewerSpace = await session.requestReferenceSpace('viewer');
-  hitSource = await session.requestHitTestSource({space:viewerSpace});
-
+  // Enter scan UI immediately once XR itself is alive.
   document.body.classList.add('xr-active');
   el.hud.classList.add('active');
+  el.hint.textContent='Initializing tracking…';
   updateControls();
 
   session.addEventListener('end',endAR);
-
   renderer.setAnimationLoop(render);
+
+  try{
+    refSpace = await session.requestReferenceSpace('local-floor')
+      .catch(()=>session.requestReferenceSpace('local'));
+  }catch(err){
+    console.error('XR reference space failed',err);
+    el.hint.textContent='Tracking reference unavailable';
+    return;
+  }
+
+  try{
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    hitSource = await session.requestHitTestSource({space:viewerSpace});
+    el.hint.textContent='Finding floor — move slowly';
+  }catch(err){
+    console.error('XR hit-test setup failed',err);
+    el.hint.textContent='Floor hit-test unavailable';
+  }
 }
 
 function render(_time,frame){
@@ -1888,7 +1889,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_2',
+    protocol_version:'EventVision_v8_3',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2160,7 +2161,7 @@ function enterPhotoMode(){
   if(latestNativeCameraFrame){
     setNativeFrameStatus('Native frame ✓','ready');
   }else{
-    setNativeFrameStatus('Waiting cv_data…','');
+    setNativeFrameStatus('Camera frame optional','');
   }
 
   if(renderer?.domElement){
@@ -2417,7 +2418,7 @@ function endAR(){
   photoMode=false;
   latestNativeCameraFrame=null;
   el.photoHud?.classList.remove('active');
-  setNativeFrameStatus('Waiting cv_data…','');
+  setNativeFrameStatus('Camera frame optional','');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
