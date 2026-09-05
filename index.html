@@ -675,63 +675,95 @@ body.xr-active.photo-mode canvas{
 }
 
 
-/* v9 — stable clean-photo workflow from v8 */
-.v9Actions{
-  grid-template-columns:1fr 1fr;
+/* v8.1b — system screenshot workflow; v8 scan/session logic untouched */
+.photoHudBottom.screenshotControls{
+  grid-template-columns:1fr 1.55fr 1fr;
 }
 
-.cleanPhotoBtn{
-  background:var(--accent) !important;
-  border:1px solid transparent !important;
-}
-
-.debugCaptureBtn{
-  grid-column:1 / -1;
-  min-height:42px;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:transparent;
-  color:var(--muted);
-  font-size:12px;
-  font-weight:750;
-}
-
-#cleanPhotoPreview{
-  display:block;
-  width:100%;
-  max-height:62vh;
-  object-fit:contain;
+.prepareScreenshotBtn{
+  min-height:52px;
+  border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
-  background:#000;
-}
-
-.cleanPoseBadge{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:6px 9px;
-  border-radius:999px;
-  border:1px solid var(--line);
-  background:var(--panel2);
+  background:rgba(107,92,255,.92);
   color:#fff;
+  font-size:12px;
+  font-weight:900;
+  line-height:1.15;
+  padding:0 12px;
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+
+.screenshotToast{
+  position:fixed;
+  left:50%;
+  top:calc(14px + env(safe-area-inset-top));
+  transform:translateX(-50%);
+  z-index:150000;
+  display:none;
+  min-width:230px;
+  max-width:calc(100% - 30px);
+  padding:10px 13px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:14px;
+  background:rgba(12,12,15,.78);
+  color:#fff;
+  text-align:center;
+  pointer-events:none;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+
+.screenshotToast.show{
+  display:block;
+}
+
+.screenshotToast strong,
+.screenshotToast span{
+  display:block;
+}
+
+.screenshotToast strong{
+  font-size:12px;
+}
+
+.screenshotToast span{
+  margin-top:2px;
+  color:#d3d3da;
   font-size:10px;
-  font-weight:800;
 }
 
-.cleanPoseBadge .dot{
-  width:7px;
-  height:7px;
-  border-radius:50%;
-  background:#43d47c;
+body.xr-active.photo-mode.screenshot-ready #photoHud{
+  display:none !important;
 }
 
-.cleanPoseBadge.warn .dot{
-  background:#ffd08a;
+body.xr-active.photo-mode.screenshot-ready .screenshotToast{
+  display:none !important;
+}
+
+/* In prepared mode only the native room view + Three.js room overlay remain. */
+body.xr-active.photo-mode.screenshot-ready canvas{
+  opacity:1 !important;
+  pointer-events:none !important;
+}
+
+.screenshotPoseCard{
+  border-color:rgba(107,92,255,.38);
 }
 
 @media (max-width:420px){
-  .v9Actions{
-    grid-template-columns:1fr 1fr;
+  .photoHudBottom.screenshotControls{
+    grid-template-columns:.85fr 1.5fr .85fr;
+    gap:7px;
+  }
+
+  .prepareScreenshotBtn{
+    font-size:11px;
+    padding:0 8px;
+  }
+
+  .photoSecondary{
+    font-size:11px;
   }
 }
 
@@ -739,7 +771,7 @@ body.xr-active.photo-mode canvas{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v9</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1b</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -783,27 +815,17 @@ body.xr-active.photo-mode canvas{
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
 
-    <div class="resultActionGrid v9Actions">
-      <button id="takeCleanPhoto" class="addFurnitureBtn cleanPhotoBtn">
-        <span class="addFurnitureIcon">●</span>
-        <span>Take clean photo</span>
+    <div class="resultActionGrid">
+      <button id="cameraView" class="addFurnitureBtn cameraViewBtn">
+        <span class="addFurnitureIcon">▣</span>
+        <span>Screenshot mode</span>
       </button>
 
       <button id="addFurniture" class="addFurnitureBtn">
         <span class="addFurnitureIcon">＋</span>
         <span>Add furniture</span>
       </button>
-
-      <button id="cameraView" class="debugCaptureBtn">
-        <span>Debug overlay view</span>
-      </button>
     </div>
-
-    <input id="cleanPhotoInput"
-           type="file"
-           accept="image/*"
-           capture="environment"
-           hidden>
 
     <details id="detailsPanel">
       <summary>
@@ -822,9 +844,9 @@ body.xr-active.photo-mode canvas{
         <div class="detailSectionTitle">Walls</div>
         <div id="walls"></div>
 
-        <div class="detailSectionTitle">Photos & captured views</div>
+        <div class="detailSectionTitle">Screenshot poses / debug captures</div>
         <div id="captureDetails" class="captureDetails">
-          <div class="emptyDetail">No photos captured yet.</div>
+          <div class="emptyDetail">No screenshot pose saved yet.</div>
         </div>
       </div>
     </details>
@@ -896,49 +918,32 @@ body.xr-active.photo-mode canvas{
   </div>
 </div>
 
-
-<div id="cleanPhotoModal" class="photoPreviewModal" aria-hidden="true">
-  <div class="photoPreviewSheet">
-    <div class="photoPreviewHeader">
-      <div>
-        <div class="eyebrow">CLEAN ROOM PHOTO</div>
-        <h3>Photo + saved camera pose</h3>
-      </div>
-      <button id="closeCleanPhoto" class="closeFurniture" aria-label="Close clean photo preview">×</button>
-    </div>
-
-    <img id="cleanPhotoPreview" alt="Clean room photo without AR overlay">
-
-    <div id="cleanPhotoMeta" class="photoCaptureMeta"></div>
-
-    <div class="photoPreviewActions">
-      <button id="shareCleanPhoto" class="confirmFurniture">Share / Save photo</button>
-      <button id="keepCleanPhoto" class="photoKeepBtn">Keep and return</button>
-    </div>
-  </div>
-</div>
-
 <div id="photoHud" class="photoHud" aria-hidden="true">
   <div class="photoHudTop">
-    <div class="pill">PHOTO VIEW · AR OVERLAY</div>
+    <div class="pill">SCREENSHOT MODE · ROOM + OVERLAY</div>
     <div class="pill" id="photoPoseText">Live pose</div>
   </div>
 
-  <div class="photoHudBottom">
+  <div class="photoHudBottom screenshotControls">
     <button id="backToPlan" class="photoSecondary">← Plan</button>
-    <button id="capturePhoto" class="photoShutter" aria-label="Capture photo">
-      <span class="shutterInner"></span>
+    <button id="capturePhoto" class="prepareScreenshotBtn" aria-label="Prepare iPhone screenshot">
+      Save pose & hide UI
     </button>
-    <button id="photoInfo" class="photoSecondary" disabled>Overlay on</button>
+    <button id="photoInfo" class="photoSecondary" disabled>Overlay ✓</button>
   </div>
+</div>
+
+<div id="screenshotToast" class="screenshotToast" aria-hidden="true">
+  <strong>Pose saved</strong>
+  <span>Use the iPhone screenshot buttons now.</span>
 </div>
 
 <div id="photoPreviewModal" class="photoPreviewModal" aria-hidden="true">
   <div class="photoPreviewSheet">
     <div class="photoPreviewHeader">
       <div>
-        <div class="eyebrow">CAPTURED VIEW</div>
-        <h3>Camera + room overlay</h3>
+        <div class="eyebrow">DEBUG CAPTURE</div>
+        <h3>Web overlay capture</h3>
       </div>
       <button id="closePhotoPreview" class="closeFurniture" aria-label="Close preview">×</button>
     </div>
@@ -981,14 +986,6 @@ const el = {
   furnitureGrid: document.getElementById('furnitureGrid'),
   confirmFurniture: document.getElementById('confirmFurniture'),
   cameraView: document.getElementById('cameraView'),
-  takeCleanPhoto: document.getElementById('takeCleanPhoto'),
-  cleanPhotoInput: document.getElementById('cleanPhotoInput'),
-  cleanPhotoModal: document.getElementById('cleanPhotoModal'),
-  cleanPhotoPreview: document.getElementById('cleanPhotoPreview'),
-  cleanPhotoMeta: document.getElementById('cleanPhotoMeta'),
-  closeCleanPhoto: document.getElementById('closeCleanPhoto'),
-  shareCleanPhoto: document.getElementById('shareCleanPhoto'),
-  keepCleanPhoto: document.getElementById('keepCleanPhoto'),
   cornerDetails: document.getElementById('cornerDetails'),
   captureDetails: document.getElementById('captureDetails'),
   photoHud: document.getElementById('photoHud'),
@@ -1000,7 +997,8 @@ const el = {
   photoCaptureMeta: document.getElementById('photoCaptureMeta'),
   closePhotoPreview: document.getElementById('closePhotoPreview'),
   sharePhoto: document.getElementById('sharePhoto'),
-  keepPhoto: document.getElementById('keepPhoto')
+  keepPhoto: document.getElementById('keepPhoto'),
+  screenshotToast: document.getElementById('screenshotToast')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -1020,9 +1018,8 @@ let captures = [];
 let activeCapture = null;
 let activeCaptureURL = null;
 let photoMode = false;
-let pendingCleanPhotoPose = null;
-let activeCleanPhoto = null;
-let activeCleanPhotoURL = null;
+let screenshotReady = false;
+let lastSavedScreenshotPose = null;
 
 let selectedFurnitureType = null;
 
@@ -1104,14 +1101,6 @@ async function enterAR(){
     URL.revokeObjectURL(activeCaptureURL);
     activeCaptureURL=null;
   }
-
-  pendingCleanPhotoPose=null;
-  activeCleanPhoto=null;
-  if(activeCleanPhotoURL){
-    URL.revokeObjectURL(activeCleanPhotoURL);
-    activeCleanPhotoURL=null;
-  }
-
   photoMode=false;
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
@@ -1433,7 +1422,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9',
+    protocol_version:'EventVision_v8_1b',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1506,7 +1495,7 @@ function renderCaptureDetails(){
   if(!el.captureDetails) return;
 
   if(!captures.length){
-    el.captureDetails.innerHTML='<div class="emptyDetail">No photos captured yet.</div>';
+    el.captureDetails.innerHTML='<div class="emptyDetail">No screenshot pose saved yet.</div>';
     return;
   }
 
@@ -1516,17 +1505,18 @@ function renderCaptureDetails(){
     const p=capture.camera?.position;
     const yaw=capture.camera?.yaw_deg;
     const plan=capture.plan_position;
-    const clean=capture.type==='clean_room_photo';
+    const screenshotPose=capture.type==='system_screenshot_pose';
 
     const card=document.createElement('div');
-    card.className='captureDetailCard';
+    card.className='captureDetailCard' + (screenshotPose ? ' screenshotPoseCard' : '');
 
     card.innerHTML=`
-      <strong>${clean ? 'Clean photo' : 'Debug overlay view'} ${i+1}</strong>
+      <strong>${screenshotPose ? 'Screenshot pose' : 'Debug capture'} ${i+1}</strong>
       <span>
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
         ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
+        ${capture.created_at ? `<br>${new Date(capture.created_at).toLocaleTimeString()}` : ''}
       </span>
     `;
 
@@ -1693,7 +1683,7 @@ document.addEventListener('pointerup',e=>{
 
 
 
-function getCurrentPlanPosition(){
+function currentPhonePlanPosition(){
   if(
     !latestViewerPosition ||
     !scanSceneData?.corners ||
@@ -1723,145 +1713,74 @@ function getCurrentPlanPosition(){
   };
 }
 
-function snapshotCurrentPoseForPhoto(){
-  return {
-    captured_at:new Date().toISOString(),
-    camera:getCurrentCameraMetadata(),
-    plan_position:getCurrentPlanPosition()
-  };
-}
+function saveScreenshotPose(){
+  const camera=getCurrentCameraMetadata();
 
-function beginCleanPhoto(){
-  if(!completed || !scanSceneData){
-    alert('Finish the room scan before taking a room photo.');
-    return;
+  if(!camera){
+    alert('Live AR camera pose is not available yet.');
+    return false;
   }
 
-  // Snapshot the live AR pose immediately BEFORE native camera capture.
-  pendingCleanPhotoPose=snapshotCurrentPoseForPhoto();
+  const planPosition=currentPhonePlanPosition();
 
-  el.cleanPhotoInput.value='';
-  el.cleanPhotoInput.click();
-}
-
-function handleCleanPhotoFile(file){
-  if(!file || !file.type?.startsWith('image/')) return;
-
-  if(activeCleanPhotoURL){
-    URL.revokeObjectURL(activeCleanPhotoURL);
-  }
-
-  activeCleanPhotoURL=URL.createObjectURL(file);
-
-  activeCleanPhoto={
-    id:`photo_${String(captures.length+1).padStart(2,'0')}`,
-    type:'clean_room_photo',
-    file,
-    pose:pendingCleanPhotoPose || snapshotCurrentPoseForPhoto(),
-    created_at:new Date().toISOString()
+  const poseRecord={
+    id:`screenshot_pose_${String(
+      captures.filter(c=>c.type==='system_screenshot_pose').length+1
+    ).padStart(2,'0')}`,
+    type:'system_screenshot_pose',
+    created_at:new Date().toISOString(),
+    camera,
+    plan_position:planPosition,
+    note:'Pose saved immediately before user takes an iPhone system screenshot.'
   };
 
-  el.cleanPhotoPreview.src=activeCleanPhotoURL;
-
-  const p=activeCleanPhoto.pose?.camera?.position;
-  const plan=activeCleanPhoto.pose?.plan_position;
-  const yaw=activeCleanPhoto.pose?.camera?.yaw_deg;
-
-  el.cleanPhotoMeta.innerHTML=
-    `<div class="cleanPoseBadge ${p ? '' : 'warn'}">
-      <span class="dot"></span>
-      <span>${p ? 'AR pose saved before native camera opened' : 'Photo captured without AR pose'}</span>
-    </div>`
-    + `${p ? `<br><br>AR camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : ''}`
-    + `${plan ? `<br>Plan position: X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}`
-    + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
-    + `<br>Photo file: ${file.name || 'room photo'}`;
-
-  el.cleanPhotoModal.classList.add('open');
-  el.cleanPhotoModal.setAttribute('aria-hidden','false');
-}
-
-function closeCleanPhotoModal(){
-  el.cleanPhotoModal.classList.remove('open');
-  el.cleanPhotoModal.setAttribute('aria-hidden','true');
-}
-
-function keepCleanPhoto(){
-  if(!activeCleanPhoto) return;
-
-  captures.push({
-    id:activeCleanPhoto.id,
-    type:'clean_room_photo',
-    created_at:activeCleanPhoto.created_at,
-    camera:activeCleanPhoto.pose?.camera || null,
-    plan_position:activeCleanPhoto.pose?.plan_position || null,
-    file_name:activeCleanPhoto.file?.name || null,
-    photo_file:activeCleanPhoto.file
-  });
-
-  pendingCleanPhotoPose=null;
-  activeCleanPhoto=null;
-
+  captures.push(poseRecord);
+  lastSavedScreenshotPose=poseRecord;
   renderCaptureDetails();
-  closeCleanPhotoModal();
+
+  return true;
 }
 
-async function shareCleanPhoto(){
-  if(!activeCleanPhoto?.file) return;
+function showScreenshotToast(){
+  if(!el.screenshotToast) return;
 
-  const original=activeCleanPhoto.file;
-  const ext=(original.name?.split('.').pop() || 'jpg').toLowerCase();
+  el.screenshotToast.classList.add('show');
+  el.screenshotToast.setAttribute('aria-hidden','false');
 
-  const file=new File(
-    [original],
-    `eventvision-clean-photo-${String(captures.length+1).padStart(2,'0')}.${ext}`,
-    {type:original.type || 'image/jpeg'}
-  );
+  setTimeout(()=>{
+    el.screenshotToast.classList.remove('show');
+    el.screenshotToast.setAttribute('aria-hidden','true');
 
-  if(
-    navigator.share &&
-    (!navigator.canShare || navigator.canShare({files:[file]}))
-  ){
-    try{
-      await navigator.share({
-        files:[file],
-        title:'EventVision clean room photo'
-      });
-      return;
-    }catch(err){
-      if(err?.name==='AbortError') return;
-      console.warn('Share failed; using download fallback',err);
-    }
-  }
-
-  const a=document.createElement('a');
-  a.href=activeCleanPhotoURL;
-  a.download=file.name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+    // After the confirmation disappears, remove all EventVision UI.
+    screenshotReady=true;
+    document.body.classList.add('screenshot-ready');
+  },1200);
 }
 
-el.takeCleanPhoto?.addEventListener('click',beginCleanPhoto);
+function prepareSystemScreenshot(){
+  if(!photoMode) return;
 
-el.cleanPhotoInput?.addEventListener('change',()=>{
-  const file=el.cleanPhotoInput.files?.[0];
-  if(file){
-    handleCleanPhotoFile(file);
-  }
-});
+  if(!saveScreenshotPose()) return;
 
-el.closeCleanPhoto?.addEventListener('click',closeCleanPhotoModal);
-el.keepCleanPhoto?.addEventListener('click',keepCleanPhoto);
-el.shareCleanPhoto?.addEventListener('click',shareCleanPhoto);
+  showScreenshotToast();
+}
+
+function restoreScreenshotControls(){
+  if(!photoMode || !screenshotReady) return;
+
+  screenshotReady=false;
+  document.body.classList.remove('screenshot-ready');
+}
 
 function enterPhotoMode(){
   if(!session || !completed){
-    alert('Live AR tracking is not active. Re-scan the room before using camera view.');
+    alert('Live AR tracking is not active. Re-scan the room before using Screenshot mode.');
     return;
   }
 
   photoMode=true;
+  screenshotReady=false;
+  document.body.classList.remove('screenshot-ready');
   document.body.classList.remove('layout-mode');
   document.body.classList.add('photo-mode');
   el.hud.classList.remove('active');
@@ -1875,6 +1794,8 @@ function enterPhotoMode(){
 
 function exitPhotoMode(){
   photoMode=false;
+  screenshotReady=false;
+  document.body.classList.remove('screenshot-ready');
   document.body.classList.remove('photo-mode');
   document.body.classList.add('layout-mode');
   el.photoHud.classList.remove('active');
@@ -2051,10 +1972,23 @@ async function shareActiveCapture(){
 
 el.cameraView?.addEventListener('click',enterPhotoMode);
 el.backToPlan?.addEventListener('click',exitPhotoMode);
-el.capturePhoto?.addEventListener('click',captureARComposite);
+el.capturePhoto?.addEventListener('click',prepareSystemScreenshot);
 el.closePhotoPreview?.addEventListener('click',closePhotoPreview);
 el.keepPhoto?.addEventListener('click',keepActiveCapture);
+
 el.sharePhoto?.addEventListener('click',shareActiveCapture);
+
+document.addEventListener('pointerup',e=>{
+  if(
+    photoMode &&
+    screenshotReady
+  ){
+    e.preventDefault();
+    e.stopPropagation();
+    restoreScreenshotControls();
+  }
+},true);
+
 
 function endAR(){
   renderer?.setAnimationLoop(null);
@@ -2062,7 +1996,9 @@ function endAR(){
   document.body.classList.remove('xr-active');
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
+  document.body.classList.remove('screenshot-ready');
   photoMode=false;
+  screenshotReady=false;
   el.photoHud?.classList.remove('active');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
@@ -2161,14 +2097,9 @@ el.scanAgain.addEventListener('click',()=>{
   scanSceneData=null;
   captures=[];
   activeCapture=null;
-  pendingCleanPhotoPose=null;
-  activeCleanPhoto=null;
-
-  if(activeCleanPhotoURL){
-    URL.revokeObjectURL(activeCleanPhotoURL);
-    activeCleanPhotoURL=null;
-  }
-
+  lastSavedScreenshotPose=null;
+  screenshotReady=false;
+  document.body.classList.remove('screenshot-ready');
   renderCaptureDetails();
 
   clearObjects();
