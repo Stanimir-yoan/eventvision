@@ -674,38 +674,11 @@ body.xr-active.photo-mode canvas{
   }
 }
 
-
-/* v8.1 — direct HelloXR native camera-frame capture */
-.photoHudStatus{
-  display:flex;
-  gap:6px;
-  min-width:0;
-}
-
-#nativeFrameStatus{
-  max-width:160px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-
-#nativeFrameStatus.ready{
-  color:#8bf0ae;
-}
-
-#nativeFrameStatus.error{
-  color:#ffd08a;
-}
-
-.photoShutter.waiting{
-  opacity:.55;
-}
-
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.3</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -855,10 +828,7 @@ body.xr-active.photo-mode canvas{
 <div id="photoHud" class="photoHud" aria-hidden="true">
   <div class="photoHudTop">
     <div class="pill">PHOTO VIEW · AR OVERLAY</div>
-    <div class="photoHudStatus">
-      <div class="pill" id="nativeFrameStatus">Camera frame optional</div>
-      <div class="pill" id="photoPoseText">Live pose</div>
-    </div>
+    <div class="pill" id="photoPoseText">Live pose</div>
   </div>
 
   <div class="photoHudBottom">
@@ -922,7 +892,6 @@ const el = {
   captureDetails: document.getElementById('captureDetails'),
   photoHud: document.getElementById('photoHud'),
   photoPoseText: document.getElementById('photoPoseText'),
-  nativeFrameStatus: document.getElementById('nativeFrameStatus'),
   backToPlan: document.getElementById('backToPlan'),
   capturePhoto: document.getElementById('capturePhoto'),
   photoPreviewModal: document.getElementById('photoPreviewModal'),
@@ -950,9 +919,6 @@ let captures = [];
 let activeCapture = null;
 let activeCaptureURL = null;
 let photoMode = false;
-let latestNativeCameraFrame = null;
-let nativeCameraFrameCount = 0;
-let cvDispatchInterceptorInstalled = false;
 
 let selectedFurnitureType = null;
 
@@ -1006,518 +972,8 @@ async function check(){
   }
 }
 
-
-function setNativeFrameStatus(text,state=''){
-  if(!el.nativeFrameStatus) return;
-
-  el.nativeFrameStatus.textContent=text;
-  el.nativeFrameStatus.classList.remove('ready','error');
-
-  if(state) el.nativeFrameStatus.classList.add(state);
-
-  if(el.capturePhoto){
-    el.capturePhoto.classList.toggle('waiting',state!=='ready');
-  }
-}
-
-
-
-function installCVDispatchInterceptor(){
-  if(cvDispatchInterceptorInstalled) return;
-
-  const receiveFrame=event=>{
-    try{
-      if(event?.type==='cv_data' && event.detail){
-        latestNativeCameraFrame=event.detail;
-        nativeCameraFrameCount++;
-
-        if(photoMode){
-          setNativeFrameStatus('Native frame ✓','ready');
-        }
-      }
-    }catch(err){
-      console.warn('EventVision passive cv_data listener failed',err);
-    }
-  };
-
-  // Passive only: never patch EventTarget.prototype or HelloXR internals.
-  window.addEventListener('cv_data',receiveFrame,true);
-  document.addEventListener('cv_data',receiveFrame,true);
-
-  cvDispatchInterceptorInstalled=true;
-}
-
-function decodeBase64ToBytes(value){
-  if(!value) return null;
-
-  if(value instanceof Uint8Array) return value;
-
-  if(value instanceof ArrayBuffer){
-    return new Uint8Array(value);
-  }
-
-  if(ArrayBuffer.isView(value)){
-    return new Uint8Array(
-      value.buffer,
-      value.byteOffset,
-      value.byteLength
-    );
-  }
-
-  if(typeof value!=='string') return null;
-
-  let base64=value;
-
-  const comma=value.indexOf(',');
-  if(value.startsWith('data:') && comma>=0){
-    base64=value.slice(comma+1);
-  }
-
-  try{
-    const binary=atob(base64);
-    const bytes=new Uint8Array(binary.length);
-
-    for(let i=0;i<binary.length;i++){
-      bytes[i]=binary.charCodeAt(i);
-    }
-
-    return bytes;
-  }catch(err){
-    console.warn('Could not decode HelloXR Base64 camera data',err);
-    return null;
-  }
-}
-
-function getBufferPayload(bufferInfo){
-  if(!bufferInfo) return null;
-
-  return (
-    bufferInfo.buffer ??
-    bufferInfo._buffer ??
-    bufferInfo.data ??
-    bufferInfo.base64 ??
-    null
-  );
-}
-
-function getBufferSize(bufferInfo){
-  const size=bufferInfo?.size || {};
-
-  return {
-    width:Number(
-      size.width ??
-      bufferInfo?.width ??
-      0
-    ),
-    height:Number(
-      size.height ??
-      bufferInfo?.height ??
-      0
-    ),
-    bytesPerRow:Number(
-      size.bytesPerRow ??
-      bufferInfo?.bytesPerRow ??
-      0
-    ),
-    bytesPerPixel:Number(
-      size.bytesPerPixel ??
-      bufferInfo?.bytesPerPixel ??
-      0
-    )
-  };
-}
-
-async function dataURLToCanvas(dataURL){
-  return new Promise((resolve,reject)=>{
-    const img=new Image();
-
-    img.onload=()=>{
-      const canvas=document.createElement('canvas');
-      canvas.width=img.naturalWidth || img.width;
-      canvas.height=img.naturalHeight || img.height;
-
-      const ctx=canvas.getContext('2d');
-      ctx.drawImage(img,0,0);
-
-      resolve(canvas);
-    };
-
-    img.onerror=()=>reject(
-      new Error('HelloXR native camera image could not be decoded')
-    );
-
-    img.src=dataURL;
-  });
-}
-
-function rgbaLikeBufferToCanvas(
-  bytes,
-  width,
-  height,
-  bytesPerRow,
-  pixelFormat
-){
-  if(!bytes || !width || !height) return null;
-
-  const canvas=document.createElement('canvas');
-  canvas.width=width;
-  canvas.height=height;
-
-  const ctx=canvas.getContext('2d');
-  const image=ctx.createImageData(width,height);
-  const out=image.data;
-
-  const format=String(pixelFormat || '').toUpperCase();
-  const bgra=format.includes('BGRA');
-
-  const rowStride=bytesPerRow || width*4;
-
-  for(let y=0;y<height;y++){
-    const row=y*rowStride;
-
-    for(let x=0;x<width;x++){
-      const i=row+x*4;
-      const o=(y*width+x)*4;
-
-      if(i+3>=bytes.length) continue;
-
-      if(bgra){
-        out[o]=bytes[i+2];
-        out[o+1]=bytes[i+1];
-        out[o+2]=bytes[i];
-        out[o+3]=bytes[i+3];
-      }else{
-        out[o]=bytes[i];
-        out[o+1]=bytes[i+1];
-        out[o+2]=bytes[i+2];
-        out[o+3]=bytes[i+3];
-      }
-    }
-  }
-
-  ctx.putImageData(image,0,0);
-  return canvas;
-}
-
-function biPlanarYUVToCanvas(
-  yInfo,
-  uvInfo,
-  pixelFormat
-){
-  const ySize=getBufferSize(yInfo);
-  const uvSize=getBufferSize(uvInfo);
-
-  const width=Math.round(ySize.width);
-  const height=Math.round(ySize.height);
-
-  if(!width || !height) return null;
-
-  const yBytes=decodeBase64ToBytes(getBufferPayload(yInfo));
-  const uvBytes=decodeBase64ToBytes(getBufferPayload(uvInfo));
-
-  if(!yBytes || !uvBytes) return null;
-
-  const yStride=Math.round(ySize.bytesPerRow || width);
-  const uvWidth=Math.round(uvSize.width || width/2);
-  const uvStride=Math.round(
-    uvSize.bytesPerRow ||
-    uvWidth*2
-  );
-
-  const canvas=document.createElement('canvas');
-  canvas.width=width;
-  canvas.height=height;
-
-  const ctx=canvas.getContext('2d');
-  const image=ctx.createImageData(width,height);
-  const out=image.data;
-
-  const fmt=String(pixelFormat || '').toLowerCase();
-  const videoRange=
-    fmt.includes('videorange') ||
-    fmt.includes('420v');
-
-  for(let y=0;y<height;y++){
-    const yRow=y*yStride;
-    const uvRow=Math.floor(y/2)*uvStride;
-
-    for(let x=0;x<width;x++){
-      const yy=yBytes[yRow+x] ?? 0;
-
-      const uvX=Math.floor(x/2)*2;
-      const u=uvBytes[uvRow+uvX] ?? 128;
-      const v=uvBytes[uvRow+uvX+1] ?? 128;
-
-      let r,g,b;
-
-      if(videoRange){
-        // ITU-R BT.601 video-range conversion.
-        const c=Math.max(0,yy-16);
-        const d=u-128;
-        const e=v-128;
-
-        r=(298*c+409*e+128)>>8;
-        g=(298*c-100*d-208*e+128)>>8;
-        b=(298*c+516*d+128)>>8;
-      }else{
-        // Full-range NV12 / bi-planar conversion.
-        const d=u-128;
-        const e=v-128;
-
-        r=yy+1.402*e;
-        g=yy-0.344136*d-0.714136*e;
-        b=yy+1.772*d;
-      }
-
-      const o=(y*width+x)*4;
-
-      out[o]=Math.max(0,Math.min(255,r));
-      out[o+1]=Math.max(0,Math.min(255,g));
-      out[o+2]=Math.max(0,Math.min(255,b));
-      out[o+3]=255;
-    }
-  }
-
-  ctx.putImageData(image,0,0);
-  return canvas;
-}
-
-async function nativeFrameToCanvas(frameLike){
-  if(!frameLike) return null;
-
-  // HelloXR/Mozilla computer-vision events expose XRVideoFrame as event.detail.
-  if(
-    typeof frameLike.buffer==='function' &&
-    ('pixelFormat' in frameLike)
-  ){
-    const pixelFormat=String(frameLike.pixelFormat || '');
-
-    const b0=frameLike.buffer(0);
-    const b1=frameLike.buffer(1);
-
-    // Native buffer descriptors include size metadata and decoded Uint8Array data.
-    if(b0 && b1){
-      const normalized0={
-        ...b0,
-        _buffer:b0.buffer
-      };
-
-      const normalized1={
-        ...b1,
-        _buffer:b1.buffer
-      };
-
-      const yuv=biPlanarYUVToCanvas(
-        normalized0,
-        normalized1,
-        pixelFormat
-      );
-
-      if(yuv) return yuv;
-    }
-
-    if(b0){
-      const size=getBufferSize(b0);
-      const bytes=
-        b0.buffer instanceof Uint8Array
-          ? b0.buffer
-          : decodeBase64ToBytes(
-              b0.buffer ??
-              b0._buffer
-            );
-
-      if(
-        bytes &&
-        size.width &&
-        size.height
-      ){
-        const packed=rgbaLikeBufferToCanvas(
-          bytes,
-          Math.round(size.width),
-          Math.round(size.height),
-          Math.round(
-            size.bytesPerRow ||
-            size.width*4
-          ),
-          pixelFormat
-        );
-
-        if(packed) return packed;
-      }
-    }
-
-    console.warn(
-      'XRVideoFrame arrived but its buffers could not be decoded',
-      {
-        pixelFormat,
-        buffer0:b0,
-        buffer1:b1
-      }
-    );
-
-    return null;
-  }
-
-  // Retain v8.1 raw-detail fallback in case a HelloXR build exposes
-  // the native payload before XRVideoFrame wrapping.
-  const frame=frameLike?.frame;
-
-  if(!frame) return null;
-
-  const pixelFormat=
-    frame.pixelFormatType ||
-    frame.pixelFormat ||
-    '';
-
-  const directCandidates=[
-    frame.image,
-    frame.dataURL,
-    frame.dataUrl,
-    frame.base64,
-    frame.buffer,
-    frameLike.image,
-    frameLike.dataURL
-  ];
-
-  for(const value of directCandidates){
-    if(typeof value==='string'){
-      if(value.startsWith('data:image/')){
-        return await dataURLToCanvas(value);
-      }
-
-      if(value.startsWith('/9j/') || value.startsWith('iVBOR')){
-        const mime=value.startsWith('/9j/')
-          ? 'image/jpeg'
-          : 'image/png';
-
-        return await dataURLToCanvas(
-          `data:${mime};base64,${value}`
-        );
-      }
-    }
-  }
-
-  const buffers=Array.isArray(frame.buffers)
-    ? frame.buffers
-    : [];
-
-  if(!buffers.length) return null;
-
-  const firstPayload=getBufferPayload(buffers[0]);
-
-  if(typeof firstPayload==='string'){
-    if(firstPayload.startsWith('data:image/')){
-      return await dataURLToCanvas(firstPayload);
-    }
-
-    if(firstPayload.startsWith('/9j/') || firstPayload.startsWith('iVBOR')){
-      const mime=firstPayload.startsWith('/9j/')
-        ? 'image/jpeg'
-        : 'image/png';
-
-      return await dataURLToCanvas(
-        `data:${mime};base64,${firstPayload}`
-      );
-    }
-  }
-
-  if(buffers.length>=2){
-    const yuv=biPlanarYUVToCanvas(
-      buffers[0],
-      buffers[1],
-      pixelFormat
-    );
-
-    if(yuv) return yuv;
-  }
-
-  const size=getBufferSize(buffers[0]);
-  const bytes=decodeBase64ToBytes(firstPayload);
-
-  if(
-    bytes &&
-    size.width &&
-    size.height
-  ){
-    return rgbaLikeBufferToCanvas(
-      bytes,
-      Math.round(size.width),
-      Math.round(size.height),
-      Math.round(size.bytesPerRow || size.width*4),
-      pixelFormat
-    );
-  }
-
-  return null;
-}
-function getHelloXRFrameRotation(frameLike){
-  const camera=
-    frameLike?.camera ||
-    frameLike?._camera ||
-    frameLike?.cameraData ||
-    frameLike?.camera ||
-    {};
-
-  // XRVideoFrame cameraOrientation is set by the ARKit bridge.
-  if(Number.isFinite(Number(camera.cameraOrientation))){
-    return Number(camera.cameraOrientation);
-  }
-
-  const orientation=Number(camera.interfaceOrientation || 0);
-
-  switch(orientation){
-    case 1: return -90;
-    case 2: return 90;
-    case 3: return 0;
-    case 4: return 180;
-    default: return 0;
-  }
-}
-function rotateCanvas(source,degrees){
-  const normalized=((degrees%360)+360)%360;
-
-  if(normalized===0) return source;
-
-  const swap=normalized===90 || normalized===270;
-
-  const canvas=document.createElement('canvas');
-  canvas.width=swap ? source.height : source.width;
-  canvas.height=swap ? source.width : source.height;
-
-  const ctx=canvas.getContext('2d');
-
-  ctx.translate(canvas.width/2,canvas.height/2);
-  ctx.rotate(normalized*Math.PI/180);
-  ctx.drawImage(
-    source,
-    -source.width/2,
-    -source.height/2
-  );
-
-  return canvas;
-}
-
-function drawCover(ctx,source,width,height){
-  const scale=Math.max(
-    width/source.width,
-    height/source.height
-  );
-
-  const drawW=source.width*scale;
-  const drawH=source.height*scale;
-
-  const x=(width-drawW)/2;
-  const y=(height-drawH)/2;
-
-  ctx.drawImage(source,x,y,drawW,drawH);
-}
-
 async function enterAR(){
   if(!renderer) createRenderer();
-
-  latestNativeCameraFrame=null;
-  nativeCameraFrameCount=0;
-  installCVDispatchInterceptor();
 
   try{
     session = await navigator.xr.requestSession('immersive-ar',{
@@ -1539,8 +995,6 @@ async function enterAR(){
   phonePoseGroup=null;
   scanSceneData=null;
   captures=[];
-  latestNativeCameraFrame=null;
-  nativeCameraFrameCount=0;
   activeCapture=null;
   if(activeCaptureURL){
     URL.revokeObjectURL(activeCaptureURL);
@@ -1554,43 +1008,21 @@ async function enterAR(){
   clearObjects();
   el.result.classList.remove('show');
 
-  try{
-    await renderer.xr.setSession(session);
-  }catch(err){
-    console.error('renderer.xr.setSession failed',err);
-    try{ await session.end(); }catch(_){}
-    alert('AR renderer could not start: '+err.message);
-    return;
-  }
+  await renderer.xr.setSession(session);
 
-  installCVDispatchInterceptor();
+  refSpace = await session.requestReferenceSpace('local-floor')
+    .catch(()=>session.requestReferenceSpace('local'));
 
-  // Enter scan UI immediately once XR itself is alive.
+  const viewerSpace = await session.requestReferenceSpace('viewer');
+  hitSource = await session.requestHitTestSource({space:viewerSpace});
+
   document.body.classList.add('xr-active');
   el.hud.classList.add('active');
-  el.hint.textContent='Initializing tracking…';
   updateControls();
 
   session.addEventListener('end',endAR);
+
   renderer.setAnimationLoop(render);
-
-  try{
-    refSpace = await session.requestReferenceSpace('local-floor')
-      .catch(()=>session.requestReferenceSpace('local'));
-  }catch(err){
-    console.error('XR reference space failed',err);
-    el.hint.textContent='Tracking reference unavailable';
-    return;
-  }
-
-  try{
-    const viewerSpace = await session.requestReferenceSpace('viewer');
-    hitSource = await session.requestHitTestSource({space:viewerSpace});
-    el.hint.textContent='Finding floor — move slowly';
-  }catch(err){
-    console.error('XR hit-test setup failed',err);
-    el.hint.textContent='Floor hit-test unavailable';
-  }
 }
 
 function render(_time,frame){
@@ -1889,7 +1321,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_3',
+    protocol_version:'EventVision_v8',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2156,14 +1588,6 @@ function enterPhotoMode(){
   el.photoHud.classList.add('active');
   el.photoHud.setAttribute('aria-hidden','false');
 
-  installCVDispatchInterceptor();
-
-  if(latestNativeCameraFrame){
-    setNativeFrameStatus('Native frame ✓','ready');
-  }else{
-    setNativeFrameStatus('Camera frame optional','');
-  }
-
   if(renderer?.domElement){
     renderer.domElement.style.display='block';
   }
@@ -2212,57 +1636,17 @@ function captureCanvasLayer(ctx,source,targetWidth,targetHeight){
 async function captureARComposite(){
   if(!photoMode || !renderer) return;
 
-  if(!latestNativeCameraFrame){
-    setNativeFrameStatus('No native frame','error');
-    alert(
-      'No HelloXR cv_data event has arrived. ' +
-      'The session requested computerVision, but this HelloXR build is not exposing a computer-vision frame event to the page.'
-    );
-    return;
-  }
-
-  const frameSnapshot=latestNativeCameraFrame;
-
-  let cameraCanvas;
-
-  try{
-    cameraCanvas=await nativeFrameToCanvas(frameSnapshot);
-  }catch(err){
-    console.error('Native frame decode failed',err);
-  }
-
-  if(!cameraCanvas){
-    setNativeFrameStatus('Frame decode failed','error');
-    alert(
-      'The native HelloXR camera frame arrived, but EventVision could not decode its pixel format. ' +
-      'The console now contains the frame-format details needed for the next patch.'
-    );
-    return;
-  }
-
-  setNativeFrameStatus('Native frame ✓','ready');
-
   const flash=document.createElement('div');
   flash.className='captureFlash';
   document.body.appendChild(flash);
   setTimeout(()=>flash.remove(),260);
 
-  // Render a fresh AR overlay frame as close as possible to the retained camera frame.
-  await new Promise(resolve=>
-    requestAnimationFrame(()=>
-      requestAnimationFrame(resolve)
-    )
-  );
+  // Wait for a fresh XR frame.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 
   const dpr=Math.min(window.devicePixelRatio || 1,2);
-  const width=Math.max(
-    1,
-    Math.round(window.innerWidth*dpr)
-  );
-  const height=Math.max(
-    1,
-    Math.round(window.innerHeight*dpr)
-  );
+  const width=Math.max(1,Math.round(window.innerWidth*dpr));
+  const height=Math.max(1,Math.round(window.innerHeight*dpr));
 
   const output=document.createElement('canvas');
   output.width=width;
@@ -2275,27 +1659,31 @@ async function captureARComposite(){
   ctx.fillStyle='#000';
   ctx.fillRect(0,0,width,height);
 
-  // Native ARKit camera frame first.
-  const rotation=getHelloXRFrameRotation(frameSnapshot);
-  const orientedCamera=rotateCanvas(cameraCanvas,rotation);
-  drawCover(ctx,orientedCamera,width,height);
+  let layersDrawn=0;
 
-  let overlayDrawn=false;
+  // HelloXR inserts its AR camera renderer into the page. Draw it first.
+  const bgCandidates=[
+    ...document.querySelectorAll('.arkit-device-wrapper canvas')
+  ];
 
-  // Three.js AR lines / numbered corners on top.
-  try{
-    const overlay=renderer.domElement;
-
-    if(overlay?.width && overlay?.height){
-      ctx.drawImage(
-        overlay,
-        0,0,overlay.width,overlay.height,
-        0,0,width,height
-      );
-      overlayDrawn=true;
+  bgCandidates.forEach(canvas=>{
+    if(canvas!==renderer.domElement){
+      if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
     }
-  }catch(err){
-    console.warn('Could not draw EventVision AR overlay',err);
+  });
+
+  // Fallback: collect any other visible canvases before our Three.js overlay.
+  if(!bgCandidates.length){
+    [...document.querySelectorAll('canvas')].forEach(canvas=>{
+      if(canvas!==renderer.domElement){
+        if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
+      }
+    });
+  }
+
+  // Draw EventVision AR lines, numbered corners, etc. last.
+  if(captureCanvasLayer(ctx,renderer.domElement,width,height)){
+    layersDrawn++;
   }
 
   const blob=await new Promise(resolve=>{
@@ -2307,31 +1695,12 @@ async function captureARComposite(){
     return;
   }
 
-  const rawFrame=frameSnapshot?.frame || null;
-  const xrPixelFormat=
-    frameSnapshot?.pixelFormat ||
-    rawFrame?.pixelFormatType ||
-    rawFrame?.pixelFormat ||
-    'unknown';
-
   const metadata={
     id:`view_${String(captures.length+1).padStart(2,'0')}`,
     created_at:new Date().toISOString(),
     camera:getCurrentCameraMetadata(),
     room:scanSceneData,
-    capture:{
-      source:'HelloXR computerVision native ARKit frame',
-      pixel_format:xrPixelFormat,
-      native_frame_received:true,
-      native_frame_index:nativeCameraFrameCount,
-      frame_timestamp:frameSnapshot?.timestamp ?? rawFrame?.timestamp ?? null,
-      interface_orientation:
-        frameSnapshot?.camera?.interfaceOrientation ??
-        frameSnapshot?._camera?.interfaceOrientation ??
-        null,
-      applied_rotation_deg:rotation,
-      overlay_drawn:overlayDrawn
-    }
+    composite_layers:layersDrawn
   };
 
   activeCapture={
@@ -2342,7 +1711,6 @@ async function captureARComposite(){
   if(activeCaptureURL){
     URL.revokeObjectURL(activeCaptureURL);
   }
-
   activeCaptureURL=URL.createObjectURL(blob);
   el.photoPreviewImage.src=activeCaptureURL;
 
@@ -2352,13 +1720,12 @@ async function captureARComposite(){
   el.photoCaptureMeta.innerHTML=
     `${p ? `Camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}`
     + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
-    + `<br>Source: native ARKit frame`
-    + `<br>Format: ${metadata.capture.pixel_format}`
-    + `<br>Overlay: ${overlayDrawn ? 'yes' : 'no'}`;
+    + `<br>Composite layers captured: ${layersDrawn}`;
 
   el.photoPreviewModal.classList.add('open');
   el.photoPreviewModal.setAttribute('aria-hidden','false');
 }
+
 function closePhotoPreview(){
   el.photoPreviewModal.classList.remove('open');
   el.photoPreviewModal.setAttribute('aria-hidden','true');
@@ -2416,9 +1783,7 @@ function endAR(){
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
   photoMode=false;
-  latestNativeCameraFrame=null;
   el.photoHud?.classList.remove('active');
-  setNativeFrameStatus('Camera frame optional','');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
