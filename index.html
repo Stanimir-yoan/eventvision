@@ -705,7 +705,7 @@ body.xr-active.photo-mode canvas{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -856,7 +856,7 @@ body.xr-active.photo-mode canvas{
   <div class="photoHudTop">
     <div class="pill">PHOTO VIEW · AR OVERLAY</div>
     <div class="photoHudStatus">
-      <div class="pill" id="nativeFrameStatus">Waiting camera frame…</div>
+      <div class="pill" id="nativeFrameStatus">Waiting cv_data…</div>
       <div class="pill" id="photoPoseText">Live pose</div>
     </div>
   </div>
@@ -951,9 +951,8 @@ let activeCapture = null;
 let activeCaptureURL = null;
 let photoMode = false;
 let latestNativeCameraFrame = null;
-let nativeCameraHookInstalled = false;
 let nativeCameraFrameCount = 0;
-let nativeCameraHookRetryTimer = null;
+let cvDispatchInterceptorInstalled = false;
 
 let selectedFurnitureType = null;
 
@@ -1021,36 +1020,32 @@ function setNativeFrameStatus(text,state=''){
   }
 }
 
-function installHelloXRCameraHook(){
-  if(nativeCameraHookInstalled) return true;
 
-  const current=window.onComputerVisionData;
+function installCVDispatchInterceptor(){
+  if(cvDispatchInterceptorInstalled) return;
 
-  if(typeof current!=='function'){
-    return false;
+  const proto=EventTarget?.prototype;
+
+  if(!proto || typeof proto.dispatchEvent!=='function'){
+    setNativeFrameStatus('CV event hook unavailable','error');
+    return;
   }
 
-  // Avoid wrapping our own wrapper twice.
-  if(current.__eventVisionCameraHook){
-    nativeCameraHookInstalled=true;
-    return true;
+  const originalDispatch=proto.dispatchEvent;
+
+  if(originalDispatch.__eventVisionCVInterceptor){
+    cvDispatchInterceptorInstalled=true;
+    return;
   }
 
-  const original=current;
-
-  const wrapped=function(detail){
-    // Let HelloXR's own WebXR polyfill process the frame first.
-    let result;
-
+  const wrappedDispatch=function(event){
     try{
-      result=original.apply(this,arguments);
-    }catch(err){
-      console.warn('HelloXR original camera-frame callback failed',err);
-    }
-
-    try{
-      if(detail?.frame){
-        latestNativeCameraFrame=detail;
+      if(
+        event &&
+        event.type==='cv_data' &&
+        event.detail
+      ){
+        latestNativeCameraFrame=event.detail;
         nativeCameraFrameCount++;
 
         if(photoMode){
@@ -1058,38 +1053,17 @@ function installHelloXRCameraHook(){
         }
       }
     }catch(err){
-      console.warn('EventVision could not retain native camera frame',err);
+      console.warn('EventVision cv_data interception failed',err);
     }
 
-    return result;
+    return originalDispatch.call(this,event);
   };
 
-  wrapped.__eventVisionCameraHook=true;
-  wrapped.__eventVisionOriginal=original;
+  wrappedDispatch.__eventVisionCVInterceptor=true;
+  wrappedDispatch.__eventVisionOriginal=originalDispatch;
 
-  window.onComputerVisionData=wrapped;
-  nativeCameraHookInstalled=true;
-
-  return true;
-}
-
-function ensureHelloXRCameraHook(){
-  if(installHelloXRCameraHook()) return;
-
-  let attempts=0;
-
-  if(nativeCameraHookRetryTimer){
-    clearInterval(nativeCameraHookRetryTimer);
-  }
-
-  nativeCameraHookRetryTimer=setInterval(()=>{
-    attempts++;
-
-    if(installHelloXRCameraHook() || attempts>=30){
-      clearInterval(nativeCameraHookRetryTimer);
-      nativeCameraHookRetryTimer=null;
-    }
-  },250);
+  proto.dispatchEvent=wrappedDispatch;
+  cvDispatchInterceptorInstalled=true;
 }
 
 function decodeBase64ToBytes(value){
@@ -1327,8 +1301,86 @@ function biPlanarYUVToCanvas(
   return canvas;
 }
 
-async function nativeFrameToCanvas(detail){
-  const frame=detail?.frame;
+async function nativeFrameToCanvas(frameLike){
+  if(!frameLike) return null;
+
+  // HelloXR/Mozilla computer-vision events expose XRVideoFrame as event.detail.
+  if(
+    typeof frameLike.buffer==='function' &&
+    ('pixelFormat' in frameLike)
+  ){
+    const pixelFormat=String(frameLike.pixelFormat || '');
+
+    const b0=frameLike.buffer(0);
+    const b1=frameLike.buffer(1);
+
+    // Native buffer descriptors include size metadata and decoded Uint8Array data.
+    if(b0 && b1){
+      const normalized0={
+        ...b0,
+        _buffer:b0.buffer
+      };
+
+      const normalized1={
+        ...b1,
+        _buffer:b1.buffer
+      };
+
+      const yuv=biPlanarYUVToCanvas(
+        normalized0,
+        normalized1,
+        pixelFormat
+      );
+
+      if(yuv) return yuv;
+    }
+
+    if(b0){
+      const size=getBufferSize(b0);
+      const bytes=
+        b0.buffer instanceof Uint8Array
+          ? b0.buffer
+          : decodeBase64ToBytes(
+              b0.buffer ??
+              b0._buffer
+            );
+
+      if(
+        bytes &&
+        size.width &&
+        size.height
+      ){
+        const packed=rgbaLikeBufferToCanvas(
+          bytes,
+          Math.round(size.width),
+          Math.round(size.height),
+          Math.round(
+            size.bytesPerRow ||
+            size.width*4
+          ),
+          pixelFormat
+        );
+
+        if(packed) return packed;
+      }
+    }
+
+    console.warn(
+      'XRVideoFrame arrived but its buffers could not be decoded',
+      {
+        pixelFormat,
+        buffer0:b0,
+        buffer1:b1
+      }
+    );
+
+    return null;
+  }
+
+  // Retain v8.1 raw-detail fallback in case a HelloXR build exposes
+  // the native payload before XRVideoFrame wrapping.
+  const frame=frameLike?.frame;
+
   if(!frame) return null;
 
   const pixelFormat=
@@ -1336,15 +1388,14 @@ async function nativeFrameToCanvas(detail){
     frame.pixelFormat ||
     '';
 
-  // 1. Direct image/data URL variants.
   const directCandidates=[
     frame.image,
     frame.dataURL,
     frame.dataUrl,
     frame.base64,
     frame.buffer,
-    detail.image,
-    detail.dataURL
+    frameLike.image,
+    frameLike.dataURL
   ];
 
   for(const value of directCandidates){
@@ -1353,8 +1404,6 @@ async function nativeFrameToCanvas(detail){
         return await dataURLToCanvas(value);
       }
 
-      // HelloXR README describes Base64 sRGB frames.
-      // Try common encoded image signatures.
       if(value.startsWith('/9j/') || value.startsWith('iVBOR')){
         const mime=value.startsWith('/9j/')
           ? 'image/jpeg'
@@ -1373,7 +1422,6 @@ async function nativeFrameToCanvas(detail){
 
   if(!buffers.length) return null;
 
-  // 2. One buffer that is itself an encoded image.
   const firstPayload=getBufferPayload(buffers[0]);
 
   if(typeof firstPayload==='string'){
@@ -1392,35 +1440,23 @@ async function nativeFrameToCanvas(detail){
     }
   }
 
-  // 3. ARKit Y + interleaved CbCr bi-planar frame.
-  if(
-    buffers.length>=2 &&
-    (
-      String(pixelFormat).includes('420') ||
-      String(pixelFormat).includes('YUV')
-    )
-  ){
-    return biPlanarYUVToCanvas(
+  if(buffers.length>=2){
+    const yuv=biPlanarYUVToCanvas(
       buffers[0],
       buffers[1],
       pixelFormat
     );
+
+    if(yuv) return yuv;
   }
 
-  // 4. Packed BGRA / RGBA / sRGB-like buffer.
   const size=getBufferSize(buffers[0]);
   const bytes=decodeBase64ToBytes(firstPayload);
 
   if(
     bytes &&
     size.width &&
-    size.height &&
-    (
-      String(pixelFormat).toUpperCase().includes('BGRA') ||
-      String(pixelFormat).toUpperCase().includes('RGBA') ||
-      String(pixelFormat).toUpperCase().includes('SRGB') ||
-      bytes.length>=size.width*size.height*4
-    )
+    size.height
   ){
     return rgbaLikeBufferToCanvas(
       bytes,
@@ -1431,21 +1467,21 @@ async function nativeFrameToCanvas(detail){
     );
   }
 
-  console.warn(
-    'Unsupported HelloXR native camera-frame format',
-    pixelFormat,
-    frame
-  );
-
   return null;
 }
+function getHelloXRFrameRotation(frameLike){
+  const camera=
+    frameLike?.camera ||
+    frameLike?._camera ||
+    frameLike?.cameraData ||
+    frameLike?.camera ||
+    {};
 
-function getHelloXRFrameRotation(detail){
-  const camera=detail?.camera || {};
+  // XRVideoFrame cameraOrientation is set by the ARKit bridge.
+  if(Number.isFinite(Number(camera.cameraOrientation))){
+    return Number(camera.cameraOrientation);
+  }
 
-  // Mozilla/HelloXR ARKit bridge orientation mapping.
-  // UIInterfaceOrientation:
-  // 1 portrait, 2 upside-down, 3 landscape left, 4 landscape right.
   const orientation=Number(camera.interfaceOrientation || 0);
 
   switch(orientation){
@@ -1453,11 +1489,9 @@ function getHelloXRFrameRotation(detail){
     case 2: return 90;
     case 3: return 0;
     case 4: return 180;
-    default:
-      return Number(camera.cameraOrientation || 0);
+    default: return 0;
   }
 }
-
 function rotateCanvas(source,degrees){
   const normalized=((degrees%360)+360)%360;
 
@@ -1502,12 +1536,12 @@ async function enterAR(){
 
   latestNativeCameraFrame=null;
   nativeCameraFrameCount=0;
-  ensureHelloXRCameraHook();
+  installCVDispatchInterceptor();
 
   try{
     session = await navigator.xr.requestSession('immersive-ar',{
-      requiredFeatures:['hit-test'],
-      optionalFeatures:['local-floor','dom-overlay','computerVision'],
+      requiredFeatures:['hit-test','computerVision'],
+      optionalFeatures:['local-floor','dom-overlay'],
       domOverlay:{root:document.body}
     });
   }catch(err){
@@ -1541,7 +1575,7 @@ async function enterAR(){
 
   await renderer.xr.setSession(session);
 
-  ensureHelloXRCameraHook();
+  installCVDispatchInterceptor();
 
   refSpace = await session.requestReferenceSpace('local-floor')
     .catch(()=>session.requestReferenceSpace('local'));
@@ -1854,7 +1888,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_1',
+    protocol_version:'EventVision_v8_2',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2121,12 +2155,12 @@ function enterPhotoMode(){
   el.photoHud.classList.add('active');
   el.photoHud.setAttribute('aria-hidden','false');
 
-  ensureHelloXRCameraHook();
+  installCVDispatchInterceptor();
 
   if(latestNativeCameraFrame){
     setNativeFrameStatus('Native frame ✓','ready');
   }else{
-    setNativeFrameStatus('Waiting camera frame…','');
+    setNativeFrameStatus('Waiting cv_data…','');
   }
 
   if(renderer?.domElement){
@@ -2180,8 +2214,8 @@ async function captureARComposite(){
   if(!latestNativeCameraFrame){
     setNativeFrameStatus('No native frame','error');
     alert(
-      'HelloXR camera-frame data has not arrived yet. ' +
-      'Keep Camera view open for a moment and try again.'
+      'No HelloXR cv_data event has arrived. ' +
+      'The session requested computerVision, but this HelloXR build is not exposing a computer-vision frame event to the page.'
     );
     return;
   }
@@ -2272,7 +2306,12 @@ async function captureARComposite(){
     return;
   }
 
-  const frame=frameSnapshot?.frame || {};
+  const rawFrame=frameSnapshot?.frame || null;
+  const xrPixelFormat=
+    frameSnapshot?.pixelFormat ||
+    rawFrame?.pixelFormatType ||
+    rawFrame?.pixelFormat ||
+    'unknown';
 
   const metadata={
     id:`view_${String(captures.length+1).padStart(2,'0')}`,
@@ -2281,15 +2320,13 @@ async function captureARComposite(){
     room:scanSceneData,
     capture:{
       source:'HelloXR computerVision native ARKit frame',
-      pixel_format:
-        frame.pixelFormatType ||
-        frame.pixelFormat ||
-        'unknown',
+      pixel_format:xrPixelFormat,
       native_frame_received:true,
       native_frame_index:nativeCameraFrameCount,
-      frame_timestamp:frame.timestamp ?? null,
+      frame_timestamp:frameSnapshot?.timestamp ?? rawFrame?.timestamp ?? null,
       interface_orientation:
         frameSnapshot?.camera?.interfaceOrientation ??
+        frameSnapshot?._camera?.interfaceOrientation ??
         null,
       applied_rotation_deg:rotation,
       overlay_drawn:overlayDrawn
@@ -2380,7 +2417,7 @@ function endAR(){
   photoMode=false;
   latestNativeCameraFrame=null;
   el.photoHud?.classList.remove('active');
-  setNativeFrameStatus('Waiting camera frame…','');
+  setNativeFrameStatus('Waiting cv_data…','');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
