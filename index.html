@@ -674,11 +674,72 @@ body.xr-active.photo-mode canvas{
   }
 }
 
+
+/* v9 — stable clean-photo workflow from v8 */
+.v9Actions{
+  grid-template-columns:1fr 1fr;
+}
+
+.cleanPhotoBtn{
+  background:var(--accent) !important;
+  border:1px solid transparent !important;
+}
+
+.debugCaptureBtn{
+  grid-column:1 / -1;
+  min-height:42px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:transparent;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:750;
+}
+
+#cleanPhotoPreview{
+  display:block;
+  width:100%;
+  max-height:62vh;
+  object-fit:contain;
+  border-radius:14px;
+  background:#000;
+}
+
+.cleanPoseBadge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 9px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel2);
+  color:#fff;
+  font-size:10px;
+  font-weight:800;
+}
+
+.cleanPoseBadge .dot{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#43d47c;
+}
+
+.cleanPoseBadge.warn .dot{
+  background:#ffd08a;
+}
+
+@media (max-width:420px){
+  .v9Actions{
+    grid-template-columns:1fr 1fr;
+  }
+}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v9</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -722,17 +783,27 @@ body.xr-active.photo-mode canvas{
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
 
-    <div class="resultActionGrid">
-      <button id="cameraView" class="addFurnitureBtn cameraViewBtn">
-        <span class="addFurnitureIcon">◎</span>
-        <span>Camera view</span>
+    <div class="resultActionGrid v9Actions">
+      <button id="takeCleanPhoto" class="addFurnitureBtn cleanPhotoBtn">
+        <span class="addFurnitureIcon">●</span>
+        <span>Take clean photo</span>
       </button>
 
       <button id="addFurniture" class="addFurnitureBtn">
         <span class="addFurnitureIcon">＋</span>
         <span>Add furniture</span>
       </button>
+
+      <button id="cameraView" class="debugCaptureBtn">
+        <span>Debug overlay view</span>
+      </button>
     </div>
+
+    <input id="cleanPhotoInput"
+           type="file"
+           accept="image/*"
+           capture="environment"
+           hidden>
 
     <details id="detailsPanel">
       <summary>
@@ -751,9 +822,9 @@ body.xr-active.photo-mode canvas{
         <div class="detailSectionTitle">Walls</div>
         <div id="walls"></div>
 
-        <div class="detailSectionTitle">Captured views</div>
+        <div class="detailSectionTitle">Photos & captured views</div>
         <div id="captureDetails" class="captureDetails">
-          <div class="emptyDetail">No camera views captured yet.</div>
+          <div class="emptyDetail">No photos captured yet.</div>
         </div>
       </div>
     </details>
@@ -825,6 +896,28 @@ body.xr-active.photo-mode canvas{
   </div>
 </div>
 
+
+<div id="cleanPhotoModal" class="photoPreviewModal" aria-hidden="true">
+  <div class="photoPreviewSheet">
+    <div class="photoPreviewHeader">
+      <div>
+        <div class="eyebrow">CLEAN ROOM PHOTO</div>
+        <h3>Photo + saved camera pose</h3>
+      </div>
+      <button id="closeCleanPhoto" class="closeFurniture" aria-label="Close clean photo preview">×</button>
+    </div>
+
+    <img id="cleanPhotoPreview" alt="Clean room photo without AR overlay">
+
+    <div id="cleanPhotoMeta" class="photoCaptureMeta"></div>
+
+    <div class="photoPreviewActions">
+      <button id="shareCleanPhoto" class="confirmFurniture">Share / Save photo</button>
+      <button id="keepCleanPhoto" class="photoKeepBtn">Keep and return</button>
+    </div>
+  </div>
+</div>
+
 <div id="photoHud" class="photoHud" aria-hidden="true">
   <div class="photoHudTop">
     <div class="pill">PHOTO VIEW · AR OVERLAY</div>
@@ -888,6 +981,14 @@ const el = {
   furnitureGrid: document.getElementById('furnitureGrid'),
   confirmFurniture: document.getElementById('confirmFurniture'),
   cameraView: document.getElementById('cameraView'),
+  takeCleanPhoto: document.getElementById('takeCleanPhoto'),
+  cleanPhotoInput: document.getElementById('cleanPhotoInput'),
+  cleanPhotoModal: document.getElementById('cleanPhotoModal'),
+  cleanPhotoPreview: document.getElementById('cleanPhotoPreview'),
+  cleanPhotoMeta: document.getElementById('cleanPhotoMeta'),
+  closeCleanPhoto: document.getElementById('closeCleanPhoto'),
+  shareCleanPhoto: document.getElementById('shareCleanPhoto'),
+  keepCleanPhoto: document.getElementById('keepCleanPhoto'),
   cornerDetails: document.getElementById('cornerDetails'),
   captureDetails: document.getElementById('captureDetails'),
   photoHud: document.getElementById('photoHud'),
@@ -919,6 +1020,9 @@ let captures = [];
 let activeCapture = null;
 let activeCaptureURL = null;
 let photoMode = false;
+let pendingCleanPhotoPose = null;
+let activeCleanPhoto = null;
+let activeCleanPhotoURL = null;
 
 let selectedFurnitureType = null;
 
@@ -1000,6 +1104,14 @@ async function enterAR(){
     URL.revokeObjectURL(activeCaptureURL);
     activeCaptureURL=null;
   }
+
+  pendingCleanPhotoPose=null;
+  activeCleanPhoto=null;
+  if(activeCleanPhotoURL){
+    URL.revokeObjectURL(activeCleanPhotoURL);
+    activeCleanPhotoURL=null;
+  }
+
   photoMode=false;
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
@@ -1321,7 +1433,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8',
+    protocol_version:'EventVision_v9',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1394,7 +1506,7 @@ function renderCaptureDetails(){
   if(!el.captureDetails) return;
 
   if(!captures.length){
-    el.captureDetails.innerHTML='<div class="emptyDetail">No camera views captured yet.</div>';
+    el.captureDetails.innerHTML='<div class="emptyDetail">No photos captured yet.</div>';
     return;
   }
 
@@ -1403,16 +1515,21 @@ function renderCaptureDetails(){
   captures.forEach((capture,i)=>{
     const p=capture.camera?.position;
     const yaw=capture.camera?.yaw_deg;
+    const plan=capture.plan_position;
+    const clean=capture.type==='clean_room_photo';
 
     const card=document.createElement('div');
     card.className='captureDetailCard';
+
     card.innerHTML=`
-      <strong>View ${i+1}</strong>
+      <strong>${clean ? 'Clean photo' : 'Debug overlay view'} ${i+1}</strong>
       <span>
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
+        ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
       </span>
     `;
+
     el.captureDetails.appendChild(card);
   });
 }
@@ -1574,6 +1691,169 @@ document.addEventListener('pointerup',e=>{
   placeCurrentHit();
 });
 
+
+
+function getCurrentPlanPosition(){
+  if(
+    !latestViewerPosition ||
+    !scanSceneData?.corners ||
+    scanSceneData.corners.length<2
+  ){
+    return null;
+  }
+
+  const c1=scanSceneData.corners[0];
+  const c2=scanSceneData.corners[1];
+
+  const dx=c2.world.x-c1.world.x;
+  const dz=c2.world.z-c1.world.z;
+  const len=Math.hypot(dx,dz);
+
+  if(len<0.0001) return null;
+
+  const ex={x:dx/len,z:dz/len};
+  const ez={x:-ex.z,z:ex.x};
+
+  const rx=latestViewerPosition.x-c1.world.x;
+  const rz=latestViewerPosition.z-c1.world.z;
+
+  return {
+    x:rx*ex.x+rz*ex.z,
+    z:rx*ez.x+rz*ez.z
+  };
+}
+
+function snapshotCurrentPoseForPhoto(){
+  return {
+    captured_at:new Date().toISOString(),
+    camera:getCurrentCameraMetadata(),
+    plan_position:getCurrentPlanPosition()
+  };
+}
+
+function beginCleanPhoto(){
+  if(!completed || !scanSceneData){
+    alert('Finish the room scan before taking a room photo.');
+    return;
+  }
+
+  // Snapshot the live AR pose immediately BEFORE native camera capture.
+  pendingCleanPhotoPose=snapshotCurrentPoseForPhoto();
+
+  el.cleanPhotoInput.value='';
+  el.cleanPhotoInput.click();
+}
+
+function handleCleanPhotoFile(file){
+  if(!file || !file.type?.startsWith('image/')) return;
+
+  if(activeCleanPhotoURL){
+    URL.revokeObjectURL(activeCleanPhotoURL);
+  }
+
+  activeCleanPhotoURL=URL.createObjectURL(file);
+
+  activeCleanPhoto={
+    id:`photo_${String(captures.length+1).padStart(2,'0')}`,
+    type:'clean_room_photo',
+    file,
+    pose:pendingCleanPhotoPose || snapshotCurrentPoseForPhoto(),
+    created_at:new Date().toISOString()
+  };
+
+  el.cleanPhotoPreview.src=activeCleanPhotoURL;
+
+  const p=activeCleanPhoto.pose?.camera?.position;
+  const plan=activeCleanPhoto.pose?.plan_position;
+  const yaw=activeCleanPhoto.pose?.camera?.yaw_deg;
+
+  el.cleanPhotoMeta.innerHTML=
+    `<div class="cleanPoseBadge ${p ? '' : 'warn'}">
+      <span class="dot"></span>
+      <span>${p ? 'AR pose saved before native camera opened' : 'Photo captured without AR pose'}</span>
+    </div>`
+    + `${p ? `<br><br>AR camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : ''}`
+    + `${plan ? `<br>Plan position: X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}`
+    + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
+    + `<br>Photo file: ${file.name || 'room photo'}`;
+
+  el.cleanPhotoModal.classList.add('open');
+  el.cleanPhotoModal.setAttribute('aria-hidden','false');
+}
+
+function closeCleanPhotoModal(){
+  el.cleanPhotoModal.classList.remove('open');
+  el.cleanPhotoModal.setAttribute('aria-hidden','true');
+}
+
+function keepCleanPhoto(){
+  if(!activeCleanPhoto) return;
+
+  captures.push({
+    id:activeCleanPhoto.id,
+    type:'clean_room_photo',
+    created_at:activeCleanPhoto.created_at,
+    camera:activeCleanPhoto.pose?.camera || null,
+    plan_position:activeCleanPhoto.pose?.plan_position || null,
+    file_name:activeCleanPhoto.file?.name || null,
+    photo_file:activeCleanPhoto.file
+  });
+
+  pendingCleanPhotoPose=null;
+  activeCleanPhoto=null;
+
+  renderCaptureDetails();
+  closeCleanPhotoModal();
+}
+
+async function shareCleanPhoto(){
+  if(!activeCleanPhoto?.file) return;
+
+  const original=activeCleanPhoto.file;
+  const ext=(original.name?.split('.').pop() || 'jpg').toLowerCase();
+
+  const file=new File(
+    [original],
+    `eventvision-clean-photo-${String(captures.length+1).padStart(2,'0')}.${ext}`,
+    {type:original.type || 'image/jpeg'}
+  );
+
+  if(
+    navigator.share &&
+    (!navigator.canShare || navigator.canShare({files:[file]}))
+  ){
+    try{
+      await navigator.share({
+        files:[file],
+        title:'EventVision clean room photo'
+      });
+      return;
+    }catch(err){
+      if(err?.name==='AbortError') return;
+      console.warn('Share failed; using download fallback',err);
+    }
+  }
+
+  const a=document.createElement('a');
+  a.href=activeCleanPhotoURL;
+  a.download=file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+el.takeCleanPhoto?.addEventListener('click',beginCleanPhoto);
+
+el.cleanPhotoInput?.addEventListener('change',()=>{
+  const file=el.cleanPhotoInput.files?.[0];
+  if(file){
+    handleCleanPhotoFile(file);
+  }
+});
+
+el.closeCleanPhoto?.addEventListener('click',closeCleanPhotoModal);
+el.keepCleanPhoto?.addEventListener('click',keepCleanPhoto);
+el.shareCleanPhoto?.addEventListener('click',shareCleanPhoto);
 
 function enterPhotoMode(){
   if(!session || !completed){
@@ -1881,6 +2161,14 @@ el.scanAgain.addEventListener('click',()=>{
   scanSceneData=null;
   captures=[];
   activeCapture=null;
+  pendingCleanPhotoPose=null;
+  activeCleanPhoto=null;
+
+  if(activeCleanPhotoURL){
+    URL.revokeObjectURL(activeCleanPhotoURL);
+    activeCleanPhotoURL=null;
+  }
+
   renderCaptureDetails();
 
   clearObjects();
