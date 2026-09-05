@@ -367,11 +367,318 @@ body.xr-active.layout-mode canvas{
   }
 }
 
+
+/* v8 — numbered corners, coordinates and camera capture */
+.resultActionGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:12px;
+}
+
+.resultActionGrid .addFurnitureBtn{
+  margin-top:0;
+}
+
+.cameraViewBtn{
+  background:var(--panel2) !important;
+  border:1px solid var(--line) !important;
+}
+
+.detailSectionTitle{
+  margin-top:14px;
+  margin-bottom:7px;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.cornerDetails{
+  display:grid;
+  gap:7px;
+}
+
+.cornerCoordCard{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:9px;
+  align-items:start;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#0f0f13;
+}
+
+.cornerNumber{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border-radius:999px;
+  background:var(--accent);
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+}
+
+.coordTitle{
+  font-size:12px;
+  font-weight:800;
+}
+
+.coordLocal{
+  margin-top:3px;
+  font-size:11px;
+  color:#fff;
+}
+
+.coordWorld{
+  margin-top:3px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.4;
+}
+
+.captureDetails{
+  display:grid;
+  gap:7px;
+}
+
+.captureDetailCard{
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#0f0f13;
+}
+
+.captureDetailCard strong{
+  display:block;
+  font-size:12px;
+}
+
+.captureDetailCard span{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.4;
+}
+
+.emptyDetail{
+  color:var(--muted);
+  font-size:11px;
+}
+
+.planCornerNumber{
+  fill:#fff;
+  font-size:12px;
+  font-weight:900;
+  text-anchor:middle;
+  dominant-baseline:central;
+  paint-order:stroke;
+  stroke:#0d0d10;
+  stroke-width:4px;
+  stroke-linejoin:round;
+}
+
+.photoHud{
+  position:fixed;
+  inset:0;
+  display:none;
+  z-index:100000;
+  pointer-events:none;
+}
+
+.photoHud.active{
+  display:block;
+}
+
+.photoHudTop{
+  position:absolute;
+  top:calc(8px + env(safe-area-inset-top));
+  left:8px;
+  right:8px;
+  display:flex;
+  justify-content:space-between;
+  gap:6px;
+}
+
+.photoHudBottom{
+  position:absolute;
+  left:10px;
+  right:10px;
+  bottom:calc(14px + env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns:1fr 74px 1fr;
+  align-items:center;
+  gap:10px;
+  pointer-events:auto;
+}
+
+.photoSecondary{
+  min-height:48px;
+  border:1px solid rgba(255,255,255,.17);
+  border-radius:14px;
+  background:rgba(15,15,19,.72);
+  color:#fff;
+  font-weight:800;
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+
+.photoSecondary:disabled{
+  opacity:.65;
+}
+
+.photoShutter{
+  width:70px;
+  height:70px;
+  border-radius:999px;
+  border:3px solid #fff;
+  background:rgba(255,255,255,.14);
+  display:grid;
+  place-items:center;
+  justify-self:center;
+}
+
+.shutterInner{
+  width:54px;
+  height:54px;
+  border-radius:999px;
+  background:#fff;
+  transition:transform .12s ease;
+}
+
+.photoShutter:active .shutterInner{
+  transform:scale(.9);
+}
+
+body.xr-active.photo-mode .shell{
+  display:none !important;
+}
+
+body.xr-active.photo-mode #hud{
+  display:none !important;
+}
+
+body.xr-active.photo-mode canvas{
+  opacity:1 !important;
+  pointer-events:none;
+}
+
+.photoPreviewModal{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:flex-end;
+  z-index:120000;
+  padding:12px 12px calc(12px + env(safe-area-inset-bottom));
+  background:rgba(0,0,0,.58);
+}
+
+.photoPreviewModal.open{
+  display:flex;
+}
+
+.photoPreviewSheet{
+  width:100%;
+  max-height:90%;
+  overflow:auto;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:rgba(17,17,21,.98);
+}
+
+.photoPreviewHeader{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin-bottom:10px;
+}
+
+.photoPreviewHeader h3{
+  margin:4px 0 0;
+}
+
+#photoPreviewImage{
+  display:block;
+  width:100%;
+  max-height:62vh;
+  object-fit:contain;
+  border-radius:14px;
+  background:#000;
+}
+
+.photoCaptureMeta{
+  margin-top:9px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.45;
+}
+
+.photoPreviewActions{
+  display:grid;
+  grid-template-columns:1.35fr 1fr;
+  gap:8px;
+  margin-top:11px;
+}
+
+.photoPreviewActions .confirmFurniture{
+  margin:0;
+}
+
+.photoKeepBtn{
+  min-height:50px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--panel2);
+  color:#fff;
+  font-weight:800;
+}
+
+.captureFlash{
+  position:fixed;
+  inset:0;
+  background:#fff;
+  z-index:130000;
+  pointer-events:none;
+  animation:captureFlash .22s ease forwards;
+}
+
+@keyframes captureFlash{
+  from{opacity:.9}
+  to{opacity:0}
+}
+
+@media (max-width:420px){
+  .resultActionGrid{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .photoHudBottom{
+    grid-template-columns:1fr 68px 1fr;
+  }
+
+  .photoShutter{
+    width:64px;
+    height:64px;
+  }
+
+  .shutterInner{
+    width:48px;
+    height:48px;
+  }
+}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v7</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -415,10 +722,17 @@ body.xr-active.layout-mode canvas{
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
 
-    <button id="addFurniture" class="addFurnitureBtn">
-      <span class="addFurnitureIcon">＋</span>
-      <span>Add furniture</span>
-    </button>
+    <div class="resultActionGrid">
+      <button id="cameraView" class="addFurnitureBtn cameraViewBtn">
+        <span class="addFurnitureIcon">◎</span>
+        <span>Camera view</span>
+      </button>
+
+      <button id="addFurniture" class="addFurnitureBtn">
+        <span class="addFurnitureIcon">＋</span>
+        <span>Add furniture</span>
+      </button>
+    </div>
 
     <details id="detailsPanel">
       <summary>
@@ -430,7 +744,17 @@ body.xr-active.layout-mode canvas{
           <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
           <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
         </div>
+
+        <div class="detailSectionTitle">Corner coordinates</div>
+        <div id="cornerDetails" class="cornerDetails"></div>
+
+        <div class="detailSectionTitle">Walls</div>
         <div id="walls"></div>
+
+        <div class="detailSectionTitle">Captured views</div>
+        <div id="captureDetails" class="captureDetails">
+          <div class="emptyDetail">No camera views captured yet.</div>
+        </div>
       </div>
     </details>
   </section>
@@ -501,6 +825,42 @@ body.xr-active.layout-mode canvas{
   </div>
 </div>
 
+<div id="photoHud" class="photoHud" aria-hidden="true">
+  <div class="photoHudTop">
+    <div class="pill">PHOTO VIEW · AR OVERLAY</div>
+    <div class="pill" id="photoPoseText">Live pose</div>
+  </div>
+
+  <div class="photoHudBottom">
+    <button id="backToPlan" class="photoSecondary">← Plan</button>
+    <button id="capturePhoto" class="photoShutter" aria-label="Capture photo">
+      <span class="shutterInner"></span>
+    </button>
+    <button id="photoInfo" class="photoSecondary" disabled>Overlay on</button>
+  </div>
+</div>
+
+<div id="photoPreviewModal" class="photoPreviewModal" aria-hidden="true">
+  <div class="photoPreviewSheet">
+    <div class="photoPreviewHeader">
+      <div>
+        <div class="eyebrow">CAPTURED VIEW</div>
+        <h3>Camera + room overlay</h3>
+      </div>
+      <button id="closePhotoPreview" class="closeFurniture" aria-label="Close preview">×</button>
+    </div>
+
+    <img id="photoPreviewImage" alt="Captured AR camera view with room corner and wall overlay">
+
+    <div id="photoCaptureMeta" class="photoCaptureMeta"></div>
+
+    <div class="photoPreviewActions">
+      <button id="sharePhoto" class="confirmFurniture">Share / Save image</button>
+      <button id="keepPhoto" class="photoKeepBtn">Keep and return</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
 
@@ -526,7 +886,20 @@ const el = {
   furnitureModal: document.getElementById('furnitureModal'),
   closeFurniture: document.getElementById('closeFurniture'),
   furnitureGrid: document.getElementById('furnitureGrid'),
-  confirmFurniture: document.getElementById('confirmFurniture')
+  confirmFurniture: document.getElementById('confirmFurniture'),
+  cameraView: document.getElementById('cameraView'),
+  cornerDetails: document.getElementById('cornerDetails'),
+  captureDetails: document.getElementById('captureDetails'),
+  photoHud: document.getElementById('photoHud'),
+  photoPoseText: document.getElementById('photoPoseText'),
+  backToPlan: document.getElementById('backToPlan'),
+  capturePhoto: document.getElementById('capturePhoto'),
+  photoPreviewModal: document.getElementById('photoPreviewModal'),
+  photoPreviewImage: document.getElementById('photoPreviewImage'),
+  photoCaptureMeta: document.getElementById('photoCaptureMeta'),
+  closePhotoPreview: document.getElementById('closePhotoPreview'),
+  sharePhoto: document.getElementById('sharePhoto'),
+  keepPhoto: document.getElementById('keepPhoto')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -541,6 +914,11 @@ let latestViewerPosition = null;
 let latestViewerOrientation = null;
 let planTransform = null;
 let phonePoseGroup = null;
+let scanSceneData = null;
+let captures = [];
+let activeCapture = null;
+let activeCaptureURL = null;
+let photoMode = false;
 
 let selectedFurnitureType = null;
 
@@ -600,7 +978,7 @@ async function enterAR(){
   try{
     session = await navigator.xr.requestSession('immersive-ar',{
       requiredFeatures:['hit-test'],
-      optionalFeatures:['local-floor','dom-overlay'],
+      optionalFeatures:['local-floor','dom-overlay','computerVision'],
       domOverlay:{root:document.body}
     });
   }catch(err){
@@ -615,7 +993,16 @@ async function enterAR(){
   latestViewerOrientation=null;
   planTransform=null;
   phonePoseGroup=null;
+  scanSceneData=null;
+  captures=[];
+  activeCapture=null;
+  if(activeCaptureURL){
+    URL.revokeObjectURL(activeCaptureURL);
+    activeCaptureURL=null;
+  }
+  photoMode=false;
   document.body.classList.remove('layout-mode');
+  document.body.classList.remove('photo-mode');
   floorY=null;
   if(el.introCard) el.introCard.style.display='block';
   clearObjects();
@@ -648,6 +1035,14 @@ function render(_time,frame){
 
       latestViewerPosition = new THREE.Vector3(tp.x,tp.y,tp.z);
       latestViewerOrientation = new THREE.Quaternion(tq.x,tq.y,tq.z,tq.w);
+
+      if(photoMode && el.photoPoseText){
+        const forward=new THREE.Vector3(0,0,-1)
+          .applyQuaternion(latestViewerOrientation)
+          .normalize();
+        const yaw=Math.atan2(forward.x,-forward.z)*180/Math.PI;
+        el.photoPoseText.textContent=`${yaw.toFixed(0)}°`;
+      }
 
       if(completed && planTransform){
         updatePhonePoseMarker();
@@ -721,16 +1116,58 @@ function placeCurrentHit(){
   el.hint.textContent='Corner added ✓';
 }
 
+function makeNumberSprite(number){
+  const canvas=document.createElement('canvas');
+  canvas.width=128;
+  canvas.height=128;
+
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,128,128);
+
+  ctx.beginPath();
+  ctx.arc(64,64,39,0,Math.PI*2);
+  ctx.fillStyle=number===1?'#6b5cff':'rgba(15,15,18,.88)';
+  ctx.fill();
+  ctx.lineWidth=7;
+  ctx.strokeStyle='#ffffff';
+  ctx.stroke();
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='900 50px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText(String(number),64,66);
+
+  const texture=new THREE.CanvasTexture(canvas);
+  texture.needsUpdate=true;
+
+  const material=new THREE.SpriteMaterial({
+    map:texture,
+    transparent:true,
+    depthTest:false
+  });
+
+  const sprite=new THREE.Sprite(material);
+  sprite.scale.set(.18,.18,.18);
+  sprite.renderOrder=1001;
+  return sprite;
+}
+
 function marker(p,index){
   const mesh=new THREE.Mesh(
-    new THREE.SphereGeometry(.035,16,12),
+    new THREE.SphereGeometry(.04,16,12),
     new THREE.MeshBasicMaterial({color:index===0?0x6b5cff:0xffffff})
   );
   mesh.position.copy(p);
+  mesh.renderOrder=1000;
   scene.add(mesh);
   objects.push(mesh);
-}
 
+  const label=makeNumberSprite(index+1);
+  label.position.set(p.x,p.y+.115,p.z);
+  scene.add(label);
+  objects.push(label);
+}
 function line(a,b){
   const geometry=new THREE.BufferGeometry().setFromPoints([a.clone(),b.clone()]);
   const object=new THREE.Line(
@@ -745,6 +1182,7 @@ function clearObjects(){
   objects.forEach(o=>{
     scene.remove(o);
     o.geometry?.dispose();
+    if(o.material?.map) o.material.map.dispose();
     o.material?.dispose();
   });
   objects=[];
@@ -826,6 +1264,159 @@ function areaXZ(points){
   return Math.abs(sum)/2;
 }
 
+
+function buildPlanCoordinateSystem(points){
+  if(!points || points.length<2) return null;
+
+  const origin=points[0];
+  const dx=points[1].x-origin.x;
+  const dz=points[1].z-origin.z;
+  const len=Math.hypot(dx,dz);
+
+  if(len<0.0001) return null;
+
+  const ex={x:dx/len,z:dz/len};
+  // Perpendicular axis on the floor.
+  const ez={x:-ex.z,z:ex.x};
+
+  return {origin,ex,ez};
+}
+
+function toPlanLocal(point,system){
+  const dx=point.x-system.origin.x;
+  const dz=point.z-system.origin.z;
+
+  return {
+    x:dx*system.ex.x+dz*system.ex.z,
+    z:dx*system.ez.x+dz*system.ez.z
+  };
+}
+
+function buildSceneData(points){
+  const system=buildPlanCoordinateSystem(points);
+
+  const cornerData=points.map((p,i)=>{
+    const local=system ? toPlanLocal(p,system) : {x:0,z:0};
+
+    return {
+      id:`corner_${String(i+1).padStart(2,'0')}`,
+      number:i+1,
+      world:{
+        x:Number(p.x),
+        y:Number(p.y),
+        z:Number(p.z)
+      },
+      plan:{
+        x:Number(local.x),
+        z:Number(local.z)
+      }
+    };
+  });
+
+  const wallData=points.map((p,i)=>({
+    id:`wall_${String(i+1).padStart(2,'0')}`,
+    from:i+1,
+    to:((i+1)%points.length)+1,
+    length_m:distanceXZ(p,points[(i+1)%points.length])
+  }));
+
+  return {
+    protocol_version:'EventVision_v8',
+    coordinate_system:{
+      unit:'meter',
+      floor_plane:'XZ',
+      plan_origin:'corner_01',
+      plan_x_axis:'corner_01_to_corner_02'
+    },
+    area_m2:areaXZ(points),
+    corners:cornerData,
+    walls:wallData
+  };
+}
+
+function renderCornerDetails(){
+  if(!el.cornerDetails || !scanSceneData) return;
+
+  el.cornerDetails.innerHTML='';
+
+  scanSceneData.corners.forEach(c=>{
+    const card=document.createElement('div');
+    card.className='cornerCoordCard';
+
+    card.innerHTML=`
+      <div class="cornerNumber">${c.number}</div>
+      <div>
+        <div class="coordTitle">Corner ${c.number}</div>
+        <div class="coordLocal">
+          Plan: X ${c.plan.x.toFixed(3)} m · Z ${c.plan.z.toFixed(3)} m
+        </div>
+        <div class="coordWorld">
+          AR world: X ${c.world.x.toFixed(3)} · Y ${c.world.y.toFixed(3)} · Z ${c.world.z.toFixed(3)} m
+        </div>
+      </div>
+    `;
+
+    el.cornerDetails.appendChild(card);
+  });
+}
+
+function getCurrentCameraMetadata(){
+  if(!latestViewerPosition || !latestViewerOrientation) return null;
+
+  const forward=new THREE.Vector3(0,0,-1)
+    .applyQuaternion(latestViewerOrientation)
+    .normalize();
+
+  const yaw=Math.atan2(forward.x,-forward.z)*180/Math.PI;
+
+  return {
+    position:{
+      x:Number(latestViewerPosition.x),
+      y:Number(latestViewerPosition.y),
+      z:Number(latestViewerPosition.z)
+    },
+    orientation_quaternion:{
+      x:Number(latestViewerOrientation.x),
+      y:Number(latestViewerOrientation.y),
+      z:Number(latestViewerOrientation.z),
+      w:Number(latestViewerOrientation.w)
+    },
+    forward:{
+      x:Number(forward.x),
+      y:Number(forward.y),
+      z:Number(forward.z)
+    },
+    yaw_deg:Number(yaw)
+  };
+}
+
+function renderCaptureDetails(){
+  if(!el.captureDetails) return;
+
+  if(!captures.length){
+    el.captureDetails.innerHTML='<div class="emptyDetail">No camera views captured yet.</div>';
+    return;
+  }
+
+  el.captureDetails.innerHTML='';
+
+  captures.forEach((capture,i)=>{
+    const p=capture.camera?.position;
+    const yaw=capture.camera?.yaw_deg;
+
+    const card=document.createElement('div');
+    card.className='captureDetailCard';
+    card.innerHTML=`
+      <strong>View ${i+1}</strong>
+      <span>
+        ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
+        ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
+      </span>
+    `;
+    el.captureDetails.appendChild(card);
+  });
+}
+
 function drawResult(points = finishedCorners.length ? finishedCorners : corners){
   if(!points || points.length < 3) return;
 
@@ -837,6 +1428,10 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
   el.cornerMetric.textContent=points.length;
   el.areaMetric.textContent=areaXZ(points).toFixed(2)+' m²';
+
+  scanSceneData=buildSceneData(points);
+  renderCornerDetails();
+  renderCaptureDetails();
 
   const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
   const minX=Math.min(...xs),maxX=Math.max(...xs);
@@ -875,11 +1470,18 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
     const c=document.createElementNS(ns,'circle');
     c.setAttribute('cx',p.x);
     c.setAttribute('cy',p.y);
-    c.setAttribute('r','6');
-    c.setAttribute('fill','#0d0d10');
-    c.setAttribute('stroke',i===0?'#6b5cff':'#fff');
+    c.setAttribute('r','11');
+    c.setAttribute('fill',i===0?'#6b5cff':'#0d0d10');
+    c.setAttribute('stroke','#fff');
     c.setAttribute('stroke-width','3');
     el.plan.appendChild(c);
+
+    const n=document.createElementNS(ns,'text');
+    n.setAttribute('x',p.x);
+    n.setAttribute('y',p.y+.5);
+    n.setAttribute('class','planCornerNumber');
+    n.textContent=String(i+1);
+    el.plan.appendChild(n);
   });
 
   // Live phone position + direction marker.
@@ -972,11 +1574,216 @@ document.addEventListener('pointerup',e=>{
   placeCurrentHit();
 });
 
+
+function enterPhotoMode(){
+  if(!session || !completed){
+    alert('Live AR tracking is not active. Re-scan the room before using camera view.');
+    return;
+  }
+
+  photoMode=true;
+  document.body.classList.remove('layout-mode');
+  document.body.classList.add('photo-mode');
+  el.hud.classList.remove('active');
+  el.photoHud.classList.add('active');
+  el.photoHud.setAttribute('aria-hidden','false');
+
+  if(renderer?.domElement){
+    renderer.domElement.style.display='block';
+  }
+}
+
+function exitPhotoMode(){
+  photoMode=false;
+  document.body.classList.remove('photo-mode');
+  document.body.classList.add('layout-mode');
+  el.photoHud.classList.remove('active');
+  el.photoHud.setAttribute('aria-hidden','true');
+
+  requestAnimationFrame(()=>{
+    el.result.scrollIntoView({
+      behavior:'smooth',
+      block:'start'
+    });
+  });
+}
+
+function captureCanvasLayer(ctx,source,targetWidth,targetHeight){
+  if(!source || !source.width || !source.height) return false;
+
+  const rect=source.getBoundingClientRect();
+  if(rect.width<=0 || rect.height<=0) return false;
+
+  const sx=targetWidth/window.innerWidth;
+  const sy=targetHeight/window.innerHeight;
+
+  try{
+    ctx.drawImage(
+      source,
+      0,0,source.width,source.height,
+      rect.left*sx,
+      rect.top*sy,
+      rect.width*sx,
+      rect.height*sy
+    );
+    return true;
+  }catch(err){
+    console.warn('Could not composite canvas layer',err);
+    return false;
+  }
+}
+
+async function captureARComposite(){
+  if(!photoMode || !renderer) return;
+
+  const flash=document.createElement('div');
+  flash.className='captureFlash';
+  document.body.appendChild(flash);
+  setTimeout(()=>flash.remove(),260);
+
+  // Wait for a fresh XR frame.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+
+  const dpr=Math.min(window.devicePixelRatio || 1,2);
+  const width=Math.max(1,Math.round(window.innerWidth*dpr));
+  const height=Math.max(1,Math.round(window.innerHeight*dpr));
+
+  const output=document.createElement('canvas');
+  output.width=width;
+  output.height=height;
+
+  const ctx=output.getContext('2d',{
+    alpha:false
+  });
+
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,width,height);
+
+  let layersDrawn=0;
+
+  // HelloXR inserts its AR camera renderer into the page. Draw it first.
+  const bgCandidates=[
+    ...document.querySelectorAll('.arkit-device-wrapper canvas')
+  ];
+
+  bgCandidates.forEach(canvas=>{
+    if(canvas!==renderer.domElement){
+      if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
+    }
+  });
+
+  // Fallback: collect any other visible canvases before our Three.js overlay.
+  if(!bgCandidates.length){
+    [...document.querySelectorAll('canvas')].forEach(canvas=>{
+      if(canvas!==renderer.domElement){
+        if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
+      }
+    });
+  }
+
+  // Draw EventVision AR lines, numbered corners, etc. last.
+  if(captureCanvasLayer(ctx,renderer.domElement,width,height)){
+    layersDrawn++;
+  }
+
+  const blob=await new Promise(resolve=>{
+    output.toBlob(resolve,'image/jpeg',0.94);
+  });
+
+  if(!blob){
+    alert('Could not create the captured image.');
+    return;
+  }
+
+  const metadata={
+    id:`view_${String(captures.length+1).padStart(2,'0')}`,
+    created_at:new Date().toISOString(),
+    camera:getCurrentCameraMetadata(),
+    room:scanSceneData,
+    composite_layers:layersDrawn
+  };
+
+  activeCapture={
+    blob,
+    metadata
+  };
+
+  if(activeCaptureURL){
+    URL.revokeObjectURL(activeCaptureURL);
+  }
+  activeCaptureURL=URL.createObjectURL(blob);
+  el.photoPreviewImage.src=activeCaptureURL;
+
+  const p=metadata.camera?.position;
+  const yaw=metadata.camera?.yaw_deg;
+
+  el.photoCaptureMeta.innerHTML=
+    `${p ? `Camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}`
+    + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
+    + `<br>Composite layers captured: ${layersDrawn}`;
+
+  el.photoPreviewModal.classList.add('open');
+  el.photoPreviewModal.setAttribute('aria-hidden','false');
+}
+
+function closePhotoPreview(){
+  el.photoPreviewModal.classList.remove('open');
+  el.photoPreviewModal.setAttribute('aria-hidden','true');
+}
+
+function keepActiveCapture(){
+  if(!activeCapture) return;
+
+  captures.push(activeCapture);
+  activeCapture=null;
+
+  renderCaptureDetails();
+  closePhotoPreview();
+  exitPhotoMode();
+}
+
+async function shareActiveCapture(){
+  if(!activeCapture) return;
+
+  const filename=`eventvision-view-${String(captures.length+1).padStart(2,'0')}.jpg`;
+  const file=new File([activeCapture.blob],filename,{type:'image/jpeg'});
+
+  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+    try{
+      await navigator.share({
+        files:[file],
+        title:'EventVision AR view'
+      });
+      return;
+    }catch(err){
+      if(err?.name==='AbortError') return;
+      console.warn('Share failed, falling back to download',err);
+    }
+  }
+
+  const a=document.createElement('a');
+  a.href=activeCaptureURL;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+el.cameraView?.addEventListener('click',enterPhotoMode);
+el.backToPlan?.addEventListener('click',exitPhotoMode);
+el.capturePhoto?.addEventListener('click',captureARComposite);
+el.closePhotoPreview?.addEventListener('click',closePhotoPreview);
+el.keepPhoto?.addEventListener('click',keepActiveCapture);
+el.sharePhoto?.addEventListener('click',shareActiveCapture);
+
 function endAR(){
   renderer?.setAnimationLoop(null);
   el.hud.classList.remove('active');
   document.body.classList.remove('xr-active');
   document.body.classList.remove('layout-mode');
+  document.body.classList.remove('photo-mode');
+  photoMode=false;
+  el.photoHud?.classList.remove('active');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
@@ -1071,6 +1878,10 @@ el.scanAgain.addEventListener('click',()=>{
   floorY=null;
   planTransform=null;
   phonePoseGroup=null;
+  scanSceneData=null;
+  captures=[];
+  activeCapture=null;
+  renderCaptureDetails();
 
   clearObjects();
   el.result.classList.remove('show');
