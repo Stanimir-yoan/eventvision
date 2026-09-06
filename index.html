@@ -675,103 +675,144 @@ body.xr-active.photo-mode canvas{
 }
 
 
-/* v8.1b — system screenshot workflow; v8 scan/session logic untouched */
-.photoHudBottom.screenshotControls{
-  grid-template-columns:1fr 1.55fr 1fr;
+/* v8.1c — screenshot mode + wall labels */
+.screenshotActionGrid{
+  grid-template-columns:1fr 1fr;
 }
 
-.prepareScreenshotBtn{
-  min-height:52px;
+.screenshotModeBtn{
+  background:var(--accent) !important;
+  border:1px solid transparent !important;
+}
+
+.debugCaptureLink{
+  width:100%;
+  margin-top:8px;
+  min-height:38px;
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:750;
+}
+
+.planWallLabel{
+  fill:#9fa1ad;
+  font-size:10px;
+  font-weight:800;
+  text-anchor:middle;
+  paint-order:stroke;
+  stroke:#0d0d10;
+  stroke-width:3px;
+  stroke-linejoin:round;
+}
+
+.screenshotHud{
+  position:fixed;
+  inset:0;
+  z-index:110000;
+  display:none;
+  pointer-events:none;
+}
+
+.screenshotHud.active{
+  display:block;
+}
+
+.screenshotTop{
+  position:absolute;
+  top:calc(8px + env(safe-area-inset-top));
+  left:8px;
+  right:8px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:6px;
+}
+
+.screenshotGuide{
+  position:absolute;
+  left:50%;
+  bottom:calc(88px + env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  width:min(82%,360px);
+  padding:10px 12px;
   border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
-  background:rgba(107,92,255,.92);
+  background:rgba(15,15,18,.55);
   color:#fff;
-  font-size:12px;
-  font-weight:900;
-  line-height:1.15;
-  padding:0 12px;
+  text-align:center;
   backdrop-filter:blur(10px);
   -webkit-backdrop-filter:blur(10px);
 }
 
-.screenshotToast{
-  position:fixed;
-  left:50%;
-  top:calc(14px + env(safe-area-inset-top));
-  transform:translateX(-50%);
-  z-index:150000;
-  display:none;
-  min-width:230px;
-  max-width:calc(100% - 30px);
-  padding:10px 13px;
+.screenshotGuideTitle{
+  font-size:12px;
+  font-weight:900;
+}
+
+.screenshotGuideText{
+  margin-top:3px;
+  font-size:10px;
+  color:rgba(255,255,255,.75);
+  line-height:1.35;
+}
+
+.screenshotBottom{
+  position:absolute;
+  left:10px;
+  right:10px;
+  bottom:calc(14px + env(safe-area-inset-bottom));
+  display:flex;
+  justify-content:center;
+  pointer-events:auto;
+}
+
+.screenshotBack{
+  min-width:170px;
+  min-height:48px;
+  padding:0 16px;
   border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
-  background:rgba(12,12,15,.78);
+  background:rgba(15,15,18,.72);
   color:#fff;
-  text-align:center;
-  pointer-events:none;
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
+  font-weight:850;
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
 }
 
-.screenshotToast.show{
-  display:block;
+body.xr-active.screenshot-mode{
+  overflow:hidden;
+  background:transparent !important;
 }
 
-.screenshotToast strong,
-.screenshotToast span{
-  display:block;
-}
-
-.screenshotToast strong{
-  font-size:12px;
-}
-
-.screenshotToast span{
-  margin-top:2px;
-  color:#d3d3da;
-  font-size:10px;
-}
-
-body.xr-active.photo-mode.screenshot-ready #photoHud{
+body.xr-active.screenshot-mode .shell{
   display:none !important;
 }
 
-body.xr-active.photo-mode.screenshot-ready .screenshotToast{
+body.xr-active.screenshot-mode #hud,
+body.xr-active.screenshot-mode #photoHud{
   display:none !important;
 }
 
-/* In prepared mode only the native room view + Three.js room overlay remain. */
-body.xr-active.photo-mode.screenshot-ready canvas{
+body.xr-active.screenshot-mode canvas{
   opacity:1 !important;
   pointer-events:none !important;
 }
 
-.screenshotPoseCard{
-  border-color:rgba(107,92,255,.38);
+body.xr-active.screenshot-mode .screenshotHud{
+  display:block !important;
 }
 
 @media (max-width:420px){
-  .photoHudBottom.screenshotControls{
-    grid-template-columns:.85fr 1.5fr .85fr;
-    gap:7px;
-  }
-
-  .prepareScreenshotBtn{
-    font-size:11px;
-    padding:0 8px;
-  }
-
-  .photoSecondary{
-    font-size:11px;
-  }
+  .screenshotGuide{width:86%;}
 }
 
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1b</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1c</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -815,8 +856,8 @@ body.xr-active.photo-mode.screenshot-ready canvas{
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
 
-    <div class="resultActionGrid">
-      <button id="cameraView" class="addFurnitureBtn cameraViewBtn">
+    <div class="resultActionGrid screenshotActionGrid">
+      <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
         <span class="addFurnitureIcon">▣</span>
         <span>Screenshot mode</span>
       </button>
@@ -826,6 +867,10 @@ body.xr-active.photo-mode.screenshot-ready canvas{
         <span>Add furniture</span>
       </button>
     </div>
+
+    <button id="cameraView" class="debugCaptureLink" type="button">
+      Experimental overlay capture
+    </button>
 
     <details id="detailsPanel">
       <summary>
@@ -844,9 +889,14 @@ body.xr-active.photo-mode.screenshot-ready canvas{
         <div class="detailSectionTitle">Walls</div>
         <div id="walls"></div>
 
-        <div class="detailSectionTitle">Screenshot poses / debug captures</div>
-        <div id="captureDetails" class="captureDetails">
+        <div class="detailSectionTitle">Screenshot pose</div>
+        <div id="screenshotPoseDetails" class="captureDetails">
           <div class="emptyDetail">No screenshot pose saved yet.</div>
+        </div>
+
+        <div class="detailSectionTitle">Captured views</div>
+        <div id="captureDetails" class="captureDetails">
+          <div class="emptyDetail">No camera views captured yet.</div>
         </div>
       </div>
     </details>
@@ -918,32 +968,45 @@ body.xr-active.photo-mode.screenshot-ready canvas{
   </div>
 </div>
 
-<div id="photoHud" class="photoHud" aria-hidden="true">
-  <div class="photoHudTop">
-    <div class="pill">SCREENSHOT MODE · ROOM + OVERLAY</div>
-    <div class="pill" id="photoPoseText">Live pose</div>
+<div id="screenshotHud" class="screenshotHud" aria-hidden="true">
+  <div class="screenshotTop">
+    <div class="pill" id="screenshotPoseStatus">Pose saved</div>
+    <div class="pill">Use iPhone screenshot</div>
   </div>
 
-  <div class="photoHudBottom screenshotControls">
-    <button id="backToPlan" class="photoSecondary">← Plan</button>
-    <button id="capturePhoto" class="prepareScreenshotBtn" aria-label="Prepare iPhone screenshot">
-      Save pose & hide UI
-    </button>
-    <button id="photoInfo" class="photoSecondary" disabled>Overlay ✓</button>
+  <div class="screenshotGuide">
+    <div class="screenshotGuideTitle">Screenshot mode</div>
+    <div class="screenshotGuideText">
+      Use the iPhone side button + volume up to save what you see.
+    </div>
+  </div>
+
+  <div class="screenshotBottom">
+    <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
   </div>
 </div>
 
-<div id="screenshotToast" class="screenshotToast" aria-hidden="true">
-  <strong>Pose saved</strong>
-  <span>Use the iPhone screenshot buttons now.</span>
+<div id="photoHud" class="photoHud" aria-hidden="true">
+  <div class="photoHudTop">
+    <div class="pill">PHOTO VIEW · AR OVERLAY</div>
+    <div class="pill" id="photoPoseText">Live pose</div>
+  </div>
+
+  <div class="photoHudBottom">
+    <button id="backToPlan" class="photoSecondary">← Plan</button>
+    <button id="capturePhoto" class="photoShutter" aria-label="Capture photo">
+      <span class="shutterInner"></span>
+    </button>
+    <button id="photoInfo" class="photoSecondary" disabled>Overlay on</button>
+  </div>
 </div>
 
 <div id="photoPreviewModal" class="photoPreviewModal" aria-hidden="true">
   <div class="photoPreviewSheet">
     <div class="photoPreviewHeader">
       <div>
-        <div class="eyebrow">DEBUG CAPTURE</div>
-        <h3>Web overlay capture</h3>
+        <div class="eyebrow">CAPTURED VIEW</div>
+        <h3>Camera + room overlay</h3>
       </div>
       <button id="closePhotoPreview" class="closeFurniture" aria-label="Close preview">×</button>
     </div>
@@ -986,6 +1049,11 @@ const el = {
   furnitureGrid: document.getElementById('furnitureGrid'),
   confirmFurniture: document.getElementById('confirmFurniture'),
   cameraView: document.getElementById('cameraView'),
+  screenshotMode: document.getElementById('screenshotMode'),
+  screenshotHud: document.getElementById('screenshotHud'),
+  screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
+  screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
+  backFromScreenshot: document.getElementById('backFromScreenshot'),
   cornerDetails: document.getElementById('cornerDetails'),
   captureDetails: document.getElementById('captureDetails'),
   photoHud: document.getElementById('photoHud'),
@@ -997,8 +1065,7 @@ const el = {
   photoCaptureMeta: document.getElementById('photoCaptureMeta'),
   closePhotoPreview: document.getElementById('closePhotoPreview'),
   sharePhoto: document.getElementById('sharePhoto'),
-  keepPhoto: document.getElementById('keepPhoto'),
-  screenshotToast: document.getElementById('screenshotToast')
+  keepPhoto: document.getElementById('keepPhoto')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -1018,8 +1085,8 @@ let captures = [];
 let activeCapture = null;
 let activeCaptureURL = null;
 let photoMode = false;
-let screenshotReady = false;
-let lastSavedScreenshotPose = null;
+let screenshotModeActive = false;
+let savedScreenshotPose = null;
 
 let selectedFurnitureType = null;
 
@@ -1096,14 +1163,18 @@ async function enterAR(){
   phonePoseGroup=null;
   scanSceneData=null;
   captures=[];
+  savedScreenshotPose=null;
   activeCapture=null;
   if(activeCaptureURL){
     URL.revokeObjectURL(activeCaptureURL);
     activeCaptureURL=null;
   }
   photoMode=false;
+  screenshotModeActive=false;
+  renderScreenshotPoseDetails();
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
+  document.body.classList.remove('screenshot-mode');
   floorY=null;
   if(el.introCard) el.introCard.style.display='block';
   clearObjects();
@@ -1147,6 +1218,10 @@ function render(_time,frame){
 
       if(completed && planTransform){
         updatePhonePoseMarker();
+      }
+
+      if(screenshotModeActive && el.screenshotPoseStatus){
+        el.screenshotPoseStatus.textContent='Live AR pose ✓';
       }
     }
   }
@@ -1422,7 +1497,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_1b',
+    protocol_version:'EventVision_v8_1c',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1495,7 +1570,7 @@ function renderCaptureDetails(){
   if(!el.captureDetails) return;
 
   if(!captures.length){
-    el.captureDetails.innerHTML='<div class="emptyDetail">No screenshot pose saved yet.</div>';
+    el.captureDetails.innerHTML='<div class="emptyDetail">No camera views captured yet.</div>';
     return;
   }
 
@@ -1504,22 +1579,16 @@ function renderCaptureDetails(){
   captures.forEach((capture,i)=>{
     const p=capture.camera?.position;
     const yaw=capture.camera?.yaw_deg;
-    const plan=capture.plan_position;
-    const screenshotPose=capture.type==='system_screenshot_pose';
 
     const card=document.createElement('div');
-    card.className='captureDetailCard' + (screenshotPose ? ' screenshotPoseCard' : '');
-
+    card.className='captureDetailCard';
     card.innerHTML=`
-      <strong>${screenshotPose ? 'Screenshot pose' : 'Debug capture'} ${i+1}</strong>
+      <strong>View ${i+1}</strong>
       <span>
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
-        ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
-        ${capture.created_at ? `<br>${new Date(capture.created_at).toLocaleTimeString()}` : ''}
       </span>
     `;
-
     el.captureDetails.appendChild(card);
   });
 }
@@ -1538,6 +1607,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
   scanSceneData=buildSceneData(points);
   renderCornerDetails();
+  renderScreenshotPoseDetails();
   renderCaptureDetails();
 
   const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
@@ -1589,6 +1659,22 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
     n.setAttribute('class','planCornerNumber');
     n.textContent=String(i+1);
     el.plan.appendChild(n);
+  });
+
+  mapped.forEach((p,i)=>{
+    const q=mapped[(i+1)%mapped.length];
+    const mx=(p.x+q.x)/2;
+    const my=(p.y+q.y)/2;
+    let angle=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;
+    if(angle>90 || angle<-90) angle+=180;
+
+    const label=document.createElementNS(ns,'text');
+    label.setAttribute('x',mx);
+    label.setAttribute('y',my-8);
+    label.setAttribute('class','planWallLabel');
+    label.setAttribute('transform',`rotate(${angle.toFixed(2)} ${mx.toFixed(2)} ${(my-8).toFixed(2)})`);
+    label.textContent=`Wall ${i+1}`;
+    el.plan.appendChild(label);
   });
 
   // Live phone position + direction marker.
@@ -1676,6 +1762,7 @@ function updatePhonePoseMarker(){
 document.addEventListener('pointerup',e=>{
   if(!document.body.classList.contains('xr-active')) return;
   if(document.body.classList.contains('layout-mode')) return;
+  if(document.body.classList.contains('screenshot-mode')) return;
   if(e.target.closest && e.target.closest('#hud button')) return;
   // Fallback for HelloXR builds that expose DOM pointer events rather than XR select.
   placeCurrentHit();
@@ -1683,18 +1770,13 @@ document.addEventListener('pointerup',e=>{
 
 
 
-function currentPhonePlanPosition(){
-  if(
-    !latestViewerPosition ||
-    !scanSceneData?.corners ||
-    scanSceneData.corners.length<2
-  ){
+function getPlanPositionFromWorld(worldPosition){
+  if(!worldPosition || !scanSceneData?.corners || scanSceneData.corners.length<2){
     return null;
   }
 
   const c1=scanSceneData.corners[0];
   const c2=scanSceneData.corners[1];
-
   const dx=c2.world.x-c1.world.x;
   const dz=c2.world.z-c1.world.z;
   const len=Math.hypot(dx,dz);
@@ -1703,9 +1785,8 @@ function currentPhonePlanPosition(){
 
   const ex={x:dx/len,z:dz/len};
   const ez={x:-ex.z,z:ex.x};
-
-  const rx=latestViewerPosition.x-c1.world.x;
-  const rz=latestViewerPosition.z-c1.world.z;
+  const rx=worldPosition.x-c1.world.x;
+  const rz=worldPosition.z-c1.world.z;
 
   return {
     x:rx*ex.x+rz*ex.z,
@@ -1716,71 +1797,91 @@ function currentPhonePlanPosition(){
 function saveScreenshotPose(){
   const camera=getCurrentCameraMetadata();
 
-  if(!camera){
-    alert('Live AR camera pose is not available yet.');
-    return false;
-  }
-
-  const planPosition=currentPhonePlanPosition();
-
-  const poseRecord={
-    id:`screenshot_pose_${String(
-      captures.filter(c=>c.type==='system_screenshot_pose').length+1
-    ).padStart(2,'0')}`,
-    type:'system_screenshot_pose',
-    created_at:new Date().toISOString(),
+  savedScreenshotPose={
+    saved_at:new Date().toISOString(),
     camera,
-    plan_position:planPosition,
-    note:'Pose saved immediately before user takes an iPhone system screenshot.'
+    plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null
   };
 
-  captures.push(poseRecord);
-  lastSavedScreenshotPose=poseRecord;
-  renderCaptureDetails();
+  renderScreenshotPoseDetails();
 
-  return true;
+  if(el.screenshotPoseStatus){
+    el.screenshotPoseStatus.textContent=camera ? 'Pose saved ✓' : 'Pose unavailable';
+  }
 }
 
-function showScreenshotToast(){
-  if(!el.screenshotToast) return;
+function renderScreenshotPoseDetails(){
+  if(!el.screenshotPoseDetails) return;
 
-  el.screenshotToast.classList.add('show');
-  el.screenshotToast.setAttribute('aria-hidden','false');
+  if(!savedScreenshotPose){
+    el.screenshotPoseDetails.innerHTML='<div class="emptyDetail">No screenshot pose saved yet.</div>';
+    return;
+  }
 
-  setTimeout(()=>{
-    el.screenshotToast.classList.remove('show');
-    el.screenshotToast.setAttribute('aria-hidden','true');
+  const p=savedScreenshotPose.camera?.position;
+  const plan=savedScreenshotPose.plan_position;
+  const yaw=savedScreenshotPose.camera?.yaw_deg;
 
-    // After the confirmation disappears, remove all EventVision UI.
-    screenshotReady=true;
-    document.body.classList.add('screenshot-ready');
-  },1200);
+  el.screenshotPoseDetails.innerHTML=`
+    <div class="captureDetailCard">
+      <strong>Latest screenshot pose</strong>
+      <span>
+        ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
+        ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
+        ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
+      </span>
+    </div>
+  `;
 }
 
-function prepareSystemScreenshot(){
-  if(!photoMode) return;
+function enterScreenshotMode(){
+  if(!session || !completed){
+    alert('Live AR tracking is not active. Finish the room scan first.');
+    return;
+  }
 
-  if(!saveScreenshotPose()) return;
+  screenshotModeActive=true;
+  saveScreenshotPose();
 
-  showScreenshotToast();
+  document.body.classList.remove('layout-mode');
+  document.body.classList.remove('photo-mode');
+  document.body.classList.add('screenshot-mode');
+
+  el.hud.classList.remove('active');
+  el.photoHud?.classList.remove('active');
+  el.screenshotHud.classList.add('active');
+  el.screenshotHud.setAttribute('aria-hidden','false');
+
+  if(renderer?.domElement){
+    renderer.domElement.style.display='block';
+  }
 }
 
-function restoreScreenshotControls(){
-  if(!photoMode || !screenshotReady) return;
+function exitScreenshotMode(){
+  screenshotModeActive=false;
+  saveScreenshotPose();
 
-  screenshotReady=false;
-  document.body.classList.remove('screenshot-ready');
+  document.body.classList.remove('screenshot-mode');
+  document.body.classList.add('layout-mode');
+
+  el.screenshotHud.classList.remove('active');
+  el.screenshotHud.setAttribute('aria-hidden','true');
+
+  requestAnimationFrame(()=>{
+    el.result.scrollIntoView({behavior:'smooth',block:'start'});
+  });
 }
+
+el.screenshotMode?.addEventListener('click',enterScreenshotMode);
+el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
 function enterPhotoMode(){
   if(!session || !completed){
-    alert('Live AR tracking is not active. Re-scan the room before using Screenshot mode.');
+    alert('Live AR tracking is not active. Re-scan the room before using camera view.');
     return;
   }
 
   photoMode=true;
-  screenshotReady=false;
-  document.body.classList.remove('screenshot-ready');
   document.body.classList.remove('layout-mode');
   document.body.classList.add('photo-mode');
   el.hud.classList.remove('active');
@@ -1794,8 +1895,6 @@ function enterPhotoMode(){
 
 function exitPhotoMode(){
   photoMode=false;
-  screenshotReady=false;
-  document.body.classList.remove('screenshot-ready');
   document.body.classList.remove('photo-mode');
   document.body.classList.add('layout-mode');
   el.photoHud.classList.remove('active');
@@ -1972,23 +2071,10 @@ async function shareActiveCapture(){
 
 el.cameraView?.addEventListener('click',enterPhotoMode);
 el.backToPlan?.addEventListener('click',exitPhotoMode);
-el.capturePhoto?.addEventListener('click',prepareSystemScreenshot);
+el.capturePhoto?.addEventListener('click',captureARComposite);
 el.closePhotoPreview?.addEventListener('click',closePhotoPreview);
 el.keepPhoto?.addEventListener('click',keepActiveCapture);
-
 el.sharePhoto?.addEventListener('click',shareActiveCapture);
-
-document.addEventListener('pointerup',e=>{
-  if(
-    photoMode &&
-    screenshotReady
-  ){
-    e.preventDefault();
-    e.stopPropagation();
-    restoreScreenshotControls();
-  }
-},true);
-
 
 function endAR(){
   renderer?.setAnimationLoop(null);
@@ -1996,10 +2082,11 @@ function endAR(){
   document.body.classList.remove('xr-active');
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
-  document.body.classList.remove('screenshot-ready');
+  document.body.classList.remove('screenshot-mode');
   photoMode=false;
-  screenshotReady=false;
+  screenshotModeActive=false;
   el.photoHud?.classList.remove('active');
+  el.screenshotHud?.classList.remove('active');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
@@ -2096,10 +2183,9 @@ el.scanAgain.addEventListener('click',()=>{
   phonePoseGroup=null;
   scanSceneData=null;
   captures=[];
+  savedScreenshotPose=null;
   activeCapture=null;
-  lastSavedScreenshotPose=null;
-  screenshotReady=false;
-  document.body.classList.remove('screenshot-ready');
+  renderScreenshotPoseDetails();
   renderCaptureDetails();
 
   clearObjects();
@@ -2112,6 +2198,8 @@ el.scanAgain.addEventListener('click',()=>{
   if(session){
     // Return directly to tracing while preserving the same XR world origin.
     document.body.classList.remove('layout-mode');
+    document.body.classList.remove('screenshot-mode');
+    el.screenshotHud?.classList.remove('active');
     el.hud.classList.add('active');
     reticle.visible=false;
     updateControls();
