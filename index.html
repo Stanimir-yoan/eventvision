@@ -140,16 +140,30 @@ body.modal-open{overflow:hidden}
   cursor:grab;
 }
 
+/* The visible footprint can be physically smaller than the touch target. */
+.furnitureHitArea{
+  position:absolute;
+  left:50%;
+  top:50%;
+  min-width:44px;
+  min-height:44px;
+  width:100%;
+  height:100%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+
 .furnitureItem:active{
   cursor:grabbing;
 }
 
 .furnitureVisual{
   position:relative;
-  width:34px;
-  height:34px;
+  width:100%;
+  height:100%;
+  box-sizing:border-box;
   border:2px solid #fff;
-  border-radius:8px 8px 6px 6px;
+  border-radius:18%;
   background:rgba(107,92,255,.22);
   box-shadow:0 2px 8px rgba(0,0,0,.25);
 }
@@ -157,24 +171,24 @@ body.modal-open{overflow:hidden}
 .furnitureVisual.chair:before{
   content:"";
   position:absolute;
-  left:5px;
-  right:5px;
-  top:4px;
-  height:8px;
+  left:15%;
+  right:15%;
+  top:10%;
+  height:24%;
   border:2px solid #fff;
   border-bottom:0;
-  border-radius:5px 5px 0 0;
+  border-radius:24% 24% 0 0;
 }
 
 .furnitureVisual.chair:after{
   content:"";
   position:absolute;
-  left:7px;
-  right:7px;
-  bottom:5px;
-  height:10px;
+  left:20%;
+  right:20%;
+  bottom:14%;
+  height:30%;
   border:2px solid #fff;
-  border-radius:4px;
+  border-radius:22%;
 }
 
 .furnitureItem.selected .furnitureVisual{
@@ -808,11 +822,24 @@ body.xr-active.screenshot-mode .screenshotHud{
   .screenshotGuide{width:86%;}
 }
 
+
+/* v8.1d — real-world furniture scale */
+.furnitureScaleNote{
+  margin-top:6px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.35;
+}
+
+.furnitureItem[data-type="chair"] .furnitureVisual{
+  background:rgba(107,92,255,.18);
+}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1c</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1d</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -855,6 +882,7 @@ body.xr-active.screenshot-mode .screenshotHud{
     </div>
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
+    <div class="furnitureScaleNote">Chair footprint: 0.55 × 0.55 m, scaled from the measured room.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
       <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
@@ -1497,7 +1525,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_1c',
+    protocol_version:'EventVision_v8_1d',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1721,6 +1749,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   });
 
   updatePhonePoseMarker();
+  renderFurniture();
 }
 
 function updatePhonePoseMarker(){
@@ -2219,6 +2248,10 @@ window.addEventListener('resize',()=>{
   if(renderer){
     renderer.setSize(window.innerWidth,window.innerHeight);
   }
+
+  if(completed && planTransform){
+    renderFurniture();
+  }
 });
 
 check();
@@ -2254,8 +2287,10 @@ function setSelectedFurniture(id){
 
   if(item && furnitureToolbar){
     furnitureToolbar.classList.add('visible');
-    selectedFurnitureLabel.textContent =
-      `${item.type.charAt(0).toUpperCase() + item.type.slice(1)} selected`;
+    const typeLabel=item.type.charAt(0).toUpperCase()+item.type.slice(1);
+    selectedFurnitureLabel.textContent = item.type==='chair'
+      ? `${typeLabel} · 55 × 55 cm`
+      : `${typeLabel} selected`;
   } else if(furnitureToolbar){
     furnitureToolbar.classList.remove('visible');
   }
@@ -2271,25 +2306,79 @@ function updateFurnitureCount(){
 }
 
 function clamp01(v){
-  return Math.max(0.03, Math.min(0.97, v));
+  return Math.max(0.01, Math.min(0.99, v));
+}
+
+const FURNITURE_DIMENSIONS_M={
+  chair:{width:0.55,depth:0.55}
+};
+
+function getFurnitureDimensions(item){
+  const preset=FURNITURE_DIMENSIONS_M[item.type];
+  if(preset) return preset;
+
+  return {
+    width:item.width_m || null,
+    depth:item.depth_m || null
+  };
+}
+
+function getPlanScreenScale(){
+  if(!planTransform || !el.plan) return null;
+
+  const rect=el.plan.getBoundingClientRect();
+  const vb=el.plan.viewBox?.baseVal;
+
+  if(!rect.width || !rect.height || !vb?.width || !vb?.height) return null;
+
+  return {
+    pxPerMeterX:planTransform.k*(rect.width/vb.width),
+    pxPerMeterY:planTransform.k*(rect.height/vb.height)
+  };
+}
+
+function getFurnitureScreenSize(item){
+  const dims=getFurnitureDimensions(item);
+  const scale=getPlanScreenScale();
+
+  if(!dims.width || !dims.depth || !scale){
+    return {width:44,height:44,physical:false};
+  }
+
+  return {
+    width:Math.max(5,dims.width*scale.pxPerMeterX),
+    height:Math.max(5,dims.depth*scale.pxPerMeterY),
+    physical:true
+  };
 }
 
 function makeFurnitureNode(item){
   const node = document.createElement('div');
   node.className = 'furnitureItem';
   node.dataset.id = String(item.id);
+  node.dataset.type = item.type;
   node.setAttribute('role','button');
   node.setAttribute('aria-label',`${item.type} furniture item`);
   node.tabIndex = 0;
+
+  const hitArea=document.createElement('div');
+  hitArea.className='furnitureHitArea';
+  node.appendChild(hitArea);
 
   const visual = document.createElement('div');
   visual.className = `furnitureVisual ${item.type}`;
   node.appendChild(visual);
 
   function paint(){
-    node.style.left = `calc(${item.x * 100}% - 22px)`;
-    node.style.top = `calc(${item.y * 100}% - 22px)`;
-    node.style.transform = `rotate(${item.rotation}deg)`;
+    const size=getFurnitureScreenSize(item);
+
+    node.style.width=`${size.width.toFixed(2)}px`;
+    node.style.height=`${size.height.toFixed(2)}px`;
+    node.style.left = `${item.x * 100}%`;
+    node.style.top = `${item.y * 100}%`;
+    node.style.transform = `translate(-50%,-50%) rotate(${item.rotation}deg)`;
+
+    node.dataset.scaleMode=size.physical?'physical':'icon';
   }
 
   let dragging = false;
@@ -2308,8 +2397,12 @@ function makeFurnitureNode(item){
     const rect = planEditor.getBoundingClientRect();
     if(!rect.width || !rect.height) return;
 
-    item.x = clamp01((e.clientX - rect.left) / rect.width);
-    item.y = clamp01((e.clientY - rect.top) / rect.height);
+    const size=getFurnitureScreenSize(item);
+    const halfX=Math.min(0.49,(size.width/2)/rect.width);
+    const halfY=Math.min(0.49,(size.height/2)/rect.height);
+
+    item.x = Math.max(halfX,Math.min(1-halfX,(e.clientX-rect.left)/rect.width));
+    item.y = Math.max(halfY,Math.min(1-halfY,(e.clientY-rect.top)/rect.height));
 
     paint();
   });
@@ -2367,12 +2460,16 @@ function renderFurniture(){
 function addFurniture(type='chair'){
   if(!furnitureLayer) return;
 
+  const preset=FURNITURE_DIMENSIONS_M[type] || null;
+
   const item = {
     id: furnitureIdCounter++,
     type,
     x: 0.5,
     y: 0.5,
-    rotation: 0
+    rotation: 0,
+    width_m:preset?.width || null,
+    depth_m:preset?.depth || null
   };
 
   // Offset subsequent chairs slightly so multiple adds do not perfectly overlap.
