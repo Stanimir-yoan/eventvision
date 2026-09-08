@@ -839,7 +839,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1d</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1e</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -1116,6 +1116,11 @@ let photoMode = false;
 let screenshotModeActive = false;
 let savedScreenshotPose = null;
 
+const CORNER_LABEL_BASE_SCALE = 0.18;
+const CORNER_LABEL_SCALE_PER_METER = 0.05;
+const CORNER_LABEL_MIN_SCALE = 0.18;
+const CORNER_LABEL_MAX_SCALE = 0.52;
+
 let selectedFurnitureType = null;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
@@ -1251,6 +1256,8 @@ function render(_time,frame){
       if(screenshotModeActive && el.screenshotPoseStatus){
         el.screenshotPoseStatus.textContent='Live AR pose ✓';
       }
+
+      updateCornerLabelScales();
     }
   }
 
@@ -1352,9 +1359,31 @@ function makeNumberSprite(number){
   });
 
   const sprite=new THREE.Sprite(material);
-  sprite.scale.set(.18,.18,.18);
+  sprite.scale.set(CORNER_LABEL_BASE_SCALE,CORNER_LABEL_BASE_SCALE,CORNER_LABEL_BASE_SCALE);
   sprite.renderOrder=1001;
+  sprite.userData.kind='cornerLabel';
+  sprite.userData.number=number;
   return sprite;
+}
+
+
+function updateCornerLabelScales(){
+  if(!latestViewerPosition) return;
+
+  objects.forEach(object=>{
+    if(object?.userData?.kind!=='cornerLabel') return;
+
+    const distance=object.position.distanceTo(latestViewerPosition);
+    const scale=Math.min(
+      CORNER_LABEL_MAX_SCALE,
+      Math.max(
+        CORNER_LABEL_MIN_SCALE,
+        distance * CORNER_LABEL_SCALE_PER_METER
+      )
+    );
+
+    object.scale.set(scale,scale,scale);
+  });
 }
 
 function marker(p,index){
