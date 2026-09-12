@@ -757,23 +757,9 @@ body.xr-active.photo-mode canvas{
   vector-effect:non-scaling-stroke;
 }
 
-.projectionSeat{
-  fill:rgba(255,255,255,.05);
-  stroke:#efeaff;
-  stroke-width:2;
-  vector-effect:non-scaling-stroke;
-}
-
-.projectionBackrestPlane{
-  fill:rgba(183,175,255,.10);
-  stroke:#d9d5ff;
-  stroke-width:3;
-  vector-effect:non-scaling-stroke;
-}
-
 .projectionBackrest{
   stroke:#d9d5ff;
-  stroke-width:4;
+  stroke-width:5;
   stroke-linecap:round;
   vector-effect:non-scaling-stroke;
 }
@@ -1482,52 +1468,17 @@ function getFurnitureOrientationWorldPoints(item){
   };
 }
 
-function getChairProxyWorldGeometry(item){
-  if(item?.type !== 'chair') return null;
+function getFurnitureHeightAnchorWorldPoints(item){
   const center=getFurnitureWorldPosition(item);
   const dims=getFurnitureDimensions(item);
-  if(!center) return null;
-
-  const seatWidth=Number(dims.seat_width ?? dims.overall_width ?? dims.width);
-  const seatDepth=Number(dims.seat_depth ?? dims.overall_depth ?? dims.depth);
-  const seatHeight=Number(dims.seat_height ?? 0.47);
-  const backrestWidth=Number(dims.backrest_width ?? seatWidth);
-  const backrestBottomHeight=Number(dims.backrest_bottom_height ?? (seatHeight + 0.03));
-  const backrestTopHeight=Number(dims.backrest_top_height ?? dims.overall_height ?? dims.height);
-  const backrestThickness=Number(dims.backrest_thickness ?? 0.03);
-  if(!Number.isFinite(seatWidth) || !Number.isFinite(seatDepth) || !Number.isFinite(seatHeight) || !Number.isFinite(backrestWidth) || !Number.isFinite(backrestTopHeight)) return null;
-
-  const orient=getFurnitureOrientationWorld(item);
-  const F=orient.forward;
-  const R=orient.right;
-  const seatHalfW=seatWidth/2;
-  const seatHalfD=seatDepth/2;
-  const backHalfW=backrestWidth/2;
-  const backPlaneOffset=-(seatHalfD + backrestThickness/2);
-
-  const point=(f,r,y)=>({
-    x:center.x + F.x*f + R.x*r,
-    y:center.y + y,
-    z:center.z + F.z*f + R.z*r
-  });
+  const orientPoints=getFurnitureOrientationWorldPoints(item);
+  const overallHeight=Number(dims.overall_height ?? dims.height);
+  const backMid=orientPoints?.back_mid;
+  if(!center || !backMid || !Number.isFinite(overallHeight)) return null;
 
   return {
-    seat_polygon:[
-      point(-seatHalfD,-seatHalfW,seatHeight),
-      point(-seatHalfD, seatHalfW,seatHeight),
-      point( seatHalfD, seatHalfW,seatHeight),
-      point( seatHalfD,-seatHalfW,seatHeight)
-    ],
-    backrest_polygon:[
-      point(backPlaneOffset,-backHalfW,backrestBottomHeight),
-      point(backPlaneOffset, backHalfW,backrestBottomHeight),
-      point(backPlaneOffset, backHalfW,backrestTopHeight),
-      point(backPlaneOffset,-backHalfW,backrestTopHeight)
-    ],
-    seat_front_edge:[
-      point(seatHalfD,-seatHalfW,seatHeight),
-      point(seatHalfD, seatHalfW,seatHeight)
-    ]
+    floor:{x:backMid.x,y:center.y,z:backMid.z},
+    top:{x:backMid.x,y:center.y+overallHeight,z:backMid.z}
   };
 }
 
@@ -1590,11 +1541,11 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     backrest_edge:orientationWorld.backrest_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)))
   } : null;
 
-  const proxyWorld=getChairProxyWorldGeometry(item);
-  const proxy3D=proxyWorld ? {
-    seat_polygon:proxyWorld.seat_polygon.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry))),
-    backrest_polygon:proxyWorld.backrest_polygon.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry))),
-    seat_front_edge:proxyWorld.seat_front_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)))
+  const heightWorld=getFurnitureHeightAnchorWorldPoints(item);
+  const height_anchor=heightWorld ? {
+    floor:simplify(projectWorldPoint(heightWorld.floor,viewData,imageGeometry)),
+    top:simplify(projectWorldPoint(heightWorld.top,viewData,imageGeometry)),
+    height_m:Number(dims.overall_height ?? dims.height ?? 0)
   } : null;
 
   return {
@@ -1604,11 +1555,11 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     floor_polygon:floor.map(simplify),
     top_polygon:top.map(simplify),
     orientation,
-    proxy_3d:proxy3D,
+    height_anchor,
     bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
     bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
     bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
-    note:'os_screenshot_px_estimate uses CSS viewport × devicePixelRatio; manual iPhone screenshots are not frame-locked.'
+    note:'Use floor_polygon for placement, orientation.backrest_edge + front_mid for facing, and height_anchor for overall perceived height.'
   };
 }
 
@@ -1641,13 +1592,6 @@ function updateProjectionDebugOverlay(){
 
   const imageGeometry=getCaptureImageGeometry();
   const ns='http://www.w3.org/2000/svg';
-  const makePoly=(pts, cls)=>{
-    if(pts.length < 2) return null;
-    const poly=document.createElementNS(ns,'polygon');
-    poly.setAttribute('class',cls);
-    poly.setAttribute('points',pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-    return poly;
-  };
 
   furnitureItems.forEach(item=>{
     const projection=getFurnitureScreenProjection(item,latestXRViewData,imageGeometry);
@@ -1655,30 +1599,21 @@ function updateProjectionDebugOverlay(){
 
     const floorPoints=projection.floor_polygon.map(p=>p?.css_px).filter(Boolean);
     if(floorPoints.length===4){
-      const poly=makePoly(floorPoints,'projectionFootprint');
-      if(poly) svg.appendChild(poly);
+      const poly=document.createElementNS(ns,'polygon');
+      poly.setAttribute('class','projectionFootprint');
+      poly.setAttribute('points',floorPoints.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+      svg.appendChild(poly);
     }
 
-    const seatPoints=projection.proxy_3d?.seat_polygon?.map(p=>p?.css_px).filter(Boolean) || [];
-    if(seatPoints.length===4){
-      const poly=makePoly(seatPoints,'projectionSeat');
-      if(poly) svg.appendChild(poly);
-    }
-
-    const backrestPlane=projection.proxy_3d?.backrest_polygon?.map(p=>p?.css_px).filter(Boolean) || [];
-    if(backrestPlane.length===4){
-      const poly=makePoly(backrestPlane,'projectionBackrestPlane');
-      if(poly) svg.appendChild(poly);
-      const topEdge=[backrestPlane[3],backrestPlane[2]].filter(Boolean);
-      if(topEdge.length===2){
-        const line=document.createElementNS(ns,'line');
-        line.setAttribute('class','projectionBackrest');
-        line.setAttribute('x1',topEdge[0].x.toFixed(1));
-        line.setAttribute('y1',topEdge[0].y.toFixed(1));
-        line.setAttribute('x2',topEdge[1].x.toFixed(1));
-        line.setAttribute('y2',topEdge[1].y.toFixed(1));
-        svg.appendChild(line);
-      }
+    const backrest=projection.orientation?.backrest_edge?.map(p=>p?.css_px).filter(Boolean) || [];
+    if(backrest.length===2){
+      const line=document.createElementNS(ns,'line');
+      line.setAttribute('class','projectionBackrest');
+      line.setAttribute('x1',backrest[0].x.toFixed(1));
+      line.setAttribute('y1',backrest[0].y.toFixed(1));
+      line.setAttribute('x2',backrest[1].x.toFixed(1));
+      line.setAttribute('y2',backrest[1].y.toFixed(1));
+      svg.appendChild(line);
     }
 
     const arrowStart=projection.orientation?.center_floor?.css_px;
@@ -2071,7 +2006,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_4_1',
+    protocol_version:'EventVision_v8_5',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2384,7 +2319,7 @@ function saveScreenshotPose(){
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
     capture_mode:'manual_os_screenshot_pose',
-    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Footprint, seat and backrest proxy indicate scale and orientation.',
+    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Footprint, back edge and arrow indicate placement and orientation.',
     camera,
     xr_view:xrView,
     image:imageGeometry,
@@ -2676,7 +2611,7 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_4_1',
+    protocol_version:'EventVision_v8_5',
     exported_at:new Date().toISOString(),
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
@@ -2932,7 +2867,7 @@ function setSelectedFurniture(id){
     furnitureToolbar.classList.add('visible');
     const typeLabel=item.type.charAt(0).toUpperCase()+item.type.slice(1);
     selectedFurnitureLabel.textContent = item.type==='chair'
-      ? `${typeLabel} · 60 × 60 cm footprint`
+      ? `${typeLabel} · 60 × 60 × 85 cm`
       : `${typeLabel} selected`;
   } else if(furnitureToolbar){
     furnitureToolbar.classList.remove('visible');
@@ -2953,50 +2888,27 @@ function clamp01(v){
 }
 
 const FURNITURE_DIMENSIONS_M={
-  // Chair geometry now separates outer floor footprint, seat and backrest proxy.
+  // Simplified physical model: overall footprint + overall height.
   chair:{
-    // Legacy-compatible top-level fields
     width:0.60,
     depth:0.60,
     height:0.85,
-    // Better physical description
     footprint_width:0.60,
     footprint_depth:0.60,
-    overall_width:0.60,
-    overall_depth:0.60,
-    overall_height:0.85,
-    seat_width:0.55,
-    seat_depth:0.55,
-    seat_height:0.47,
-    backrest_width:0.46,
-    backrest_bottom_height:0.50,
-    backrest_top_height:0.85,
-    backrest_thickness:0.03
+    overall_height:0.85
   }
 };
 
 function getFurnitureDimensions(item){
   const preset=FURNITURE_DIMENSIONS_M[item.type] || {};
-
   const dims={
-    ...preset,
     width:item.width_m ?? preset.width ?? null,
     depth:item.depth_m ?? preset.depth ?? null,
     height:item.height_m ?? preset.height ?? null,
     footprint_width:item.footprint_width_m ?? preset.footprint_width ?? item.width_m ?? preset.width ?? null,
     footprint_depth:item.footprint_depth_m ?? preset.footprint_depth ?? item.depth_m ?? preset.depth ?? null,
-    overall_width:item.overall_width_m ?? preset.overall_width ?? item.width_m ?? preset.width ?? null,
-    overall_depth:item.overall_depth_m ?? preset.overall_depth ?? item.depth_m ?? preset.depth ?? null,
-    overall_height:item.overall_height_m ?? preset.overall_height ?? item.height_m ?? preset.height ?? null,
-    seat_width:item.seat_width_m ?? preset.seat_width ?? null,
-    seat_depth:item.seat_depth_m ?? preset.seat_depth ?? null,
-    seat_height:item.seat_height_m ?? preset.seat_height ?? null,
-    backrest_width:item.backrest_width_m ?? preset.backrest_width ?? null,
-    backrest_bottom_height:item.backrest_bottom_height_m ?? preset.backrest_bottom_height ?? null,
-    backrest_top_height:item.backrest_top_height_m ?? preset.backrest_top_height ?? item.height_m ?? preset.height ?? null,
-    backrest_thickness:item.backrest_thickness_m ?? preset.backrest_thickness ?? 0.03
+    overall_height:item.overall_height_m ?? preset.overall_height ?? item.height_m ?? preset.height ?? null
   };
-
   if(dims.width == null) dims.width = dims.footprint_width;
   if(dims.depth == null) dims.depth = dims.footprint_depth;
   if(dims.height == null) dims.height = dims.overall_height;
@@ -3010,16 +2922,7 @@ function serializeFurnitureDimensions(dims){
     height:dims.height == null ? null : Number(dims.height),
     footprint_width:dims.footprint_width == null ? null : Number(dims.footprint_width),
     footprint_depth:dims.footprint_depth == null ? null : Number(dims.footprint_depth),
-    overall_width:dims.overall_width == null ? null : Number(dims.overall_width),
-    overall_depth:dims.overall_depth == null ? null : Number(dims.overall_depth),
-    overall_height:dims.overall_height == null ? null : Number(dims.overall_height),
-    seat_width:dims.seat_width == null ? null : Number(dims.seat_width),
-    seat_depth:dims.seat_depth == null ? null : Number(dims.seat_depth),
-    seat_height:dims.seat_height == null ? null : Number(dims.seat_height),
-    backrest_width:dims.backrest_width == null ? null : Number(dims.backrest_width),
-    backrest_bottom_height:dims.backrest_bottom_height == null ? null : Number(dims.backrest_bottom_height),
-    backrest_top_height:dims.backrest_top_height == null ? null : Number(dims.backrest_top_height),
-    backrest_thickness:dims.backrest_thickness == null ? null : Number(dims.backrest_thickness)
+    overall_height:dims.overall_height == null ? null : Number(dims.overall_height)
   };
 }
 
@@ -3211,16 +3114,7 @@ function addFurniture(type='chair'){
     height_m:preset?.height || null,
     footprint_width_m:preset?.footprint_width || null,
     footprint_depth_m:preset?.footprint_depth || null,
-    overall_width_m:preset?.overall_width || null,
-    overall_depth_m:preset?.overall_depth || null,
-    overall_height_m:preset?.overall_height || null,
-    seat_width_m:preset?.seat_width || null,
-    seat_depth_m:preset?.seat_depth || null,
-    seat_height_m:preset?.seat_height || null,
-    backrest_width_m:preset?.backrest_width || null,
-    backrest_bottom_height_m:preset?.backrest_bottom_height || null,
-    backrest_top_height_m:preset?.backrest_top_height || null,
-    backrest_thickness_m:preset?.backrest_thickness || null
+    overall_height_m:preset?.overall_height || null
   };
 
   // Offset subsequent chairs slightly so multiple adds do not perfectly overlap.
