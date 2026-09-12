@@ -817,9 +817,9 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.3 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.1 · 3D PROXY</span></div>
   <h1>Scan the real floor</h1>
-  <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
+  <p>Clean core build: room geometry, chair layout, exact 3D proxy chairs, locked camera projection and production export.</p>
 
   <section class="card" id="introCard">
     <strong>Scan workflow</strong>
@@ -956,7 +956,7 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText">
-      Position the phone, tap <b>Lock frame</b>, then take the iPhone screenshot without moving the phone.
+      Position the phone until the 3D proxy chairs align correctly, tap <b>Lock frame</b>, then take the iPhone screenshot without moving the phone.
     </div>
   </div>
 
@@ -1028,6 +1028,7 @@ let scanSceneData = null;
 let screenshotModeActive = false;
 let lockedGenerationFrame = null;
 let latestXRViewData = null;
+let furnitureProxyGroup = null;
 
 const CORNER_LABEL_BASE_SCALE = 0.18;
 const CORNER_LABEL_SCALE_PER_METER = 0.05;
@@ -1139,6 +1140,7 @@ async function enterAR(){
   document.body.classList.remove('screenshot-mode');
   floorY=null;
   if(el.introCard) el.introCard.style.display='block';
+  clearFurnitureProxy3D();
   clearObjects();
   el.result.classList.remove('show');
 
@@ -1432,52 +1434,16 @@ function getProjectionSnapshotForOverlay(){
 }
 
 function updateProjectionDebugOverlay(){
+  // v9.1: the old flat SVG floor rectangles are intentionally disabled.
+  // Screenshot mode now uses deterministic Three.js proxy chairs placed in XR world space.
   const svg=el.projectionDebug;
-  if(!svg || !screenshotModeActive) return;
-
-  const width=Math.max(1,window.innerWidth);
-  const height=Math.max(1,window.innerHeight);
-  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
-  svg.innerHTML='';
-
-  const snapshot=getProjectionSnapshotForOverlay();
-  if(!snapshot?.viewData?.view_matrix || !snapshot?.viewData?.projection_matrix) return;
-
-  const projections=snapshot.projections || furnitureItems.map(item=>projectFurnitureForFrame(item,snapshot.viewData,snapshot.imageGeometry));
-  const ns='http://www.w3.org/2000/svg';
-
-  projections.forEach(projected=>{
-    if(!projected) return;
-    const floorPoints=projected.floor.map(p=>p?.css_px).filter(Boolean);
-    if(floorPoints.length===4){
-      const poly=document.createElementNS(ns,'polygon');
-      poly.setAttribute('class','projectionFootprint');
-      poly.setAttribute('points',floorPoints.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-      svg.appendChild(poly);
-    }
-
-    const back=projected.backEdge.map(p=>p?.css_px).filter(Boolean);
-    if(back.length===2){
-      const line=document.createElementNS(ns,'line');
-      line.setAttribute('class','projectionBackrest');
-      line.setAttribute('x1',back[0].x.toFixed(1));
-      line.setAttribute('y1',back[0].y.toFixed(1));
-      line.setAttribute('x2',back[1].x.toFixed(1));
-      line.setAttribute('y2',back[1].y.toFixed(1));
-      svg.appendChild(line);
-    }
-
-    const front=projected.frontEdge.map(p=>p?.css_px).filter(Boolean);
-    if(front.length===2){
-      const line=document.createElementNS(ns,'line');
-      line.setAttribute('class','projectionFront');
-      line.setAttribute('x1',front[0].x.toFixed(1));
-      line.setAttribute('y1',front[0].y.toFixed(1));
-      line.setAttribute('x2',front[1].x.toFixed(1));
-      line.setAttribute('y2',front[1].y.toFixed(1));
-      svg.appendChild(line);
-    }
-  });
+  if(svg){
+    const width=Math.max(1,window.innerWidth);
+    const height=Math.max(1,window.innerHeight);
+    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+    svg.innerHTML='';
+  }
+  if(furnitureProxyGroup) furnitureProxyGroup.visible=!!screenshotModeActive;
 }
 
 function getCaptureImageGeometry(){
@@ -1842,7 +1808,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_0_3_clean',
+    protocol_version:'EventVision_v9_1_0_proxy3d',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2133,7 +2099,10 @@ function invalidateGenerationFrame(reason='Furniture layout changed'){
   }
   renderGenerationFrameDetails(reason);
   setExportStatus('Frame changed. Lock a new generation frame before exporting.','warn');
-  if(screenshotModeActive) updateProjectionDebugOverlay();
+  if(screenshotModeActive){
+    syncFurnitureProxy3D();
+    updateProjectionDebugOverlay();
+  }
 }
 
 function lockGenerationFrame(){
@@ -2229,11 +2198,13 @@ function enterScreenshotMode(){
     el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'Frame locked ✓' : 'Live AR pose · ready to lock';
   }
   if(renderer?.domElement) renderer.domElement.style.display='block';
+  syncFurnitureProxy3D();
   updateProjectionDebugOverlay();
 }
 
 function exitScreenshotMode(){
   screenshotModeActive=false;
+  if(furnitureProxyGroup) furnitureProxyGroup.visible=false;
   if(el.projectionDebug) el.projectionDebug.innerHTML='';
   document.body.classList.remove('screenshot-mode');
   document.body.classList.add('layout-mode');
@@ -2262,13 +2233,20 @@ function buildSceneExportData(){
         rotation_deg_clockwise:Number(item.rotation)
       },
       world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
+      world_rotation_deg_clockwise:Number(item.rotation),
       dimensions_m:serializeFurnitureDimensions(dims),
+      proxy_geometry:{
+        model:'universal_chair_v1',
+        front_local_axis:'+Z',
+        back_local_axis:'-Z',
+        exact_yaw:true
+      },
       generation_target:serializeGenerationTarget(projected,dims)
     };
   });
 
   return {
-    protocol_version:'EventVision_v9_0_3_clean',
+    protocol_version:'EventVision_v9_1_0_proxy3d',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_clean_generation_v1',
@@ -2277,10 +2255,10 @@ function buildSceneExportData(){
       architecture_source:'original_room_photo',
       placement_source:'furniture[].generation_target.placement.floor_polygon_uv',
       size_source:'furniture[].generation_target.size',
-      orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
+      orientation_source:'furniture[].world_rotation_deg_clockwise is authoritative 3D yaw; generation_target.orientation is its projected photo-space validation',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      recommended_render_strategy:'insert one furniture item at a time in inventory order'
+      recommended_render_strategy:'preserve proxy geometry / exact yaw first, then use AI only for furniture appearance, lighting, shadows and blending'
     },
     room:scanSceneData,
     capture_frame:{
@@ -2607,6 +2585,7 @@ function endAR(){
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('screenshot-mode');
   screenshotModeActive=false;
+  if(furnitureProxyGroup) furnitureProxyGroup.visible=false;
   el.screenshotHud?.classList.remove('active');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
@@ -2651,6 +2630,7 @@ el.scanAgain.addEventListener('click',()=>{
   latestXRViewData=null;
   renderGenerationFrameDetails();
 
+  clearFurnitureProxy3D();
   clearObjects();
   el.result.classList.remove('show');
   el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add chair</span>';
@@ -2824,6 +2804,161 @@ function getFurnitureDimensions(item){
     footprint_depth:Number(item.footprint_depth_m ?? preset.footprint_depth),
     overall_height:Number(item.overall_height_m ?? preset.overall_height)
   };
+}
+
+// ===== v9.1 deterministic 3D furniture proxies =====
+// The floorplan remains authoritative. Proxy chairs are positioned in XR world space and
+// rotated numerically, so a 90° plan difference is a real 90° 3D yaw difference.
+const PROXY_CHAIR={
+  seat_height_m:0.46,
+  seat_thickness_m:0.055,
+  leg_size_m:0.04,
+  back_thickness_m:0.045,
+  floor_marker_height_m:0.018
+};
+
+function disposeObject3D(root){
+  if(!root) return;
+  root.traverse?.(object=>{
+    object.geometry?.dispose?.();
+    if(Array.isArray(object.material)){
+      object.material.forEach(material=>{
+        material?.map?.dispose?.();
+        material?.dispose?.();
+      });
+    }else{
+      object.material?.map?.dispose?.();
+      object.material?.dispose?.();
+    }
+  });
+}
+
+function clearFurnitureProxy3D(){
+  if(!furnitureProxyGroup) return;
+  scene?.remove?.(furnitureProxyGroup);
+  disposeObject3D(furnitureProxyGroup);
+  furnitureProxyGroup=null;
+}
+
+function createUniversalChairProxy(item){
+  const dims=getFurnitureDimensions(item);
+  const width=Number(dims.footprint_width ?? dims.width);
+  const depth=Number(dims.footprint_depth ?? dims.depth);
+  const overallHeight=Number(dims.overall_height ?? dims.height);
+
+  const seatHeight=Math.min(
+    Math.max(0.40,PROXY_CHAIR.seat_height_m),
+    Math.max(0.40,overallHeight*0.62)
+  );
+  const seatThickness=Math.min(PROXY_CHAIR.seat_thickness_m,seatHeight*0.18);
+  const legHeight=Math.max(0.20,seatHeight-seatThickness/2);
+  const backHeight=Math.max(0.18,overallHeight-seatHeight);
+  const backThickness=Math.min(PROXY_CHAIR.back_thickness_m,depth*0.12);
+  const legSize=Math.min(PROXY_CHAIR.leg_size_m,Math.min(width,depth)*0.11);
+
+  const group=new THREE.Group();
+  group.name=`proxy_chair_${item.id}`;
+  group.userData={kind:'furnitureProxy',itemId:item.id,type:item.type};
+
+  const bodyMaterial=new THREE.MeshBasicMaterial({
+    color:0x8f84ff,
+    transparent:true,
+    opacity:0.48,
+    depthTest:true,
+    depthWrite:true,
+    side:THREE.DoubleSide
+  });
+  const frameMaterial=new THREE.MeshBasicMaterial({
+    color:0xf2f0ff,
+    transparent:true,
+    opacity:0.84,
+    depthTest:true,
+    depthWrite:true
+  });
+  const frontMaterial=new THREE.MeshBasicMaterial({
+    color:0x63efb0,
+    transparent:true,
+    opacity:0.95,
+    depthTest:true,
+    depthWrite:true
+  });
+
+  // Seat.
+  const seat=new THREE.Mesh(
+    new THREE.BoxGeometry(width*0.90,seatThickness,depth*0.88),
+    bodyMaterial
+  );
+  seat.position.set(0,seatHeight,0);
+  group.add(seat);
+
+  // Backrest. Local -Z is the BACK; local +Z is the chair FRONT.
+  const back=new THREE.Mesh(
+    new THREE.BoxGeometry(width*0.88,backHeight,backThickness),
+    frameMaterial
+  );
+  back.position.set(
+    0,
+    seatHeight + backHeight/2,
+    -depth*0.44 + backThickness/2
+  );
+  group.add(back);
+
+  // Four simple legs.
+  const legGeometry=new THREE.BoxGeometry(legSize,legHeight,legSize);
+  const legInsetX=Math.max(legSize/2,width*0.36);
+  const legInsetZ=Math.max(legSize/2,depth*0.35);
+  [
+    [-legInsetX,-legInsetZ],
+    [ legInsetX,-legInsetZ],
+    [-legInsetX, legInsetZ],
+    [ legInsetX, legInsetZ]
+  ].forEach(([x,z])=>{
+    const leg=new THREE.Mesh(legGeometry,frameMaterial);
+    leg.position.set(x,legHeight/2,z);
+    group.add(leg);
+  });
+
+  // A thin green floor bar marks the authoritative FRONT edge.
+  const frontBar=new THREE.Mesh(
+    new THREE.BoxGeometry(width*0.84,PROXY_CHAIR.floor_marker_height_m,0.028),
+    frontMaterial
+  );
+  frontBar.position.set(
+    0,
+    PROXY_CHAIR.floor_marker_height_m/2 + 0.004,
+    depth/2 + 0.018
+  );
+  group.add(frontBar);
+
+  return group;
+}
+
+function syncFurnitureProxy3D(){
+  clearFurnitureProxy3D();
+  if(!scene || !completed || !planTransform || !furnitureItems.length) return;
+
+  furnitureProxyGroup=new THREE.Group();
+  furnitureProxyGroup.name='eventvision_furniture_proxy_group';
+
+  furnitureItems.forEach(item=>{
+    if(item.type!=='chair') return;
+    const world=getFurnitureWorldPosition(item);
+    if(!world) return;
+
+    const chair=createUniversalChairProxy(item);
+    chair.position.set(Number(world.x),Number(world.y),Number(world.z));
+
+    // IMPORTANT:
+    // item.rotation is clockwise in the top-view plan.
+    // Three.js positive Y rotation is counter-clockwise when viewed from above,
+    // therefore negate the angle. This preserves the plan's exact relative yaw.
+    chair.rotation.y=-THREE.MathUtils.degToRad(Number(item.rotation || 0));
+
+    furnitureProxyGroup.add(chair);
+  });
+
+  furnitureProxyGroup.visible=!!screenshotModeActive;
+  scene.add(furnitureProxyGroup);
 }
 
 function serializeFurnitureDimensions(dims){
