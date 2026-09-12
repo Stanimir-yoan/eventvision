@@ -1457,7 +1457,7 @@ function computeOrientationSemantics(projected){
 
 function buildChairGenerationInstruction(chairId, semantics){
   const dirText=semantics?.visible_view_hint || 'chair front orientation must follow the FRONT/BACK anchors';
-  return `Insert ${chairId} exactly inside its floor polygon. Match the provided chair reference for appearance only. Put the backrest on the BACK side, open seat/front on the FRONT side, and make the chair face from BACK toward FRONT. ${dirText}. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
+  return `Insert ${chairId} exactly inside its floor polygon. Match the provided chair reference for appearance only. Put the backrest on the BACK side, open seat/front on the FRONT side, and make the chair face from BACK toward FRONT. ${dirText}. If this chair belongs to a layout group, keep it parallel to all group members and preserve the group's exact even floor-space offsets. Do not stagger, scatter, randomly rotate, or jitter grouped chairs. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
 }
 
 function serializeGenerationTarget(projected,dims){
@@ -1932,7 +1932,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_1_2_clean',
+    protocol_version:'EventVision_v9_2_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2336,6 +2336,126 @@ el.screenshotMode?.addEventListener('click',enterScreenshotMode);
 el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
+function normalizeDeg360(deg){
+  let v=Number(deg)||0;
+  v%=360;
+  if(v<0) v+=360;
+  return v;
+}
+
+function angularDistanceDeg(a,b){
+  const d=Math.abs(normalizeDeg360(a)-normalizeDeg360(b));
+  return Math.min(d,360-d);
+}
+
+function averageUnitVectors(vectors){
+  const valid=(vectors||[]).filter(v=>v && Number.isFinite(v.x) && Number.isFinite(v.y));
+  if(!valid.length) return null;
+  const sx=valid.reduce((sum,v)=>sum+Number(v.x),0);
+  const sy=valid.reduce((sum,v)=>sum+Number(v.y),0);
+  const len=Math.hypot(sx,sy);
+  return len>1e-9 ? {x:sx/len,y:sy/len} : null;
+}
+
+function median(values){
+  const a=(values||[]).filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length) return null;
+  const m=Math.floor(a.length/2);
+  return a.length%2 ? a[m] : (a[m-1]+a[m])/2;
+}
+
+function inferUniformSpacingMeters(items){
+  if(!items || items.length<2) return null;
+  const distances=[];
+  for(let i=0;i<items.length;i++){
+    const a=items[i]?.plan?.position_m;
+    if(!a) continue;
+    let nearest=Infinity;
+    for(let j=0;j<items.length;j++){
+      if(i===j) continue;
+      const b=items[j]?.plan?.position_m;
+      if(!b) continue;
+      const d=Math.hypot(Number(a.x)-Number(b.x),Number(a.z)-Number(b.z));
+      if(d>1e-6 && d<nearest) nearest=d;
+    }
+    if(Number.isFinite(nearest)) distances.push(nearest);
+  }
+  return median(distances);
+}
+
+function buildStrictLayoutGroups(rawFurniture){
+  const explicit=new Map();
+  const ungrouped=[];
+
+  rawFurniture.forEach(item=>{
+    const groupId=item.layout_membership?.group_id;
+    if(groupId){
+      if(!explicit.has(groupId)) explicit.set(groupId,[]);
+      explicit.get(groupId).push(item);
+    }else{
+      ungrouped.push(item);
+    }
+  });
+
+  if(ungrouped.length>=2){
+    const base=ungrouped[0]?.plan?.rotation_deg_clockwise;
+    const sameFacing=ungrouped.every(item=>angularDistanceDeg(item?.plan?.rotation_deg_clockwise,base)<=0.5);
+    if(sameFacing) explicit.set('seating_group_auto_01',ungrouped.splice(0));
+  }
+
+  ungrouped.forEach(item=>explicit.set(`single_${item.id}`,[item]));
+
+  const groups=[];
+  for(const [groupId,members] of explicit.entries()){
+    const rotations=members.map(m=>Number(m?.plan?.rotation_deg_clockwise)).filter(Number.isFinite);
+    const baseRotation=rotations.length ? rotations[0] : 0;
+    const maxDeviation=rotations.length ? Math.max(...rotations.map(r=>angularDistanceDeg(r,baseRotation))) : 0;
+    const exactRepeatMembers=members.filter(m=>m.layout_membership?.source==='repeat_grid');
+    const sideSteps=exactRepeatMembers.map(m=>Number(m.layout_membership?.step_side_m)).filter(Number.isFinite);
+    const forwardSteps=exactRepeatMembers.map(m=>Number(m.layout_membership?.step_forward_m)).filter(Number.isFinite);
+    const groupVector=averageUnitVectors(members.map(m=>m?.generation_target?.orientation?.forward_vector_uv));
+    const inferredSpacing=inferUniformSpacingMeters(members);
+    const rowIndices=members.map(m=>m.layout_membership?.row_index).filter(Number.isFinite);
+    const colIndices=members.map(m=>m.layout_membership?.column_index).filter(Number.isFinite);
+    const strict=members.length>1;
+
+    groups.push({
+      id:groupId,
+      type:'ordered_chair_group',
+      member_ids:members.map(m=>m.id),
+      item_count:members.length,
+      source:exactRepeatMembers.length===members.length && strict ? 'repeat_grid' : (strict ? 'inferred_same_orientation' : 'single_item'),
+      layout_type:exactRepeatMembers.length===members.length && strict ? 'rectilinear_repeat_grid' : (strict ? 'ordered_aligned_group' : 'single_item'),
+      strict_alignment:strict,
+      all_items_same_world_orientation:strict,
+      shared_plan_rotation_deg:Number(baseRotation),
+      max_orientation_deviation_deg:Number(maxDeviation),
+      shared_image_forward_vector_uv:groupVector,
+      grid_indices_available:rowIndices.length===members.length && colIndices.length===members.length,
+      row_index_range:rowIndices.length ? {min:Math.min(...rowIndices),max:Math.max(...rowIndices)} : null,
+      column_index_range:colIndices.length ? {min:Math.min(...colIndices),max:Math.max(...colIndices)} : null,
+      spacing_m:{
+        side_to_side_center_step:sideSteps.length ? median(sideSteps) : inferredSpacing,
+        front_to_back_center_step:forwardSteps.length ? median(forwardSteps) : inferredSpacing,
+        spacing_tolerance_m:0.03,
+        even_spacing_required:strict
+      },
+      hard_rules:strict ? [
+        'Treat this group as one rigid, orderly seating arrangement.',
+        'All chairs must face the same world direction and remain parallel.',
+        'Keep center-to-center spacing uniform in floor space; perspective may change pixel spacing.',
+        'Do not introduce random rotation, random position jitter, staggering, clustering, or scattered placement.',
+        'Do not reinterpret the group as a casual or organically arranged set of chairs.',
+        'Use each chair floor polygon as its exact image-space target; alignment rules reinforce these targets and never replace them.'
+      ] : ['Keep this chair on its exact projected target.'],
+      generation_instruction:strict
+        ? `Render ${members.length} chairs as a perfectly ordered aligned group. All chairs are parallel and face the same direction. Preserve the exact projected chair centers and floor polygons. Maintain uniform floor-space spacing. Do not scatter, stagger, randomly rotate, or vary their offsets.`
+        : 'Render this chair only on its exact projected target.'
+    });
+  }
+  return groups;
+}
+
 function buildSceneExportData(){
   if(!lockedGenerationFrame) throw new Error('No locked generation frame.');
 
@@ -2356,6 +2476,14 @@ function buildSceneExportData(){
       },
       world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
       dimensions_m:serializeFurnitureDimensions(dims),
+      layout_membership:{
+        group_id:item.layout_group_id || null,
+        source:item.layout_source || 'manual',
+        row_index:Number.isFinite(item.layout_row_index) ? Number(item.layout_row_index) : null,
+        column_index:Number.isFinite(item.layout_column_index) ? Number(item.layout_column_index) : null,
+        step_side_m:Number.isFinite(item.layout_step_side_m) ? Number(item.layout_step_side_m) : null,
+        step_forward_m:Number.isFinite(item.layout_step_forward_m) ? Number(item.layout_step_forward_m) : null
+      },
       generation_target:generationTarget,
       semantics,
       orientation_contract:{
@@ -2378,20 +2506,29 @@ function buildSceneExportData(){
     return ay-by;
   });
 
-  orderedByDepth.forEach((item,index)=>{
-    item.depth_rank_far_to_near=index+1;
-  });
-
+  orderedByDepth.forEach((item,index)=>{ item.depth_rank_far_to_near=index+1; });
   const idToIndex=new Map(orderedByDepth.map((item,index)=>[item.id,index]));
   rawFurniture.sort((a,b)=>(idToIndex.get(a.id) ?? 0)-(idToIndex.get(b.id) ?? 0));
 
   const exactIds=orderedByDepth.map(item=>item.id);
+  const layoutGroups=buildStrictLayoutGroups(rawFurniture);
+
+  layoutGroups.forEach(group=>{
+    group.member_ids.forEach((id,index)=>{
+      const chair=rawFurniture.find(item=>item.id===id);
+      if(!chair) return;
+      if(!chair.layout_membership.group_id) chair.layout_membership.group_id=group.id;
+      chair.layout_membership.strict_group_alignment=group.strict_alignment;
+      chair.layout_membership.shared_plan_rotation_deg=group.shared_plan_rotation_deg;
+      chair.layout_membership.group_member_index=index;
+    });
+  });
 
   return {
-    protocol_version:'EventVision_v9_1_2_clean',
+    protocol_version:'EventVision_v9_2_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
-      schema:'eventvision_generation_first_v2',
+      schema:'eventvision_generation_first_v3_aligned_layout',
       exact_inventory:true,
       allow_extra_furniture:false,
       allow_missing_furniture:false,
@@ -2401,20 +2538,34 @@ function buildSceneExportData(){
       orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      recommended_render_strategy:'insert one furniture item at a time in far-to-near order using depth_rank_far_to_near',
+      recommended_render_strategy:'insert one furniture item at a time in far-to-near order while respecting rigid layout groups',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
         'Insert exactly the listed number of chairs and no extra chairs.',
         'Use the reference image only for chair appearance and materials.',
         'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
-        'Never mirror front and back.'
+        'Never mirror front and back.',
+        'Render multi-chair seating as rigid aligned groups: same facing direction, parallel chairs, uniform floor-space spacing, and no random placement jitter.'
       ]
     },
     generation_summary:{
-      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. Follow each chair\'s floor polygon, size anchors and orientation contract exactly. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
-      generation_mode:'one_chair_at_a_time',
+      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. Follow each chair's floor polygon, size anchors and orientation contract exactly. Multi-chair layout groups are rigid organized arrangements: chairs must remain parallel, face the same direction, and keep even floor-space offsets. Do not create chaotic, staggered, scattered, or randomly rotated placement. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
+      generation_mode:'one_chair_at_a_time_with_rigid_group_constraints',
       render_order_far_to_near:exactIds
+    },
+    layout_contract:{
+      enforcement:'HARD_CONSTRAINT',
+      enforce_ordered_seating:true,
+      allow_chaotic_placement:false,
+      allow_random_position_jitter:false,
+      allow_random_rotation_jitter:false,
+      multi_chair_groups_must_be_parallel:true,
+      multi_chair_groups_must_face_same_direction:true,
+      uniform_floor_space_offsets_required:true,
+      perspective_note:'Equal spacing is defined in world/floor space, not equal pixel spacing in the photo.',
+      projected_target_priority:'Individual floor_polygon_uv and center_uv remain authoritative image-space targets. Group alignment reinforces them and must not move chairs away from those targets.',
+      groups:layoutGroups
     },
     room:scanSceneData,
     capture_frame:{
@@ -2443,11 +2594,19 @@ function buildSceneExportData(){
         allow_missing_objects:false,
         item_ids:exactIds
       },
-      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly.`,
+      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly. Treat each multi-chair layout group as a rigid organized seating block: same facing direction, parallel chairs, uniform floor-space offsets, no random jitter or chaotic placement.`,
+      layout_contract:{
+        enforcement:'HARD_CONSTRAINT',
+        allow_chaotic_placement:false,
+        allow_random_position_jitter:false,
+        allow_random_rotation_jitter:false,
+        groups:layoutGroups
+      },
       chairs:rawFurniture.map(item=>({
         id:item.id,
         type:item.type,
         depth_rank_far_to_near:item.depth_rank_far_to_near,
+        layout_membership:item.layout_membership,
         generation_target:item.generation_target,
         semantics:item.semantics,
         orientation_contract:item.orientation_contract,
@@ -2859,12 +3018,14 @@ const furnitureCountEl = document.getElementById('furnitureCount');
 let furnitureItems = [];
 let selectedFurnitureId = null;
 let furnitureIdCounter = 1;
+let layoutGroupCounter = 1;
 
 const CHAIR_ARRAY_GAP_M=0.15;
 const CHAIR_ARRAY_MAX_COLUMNS=12;
 const CHAIR_ARRAY_MAX_ROWS=12;
 let activeArrayPreviewNodes=[];
 let activeArrayPreviewCandidates=[];
+let activeArrayPreviewResult=null;
 
 const planViewState={zoom:1,rotation:0,panX:0,panY:0};
 
@@ -3094,6 +3255,7 @@ function clearChairArrayPreview(){
   activeArrayPreviewNodes.forEach(node=>node.remove());
   activeArrayPreviewNodes=[];
   activeArrayPreviewCandidates=[];
+  activeArrayPreviewResult=null;
 }
 
 function computeChairArrayCandidates(source,sx,sz,pointerWorld){
@@ -3144,7 +3306,12 @@ function computeChairArrayCandidates(source,sx,sz,pointerWorld){
         height_m:Number(dims.height),
         footprint_width_m:Number(dims.footprint_width),
         footprint_depth_m:Number(dims.footprint_depth),
-        overall_height_m:Number(dims.overall_height)
+        overall_height_m:Number(dims.overall_height),
+        layout_row_index:Number(row*sz),
+        layout_column_index:Number(column*sx),
+        layout_step_side_m:Number(stepX),
+        layout_step_forward_m:Number(stepZ),
+        layout_source:'repeat_grid'
       };
 
       if(!furnitureFitsInsideRoom(candidate)) continue;
@@ -3184,6 +3351,7 @@ function renderChairArrayPreview(source,result,pointerLocal){
   }
 
   activeArrayPreviewCandidates=result.candidates;
+  activeArrayPreviewResult=result;
 }
 
 function commitChairArray(source){
@@ -3191,10 +3359,28 @@ function commitChairArray(source){
     clearChairArrayPreview();
     return;
   }
+
+  const groupId=source.layout_group_id || `seating_group_${String(layoutGroupCounter++).padStart(2,'0')}`;
+  const dims=getFurnitureDimensions(source);
+  const stepSide=Number(dims.footprint_width||dims.width)+CHAIR_ARRAY_GAP_M;
+  const stepForward=Number(dims.footprint_depth||dims.depth)+CHAIR_ARRAY_GAP_M;
+
+  source.layout_group_id=groupId;
+  source.layout_row_index=Number.isFinite(source.layout_row_index) ? Number(source.layout_row_index) : 0;
+  source.layout_column_index=Number.isFinite(source.layout_column_index) ? Number(source.layout_column_index) : 0;
+  source.layout_step_side_m=Number(source.layout_step_side_m ?? stepSide);
+  source.layout_step_forward_m=Number(source.layout_step_forward_m ?? stepForward);
+  source.layout_source='repeat_grid';
+
   const additions=activeArrayPreviewCandidates.map(candidate=>({
     ...candidate,
-    id:furnitureIdCounter++
+    id:furnitureIdCounter++,
+    layout_group_id:groupId,
+    layout_step_side_m:Number(candidate.layout_step_side_m ?? stepSide),
+    layout_step_forward_m:Number(candidate.layout_step_forward_m ?? stepForward),
+    layout_source:'repeat_grid'
   }));
+
   clearChairArrayPreview();
   furnitureItems.push(...additions);
   invalidateGenerationFrame();
@@ -3296,6 +3482,12 @@ function makeFurnitureNode(item){
     e.preventDefault();
     e.stopPropagation();
     dragging = true;
+    if(item.layout_group_id){
+      item.layout_group_id=null;
+      item.layout_row_index=null;
+      item.layout_column_index=null;
+      item.layout_source='manual_detached';
+    }
     invalidateGenerationFrame();
     setSelectedFurniture(item.id);
     node.setPointerCapture?.(e.pointerId);
@@ -3402,7 +3594,14 @@ function rotateSelected(delta){
   const item = getFurnitureItem(selectedFurnitureId);
   if(!item) return;
 
-  item.rotation = (item.rotation + delta + 360) % 360;
+  const groupId=item.layout_group_id;
+  if(groupId){
+    furnitureItems
+      .filter(candidate=>candidate.layout_group_id===groupId)
+      .forEach(candidate=>{ candidate.rotation=(Number(candidate.rotation||0)+delta+360)%360; });
+  }else{
+    item.rotation = (item.rotation + delta + 360) % 360;
+  }
   invalidateGenerationFrame();
   renderFurniture();
 }
