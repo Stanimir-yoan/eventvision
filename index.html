@@ -86,25 +86,8 @@ body.xr-active canvas{background:transparent!important}
 .versionBadge{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:26px;padding:0 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em}
 .addFurnitureBtn{width:100%;height:54px;margin-top:12px;border:0;border-radius:14px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:800}
 .addFurnitureIcon{font-size:22px;line-height:1;font-weight:400}
-.furnitureModal{position:fixed;inset:0;z-index:120000;display:none;align-items:flex-end;background:rgba(0,0,0,.55);padding-top:60px;pointer-events:auto}
-.furnitureModal.open{display:flex}
-.furnitureSheet{width:100%;max-width:720px;margin:0 auto;background:#121217;border:1px solid var(--line);border-bottom:0;border-radius:24px 24px 0 0;padding:8px 14px calc(14px + env(safe-area-inset-bottom));max-height:86%;overflow:auto;box-shadow:0 -20px 60px rgba(0,0,0,.45)}
-.furnitureHandle{width:42px;height:4px;border-radius:999px;background:#3b3b43;margin:2px auto 13px}
-.furnitureHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
-.furnitureHeader h3{margin:5px 0 0;font-size:22px}
-.closeFurniture{width:42px;height:42px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:#fff;font-size:24px;line-height:1}
-.furnitureGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-.furnitureType{min-height:112px;border:1px solid var(--line);border-radius:15px;background:#19191e;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font-size:13px;font-weight:750}
-.furnitureType svg{width:39px;height:39px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;color:#d6d6dc}
-.furnitureType.selected{border-color:var(--accent);background:rgba(107,92,255,.16);box-shadow:inset 0 0 0 1px var(--accent)}
-.furnitureType.selected svg{color:#fff}
-.confirmFurniture{width:100%;height:52px;margin-top:12px;border:0;border-radius:14px;background:var(--accent);color:#fff;font-weight:800}
-.confirmFurniture:disabled{opacity:.38}
-body.modal-open{overflow:hidden}
-@media (min-width:520px){.furnitureGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
-
-/* v7 — floor-plan furniture editing */
+/* Floor-plan furniture editing */
 .planEditor{
   position:relative;
   width:calc(100% + 12px);
@@ -406,7 +389,7 @@ body.xr-active.layout-mode canvas{
 }
 
 
-/* v8 — numbered corners, coordinates and camera capture */
+/* Plan actions and generation details */
 .resultActionGrid{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -416,11 +399,6 @@ body.xr-active.layout-mode canvas{
 
 .resultActionGrid .addFurnitureBtn{
   margin-top:0;
-}
-
-.cameraViewBtn{
-  background:var(--panel2) !important;
-  border:1px solid var(--line) !important;
 }
 
 .detailSectionTitle{
@@ -521,161 +499,11 @@ body.xr-active.layout-mode canvas{
   stroke-linejoin:round;
 }
 
-.photoHud{
-  position:fixed;
-  inset:0;
-  display:none;
-  z-index:100000;
-  pointer-events:none;
-}
-
-.photoHud.active{
-  display:block;
-}
-
-.photoHudTop{
-  position:absolute;
-  top:calc(8px + env(safe-area-inset-top));
-  left:8px;
-  right:8px;
-  display:flex;
-  justify-content:space-between;
-  gap:6px;
-}
-
-.photoHudBottom{
-  position:absolute;
-  left:10px;
-  right:10px;
-  bottom:calc(14px + env(safe-area-inset-bottom));
-  display:grid;
-  grid-template-columns:1fr 74px 1fr;
-  align-items:center;
-  gap:10px;
-  pointer-events:auto;
-}
-
-.photoSecondary{
-  min-height:48px;
-  border:1px solid rgba(255,255,255,.17);
-  border-radius:14px;
-  background:rgba(15,15,19,.72);
-  color:#fff;
-  font-weight:800;
-  backdrop-filter:blur(10px);
-  -webkit-backdrop-filter:blur(10px);
-}
-
-.photoSecondary:disabled{
-  opacity:.65;
-}
-
-.photoShutter{
-  width:70px;
-  height:70px;
-  border-radius:999px;
-  border:3px solid #fff;
-  background:rgba(255,255,255,.14);
-  display:grid;
-  place-items:center;
-  justify-self:center;
-}
-
-.shutterInner{
-  width:54px;
-  height:54px;
-  border-radius:999px;
-  background:#fff;
-  transition:transform .12s ease;
-}
-
-.photoShutter:active .shutterInner{
-  transform:scale(.9);
-}
-
-body.xr-active.photo-mode .shell{
-  display:none !important;
-}
-
-body.xr-active.photo-mode #hud{
-  display:none !important;
-}
-
-body.xr-active.photo-mode canvas{
-  opacity:1 !important;
-  pointer-events:none;
-}
-
-.photoPreviewModal{
-  position:fixed;
-  inset:0;
-  display:none;
-  align-items:flex-end;
-  z-index:120000;
-  padding:12px 12px calc(12px + env(safe-area-inset-bottom));
-  background:rgba(0,0,0,.58);
-}
-
-.photoPreviewModal.open{
-  display:flex;
-}
-
-.photoPreviewSheet{
-  width:100%;
-  max-height:90%;
-  overflow:auto;
-  padding:14px;
-  border:1px solid var(--line);
-  border-radius:20px;
-  background:rgba(17,17,21,.98);
-}
-
-.photoPreviewHeader{
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:12px;
-  margin-bottom:10px;
-}
-
-.photoPreviewHeader h3{
-  margin:4px 0 0;
-}
-
-#photoPreviewImage{
-  display:block;
-  width:100%;
-  max-height:62vh;
-  object-fit:contain;
-  border-radius:14px;
-  background:#000;
-}
-
 .photoCaptureMeta{
   margin-top:9px;
   color:var(--muted);
   font-size:10px;
   line-height:1.45;
-}
-
-.photoPreviewActions{
-  display:grid;
-  grid-template-columns:1.35fr 1fr;
-  gap:8px;
-  margin-top:11px;
-}
-
-.photoPreviewActions .confirmFurniture{
-  margin:0;
-}
-
-.photoKeepBtn{
-  min-height:50px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:var(--panel2);
-  color:#fff;
-  font-weight:800;
 }
 
 .captureFlash{
@@ -697,19 +525,6 @@ body.xr-active.photo-mode canvas{
     grid-template-columns:1fr 1fr;
   }
 
-  .photoHudBottom{
-    grid-template-columns:1fr 68px 1fr;
-  }
-
-  .photoShutter{
-    width:64px;
-    height:64px;
-  }
-
-  .shutterInner{
-    width:48px;
-    height:48px;
-  }
 }
 
 
@@ -849,9 +664,9 @@ body.xr-active.photo-mode canvas{
 .screenshotLock,
 .screenshotLock,
 .screenshotBack{
-  min-width:170px;
+  min-width:150px;
   min-height:48px;
-  padding:0 16px;
+  padding:0 14px;
   border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
   background:rgba(15,15,18,.72);
@@ -860,14 +675,8 @@ body.xr-active.photo-mode canvas{
   backdrop-filter:blur(10px);
   -webkit-backdrop-filter:blur(10px);
 }
-
-.screenshotLock{
-  background:rgba(53,93,255,.72);
-}
-
-.screenshotLock.locked{
-  background:rgba(25,142,84,.78);
-}
+.screenshotLock{background:rgba(53,93,255,.72);}
+.screenshotLock.locked{background:rgba(25,142,84,.78);}
 
 body.xr-active.screenshot-mode{
   overflow:hidden;
@@ -879,10 +688,6 @@ body.xr-active.screenshot-mode .shell{
 }
 
 body.xr-active.screenshot-mode #hud,
-body.xr-active.screenshot-mode #photoHud{
-  display:none !important;
-}
-
 body.xr-active.screenshot-mode canvas{
   opacity:1 !important;
   pointer-events:none !important;
@@ -913,9 +718,9 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.10</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0 CLEAN</span></div>
   <h1>Scan the real floor</h1>
-  <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
+  <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
   <section class="card" id="introCard">
     <strong>Scan workflow</strong>
@@ -967,8 +772,8 @@ body.xr-active.screenshot-mode .screenshotHud{
       <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
     </div>
     <div id="furnitureCount"></div>
-    <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
-    <div class="furnitureScaleNote">Chair footprint: 0.60 × 0.60 m, scaled from the measured room.</div>
+    <div class="furnitureHint">Drag chairs on the plan. Select a chair to rotate or delete it. Any edit invalidates the locked generation frame.</div>
+    <div class="furnitureScaleNote">Core test furniture: chair 0.60 × 0.60 m footprint · 0.85 m overall height.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
       <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
@@ -978,14 +783,11 @@ body.xr-active.screenshot-mode .screenshotHud{
 
       <button id="addFurniture" class="addFurnitureBtn">
         <span class="addFurnitureIcon">＋</span>
-        <span>Add furniture</span>
+        <span>Add chair</span>
       </button>
     </div>
 
     <div class="debugActionRow">
-      <button id="cameraView" class="debugCaptureLink" type="button">
-        Precise capture + data
-      </button>
       <button id="exportData" class="debugCaptureLink" type="button">
         Export scene JSON
       </button>
@@ -1011,69 +813,15 @@ body.xr-active.screenshot-mode .screenshotHud{
         <div class="detailSectionTitle">Walls</div>
         <div id="walls"></div>
 
-        <div class="detailSectionTitle">Screenshot pose</div>
+        <div class="detailSectionTitle">Generation frame</div>
         <div id="screenshotPoseDetails" class="captureDetails">
           <div class="emptyDetail">No screenshot pose saved yet.</div>
         </div>
-
-        <div class="detailSectionTitle">Captured views</div>
-        <div id="captureDetails" class="captureDetails">
-          <div class="emptyDetail">No camera views captured yet.</div>
-        </div>
+      </div>
       </div>
     </details>
   </section>
 </main>
-
-<div id="furnitureModal" class="furnitureModal" aria-hidden="true">
-  <div class="furnitureSheet" role="dialog" aria-modal="true" aria-labelledby="furnitureTitle">
-    <div class="furnitureHandle"></div>
-    <div class="furnitureHeader">
-      <div>
-        <div class="eyebrow">ADD FURNITURE</div>
-        <h3 id="furnitureTitle">Choose a type</h3>
-      </div>
-      <button id="closeFurniture" class="closeFurniture" aria-label="Close furniture picker">×</button>
-    </div>
-
-    <div class="furnitureGrid" id="furnitureGrid">
-      <button class="furnitureType" data-type="Chair">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M16 9v15h18V9M14 24h22v6H14zM18 30v9M32 30v9"/></svg>
-        <span>Chair</span>
-      </button>
-      <button class="furnitureType" data-type="Table">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 17h30v8H9zM14 25v14M34 25v14"/></svg>
-        <span>Table</span>
-      </button>
-      <button class="furnitureType" data-type="Lounge">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22v-5c0-3 2-5 5-5h14c3 0 5 2 5 5v6M9 22v13h30V22M14 35v4M34 35v4M15 27h18"/></svg>
-        <span>Lounge</span>
-      </button>
-      <button class="furnitureType" data-type="Bar">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 13h30l-4 10H13zM13 23h22v15H13zM18 29h12"/></svg>
-        <span>Bar</span>
-      </button>
-      <button class="furnitureType" data-type="Stage / DJ">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 29h32v9H8zM14 29V17h20v12M19 23h10M24 12v6"/></svg>
-        <span>Stage / DJ</span>
-      </button>
-      <button class="furnitureType" data-type="Decoration">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8l3.7 8.5L37 17l-7 6 2.3 9L24 27l-8.3 5 2.3-9-7-6 9.3-.5z"/></svg>
-        <span>Decoration</span>
-      </button>
-      <button class="furnitureType" data-type="Lighting">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 18a7 7 0 0114 0c0 4-3 6-4 9h-6c-1-3-4-5-4-9zM21 31h6M22 35h4M24 5v6M8 19h5M35 19h5M13 8l4 4M35 8l-4 4"/></svg>
-        <span>Lighting</span>
-      </button>
-      <button class="furnitureType" data-type="Plant">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 38V20M24 27c-8 0-12-5-12-12 8 0 12 5 12 12zM24 22c8 0 12-5 12-12-8 0-12 5-12 12zM17 38h14"/></svg>
-        <span>Plant</span>
-      </button>
-    </div>
-
-    <button id="confirmFurniture" class="confirmFurniture" disabled>Choose furniture type</button>
-  </div>
-</div>
 
 <div id="hud">
   <div class="hudTop">
@@ -1100,54 +848,29 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText">
-      Position the phone, tap <b>Lock generation frame</b>, then take the iPhone screenshot without moving the phone. Purple targets show the projected chair footprint, back edge and front edge.
+      Position the phone, tap <b>Lock frame</b>, then take the iPhone screenshot without moving the phone.
     </div>
   </div>
 
   <div class="screenshotBottom">
-    <button id="lockGenerationFrame" class="screenshotLock">Lock generation frame</button>
+    <button id="lockGenerationFrame" class="screenshotLock">Lock frame</button>
     <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
   </div>
 </div>
 
-<div id="photoHud" class="photoHud" aria-hidden="true">
-  <div class="photoHudTop">
-    <div class="pill">PHOTO VIEW · AR OVERLAY</div>
-    <div class="pill" id="photoPoseText">Live pose</div>
-  </div>
-
-  <div class="photoHudBottom">
-    <button id="backToPlan" class="photoSecondary">← Plan</button>
-    <button id="capturePhoto" class="photoShutter" aria-label="Capture photo">
-      <span class="shutterInner"></span>
-    </button>
-    <button id="photoInfo" class="photoSecondary" disabled>Overlay on</button>
-  </div>
-</div>
-
-<div id="photoPreviewModal" class="photoPreviewModal" aria-hidden="true">
-  <div class="photoPreviewSheet">
-    <div class="photoPreviewHeader">
-      <div>
-        <div class="eyebrow">CAPTURED VIEW</div>
-        <h3>Camera + room overlay</h3>
-      </div>
-      <button id="closePhotoPreview" class="closeFurniture" aria-label="Close preview">×</button>
-    </div>
-
-    <img id="photoPreviewImage" alt="Captured AR camera view with room corner and wall overlay">
-
-    <div id="photoCaptureMeta" class="photoCaptureMeta"></div>
-
-    <div class="photoPreviewActions">
-      <button id="sharePhoto" class="confirmFurniture">Share / Save image</button>
-      <button id="keepPhoto" class="photoKeepBtn">Keep and return</button>
-    </div>
-  </div>
-</div>
-
+<script>
+window.__eventVisionModuleReady=false;
+setTimeout(()=>{
+  if(window.__eventVisionModuleReady) return;
+  const status=document.getElementById('support');
+  if(status && status.textContent.includes('Checking WebXR')){
+    status.innerHTML='<span class="warn">App module did not start. Check the network/Three.js load, then reopen this page in HelloXR.</span>';
+  }
+},5000);
+</script>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+window.__eventVisionModuleReady=true;
 
 const el = {
   start: document.getElementById('start'),
@@ -1168,11 +891,6 @@ const el = {
   introCard: document.getElementById('introCard'),
   scanAgain: document.getElementById('scanAgain'),
   addFurniture: document.getElementById('addFurniture'),
-  furnitureModal: document.getElementById('furnitureModal'),
-  closeFurniture: document.getElementById('closeFurniture'),
-  furnitureGrid: document.getElementById('furnitureGrid'),
-  confirmFurniture: document.getElementById('confirmFurniture'),
-  cameraView: document.getElementById('cameraView'),
   exportData: document.getElementById('exportData'),
   exportPlan: document.getElementById('exportPlan'),
   screenshotMode: document.getElementById('screenshotMode'),
@@ -1182,18 +900,7 @@ const el = {
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
-  cornerDetails: document.getElementById('cornerDetails'),
-  captureDetails: document.getElementById('captureDetails'),
-  photoHud: document.getElementById('photoHud'),
-  photoPoseText: document.getElementById('photoPoseText'),
-  backToPlan: document.getElementById('backToPlan'),
-  capturePhoto: document.getElementById('capturePhoto'),
-  photoPreviewModal: document.getElementById('photoPreviewModal'),
-  photoPreviewImage: document.getElementById('photoPreviewImage'),
-  photoCaptureMeta: document.getElementById('photoCaptureMeta'),
-  closePhotoPreview: document.getElementById('closePhotoPreview'),
-  sharePhoto: document.getElementById('sharePhoto'),
-  keepPhoto: document.getElementById('keepPhoto')
+  cornerDetails: document.getElementById('cornerDetails')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -1209,23 +916,14 @@ let latestViewerOrientation = null;
 let planTransform = null;
 let phonePoseGroup = null;
 let scanSceneData = null;
-let captures = [];
-let activeCapture = null;
-let activeCaptureURL = null;
-let photoMode = false;
 let screenshotModeActive = false;
-let savedScreenshotPose = null;
-let screenshotFrameLocked = false;
 let lockedGenerationFrame = null;
 let latestXRViewData = null;
-let pendingXRFrameResolvers = [];
 
 const CORNER_LABEL_BASE_SCALE = 0.18;
 const CORNER_LABEL_SCALE_PER_METER = 0.05;
 const CORNER_LABEL_MIN_SCALE = 0.18;
 const CORNER_LABEL_MAX_SCALE = 0.52;
-
-let selectedFurnitureType = null;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
 
@@ -1277,6 +975,8 @@ async function check(){
   }
 }
 
+check();
+
 async function enterAR(){
   if(!renderer) createRenderer();
 
@@ -1299,20 +999,11 @@ async function enterAR(){
   planTransform=null;
   phonePoseGroup=null;
   scanSceneData=null;
-  captures=[];
-  savedScreenshotPose=null;
+  lockedGenerationFrame=null;
   latestXRViewData=null;
-  pendingXRFrameResolvers=[];
-  activeCapture=null;
-  if(activeCaptureURL){
-    URL.revokeObjectURL(activeCaptureURL);
-    activeCaptureURL=null;
-  }
-  photoMode=false;
   screenshotModeActive=false;
-  renderScreenshotPoseDetails();
+  renderGenerationFrameDetails();
   document.body.classList.remove('layout-mode');
-  document.body.classList.remove('photo-mode');
   document.body.classList.remove('screenshot-mode');
   floorY=null;
   if(el.introCard) el.introCard.style.display='block';
@@ -1382,106 +1073,78 @@ function cloneData(value){
 }
 
 
-function getProjectionImageSpaces(imageGeometry=null){
-  const g=imageGeometry || getCaptureImageGeometry();
-  const cssWidth=Number(g?.viewport_css_width || window.innerWidth || 1);
-  const cssHeight=Number(g?.viewport_css_height || window.innerHeight || 1);
-  const outputWidth=Number(g?.output_width_px || cssWidth);
-  const outputHeight=Number(g?.output_height_px || cssHeight);
-  const dpr=Number(g?.device_pixel_ratio || window.devicePixelRatio || 1);
-
-  return {
-    css:{width:cssWidth,height:cssHeight},
-    output:{width:outputWidth,height:outputHeight},
-    os_screenshot_estimate:{width:cssWidth*dpr,height:cssHeight*dpr}
-  };
-}
-
 function projectWorldPoint(worldPoint,viewData,imageGeometry=null){
-  if(!worldPoint || !Array.isArray(viewData?.view_matrix) || !Array.isArray(viewData?.projection_matrix)){
-    return null;
-  }
+  if(!worldPoint || !Array.isArray(viewData?.view_matrix) || !Array.isArray(viewData?.projection_matrix)) return null;
 
   const viewMatrix=new THREE.Matrix4().fromArray(viewData.view_matrix);
   const projectionMatrix=new THREE.Matrix4().fromArray(viewData.projection_matrix);
-
-  const cameraPoint=new THREE.Vector4(
-    Number(worldPoint.x),
-    Number(worldPoint.y),
-    Number(worldPoint.z),
-    1
-  ).applyMatrix4(viewMatrix);
-
+  const cameraPoint=new THREE.Vector4(Number(worldPoint.x),Number(worldPoint.y),Number(worldPoint.z),1).applyMatrix4(viewMatrix);
   const clipPoint=cameraPoint.clone().applyMatrix4(projectionMatrix);
-  if(!Number.isFinite(clipPoint.w) || Math.abs(clipPoint.w)<1e-8){
-    return null;
-  }
+  if(!Number.isFinite(clipPoint.w) || Math.abs(clipPoint.w)<1e-8) return null;
 
   const ndc={
     x:clipPoint.x/clipPoint.w,
     y:clipPoint.y/clipPoint.w,
     z:clipPoint.z/clipPoint.w
   };
-
-  const uv={
-    x:(ndc.x+1)/2,
-    y:(1-ndc.y)/2
-  };
-
-  const spaces=getProjectionImageSpaces(imageGeometry);
-  const mapPoint=space=>({
-    x:uv.x*space.width,
-    y:uv.y*space.height
-  });
+  const uv={x:(ndc.x+1)/2,y:(1-ndc.y)/2};
+  const width=Number(imageGeometry?.viewport_css_width || window.innerWidth || 1);
+  const height=Number(imageGeometry?.viewport_css_height || window.innerHeight || 1);
 
   return {
-    camera_space:{
-      x:Number(cameraPoint.x),
-      y:Number(cameraPoint.y),
-      z:Number(cameraPoint.z),
-      depth_m:Number(-cameraPoint.z)
-    },
-    clip_w:Number(clipPoint.w),
-    ndc:{x:Number(ndc.x),y:Number(ndc.y),z:Number(ndc.z)},
     uv:{x:Number(uv.x),y:Number(uv.y)},
-    css_px:mapPoint(spaces.css),
-    output_px:mapPoint(spaces.output),
-    os_screenshot_px_estimate:mapPoint(spaces.os_screenshot_estimate),
-    in_front:cameraPoint.z<0,
+    css_px:{x:Number(uv.x*width),y:Number(uv.y*height)},
+    camera_space:{depth_m:Number(-cameraPoint.z)},
     inside_view:cameraPoint.z<0 && ndc.x>=-1 && ndc.x<=1 && ndc.y>=-1 && ndc.y<=1 && ndc.z>=-1 && ndc.z<=1
   };
 }
 
-function getFurnitureWorldBox(item){
+function isFiniteUv(point){
+  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+function uvInsidePhoto(point){
+  return isFiniteUv(point) && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+}
+
+function compactProjection(projected){
+  if(!projected) return null;
+  return {
+    uv:{x:Number(projected.uv.x),y:Number(projected.uv.y)},
+    css_px:{x:Number(projected.css_px.x),y:Number(projected.css_px.y)},
+    depth_m:Number(projected.camera_space?.depth_m),
+    inside_view:!!projected.inside_view
+  };
+}
+
+function getFurnitureFootprintWorld(item){
   const center=getFurnitureWorldPosition(item);
   const dims=getFurnitureDimensions(item);
-  const footprintWidth=Number(dims.footprint_width ?? dims.width);
-  const footprintDepth=Number(dims.footprint_depth ?? dims.depth);
-  const overallHeight=Number(dims.overall_height ?? dims.height);
-  if(!center || !Number.isFinite(footprintWidth) || !Number.isFinite(footprintDepth) || !Number.isFinite(overallHeight)) return null;
+  const width=Number(dims.footprint_width ?? dims.width);
+  const depth=Number(dims.footprint_depth ?? dims.depth);
+  if(!center || !Number.isFinite(width) || !Number.isFinite(depth)) return null;
 
-  const halfW=footprintWidth/2;
-  const halfD=footprintDepth/2;
-  const height=overallHeight;
+  const halfW=width/2;
+  const halfD=depth/2;
   const theta=Number(item.rotation || 0)*Math.PI/180;
   const cos=Math.cos(theta);
   const sin=Math.sin(theta);
 
-  const localFloor=[
+  const local=[
     {x:-halfW,z:-halfD},
     {x: halfW,z:-halfD},
     {x: halfW,z: halfD},
     {x:-halfW,z: halfD}
   ];
 
-  const floor=localFloor.map(p=>{
-    const rx=p.x*cos-p.z*sin;
-    const rz=p.x*sin+p.z*cos;
-    return {x:center.x+rx,y:center.y,z:center.z+rz};
-  });
-
-  const top=floor.map(p=>({x:p.x,y:p.y+height,z:p.z}));
-  return {center,floor,top,all:[...floor,...top]};
+  return {
+    center,
+    corners:local.map(p=>({
+      x:center.x + p.x*cos - p.z*sin,
+      y:center.y,
+      z:center.z + p.x*sin + p.z*cos
+    }))
+  };
 }
 
 function getFurnitureOrientationWorld(item){
@@ -1495,275 +1158,144 @@ function getFurnitureOrientationWorld(item){
 function getFurnitureOrientationWorldPoints(item){
   const center=getFurnitureWorldPosition(item);
   const dims=getFurnitureDimensions(item);
-  const footprintWidth=Number(dims.footprint_width ?? dims.width);
-  const footprintDepth=Number(dims.footprint_depth ?? dims.depth);
-  if(!center || !Number.isFinite(footprintWidth) || !Number.isFinite(footprintDepth)) return null;
+  const width=Number(dims.footprint_width ?? dims.width);
+  const depth=Number(dims.footprint_depth ?? dims.depth);
+  if(!center || !Number.isFinite(width) || !Number.isFinite(depth)) return null;
 
-  const halfW=footprintWidth/2;
-  const halfD=footprintDepth/2;
-  const orient=getFurnitureOrientationWorld(item);
-  const F=orient.forward;
-  const R=orient.right;
-
-  const combine=(f,r)=>({
-    x:center.x + F.x*f + R.x*r,
+  const F=getFurnitureOrientationWorld(item).forward;
+  const R=getFurnitureOrientationWorld(item).right;
+  const halfW=width/2;
+  const halfD=depth/2;
+  const point=(forward,right)=>({
+    x:center.x + F.x*forward + R.x*right,
     y:center.y,
-    z:center.z + F.z*f + R.z*r
+    z:center.z + F.z*forward + R.z*right
   });
 
   return {
-    center_floor:{x:center.x,y:center.y,z:center.z},
-    front_mid:combine(halfD,0),
-    back_mid:combine(-halfD,0),
-    back_edge:[
-      combine(-halfD,-halfW),
-      combine(-halfD,halfW)
-    ],
-    // Deprecated alias kept for older exports/readers.
-    backrest_edge:[
-      combine(-halfD,-halfW),
-      combine(-halfD,halfW)
-    ],
-    front_edge:[
-      combine(halfD,-halfW),
-      combine(halfD,halfW)
-    ],
-    forward_world:orient.forward
+    center,
+    front_center:point(halfD,0),
+    back_center:point(-halfD,0),
+    front_edge:[point(halfD,-halfW),point(halfD,halfW)],
+    back_edge:[point(-halfD,-halfW),point(-halfD,halfW)]
   };
 }
 
 function getFurnitureHeightAnchorWorldPoints(item){
-  const center=getFurnitureWorldPosition(item);
+  const orientation=getFurnitureOrientationWorldPoints(item);
   const dims=getFurnitureDimensions(item);
-  const orientPoints=getFurnitureOrientationWorldPoints(item);
-  const overallHeight=Number(dims.overall_height ?? dims.height);
-  const backMid=orientPoints?.back_mid;
-  if(!center || !backMid || !Number.isFinite(overallHeight)) return null;
-
+  const height=Number(dims.overall_height ?? dims.height);
+  if(!orientation || !Number.isFinite(height)) return null;
   return {
-    floor:{x:backMid.x,y:center.y,z:backMid.z},
-    top:{x:backMid.x,y:center.y+overallHeight,z:backMid.z}
+    floor:orientation.back_center,
+    top:{
+      x:orientation.back_center.x,
+      y:orientation.back_center.y+height,
+      z:orientation.back_center.z
+    },
+    height_m:height
   };
 }
 
-function getBoundingBoxFromProjected(points,key){
-  const valid=points.map(p=>p?.[key]).filter(Boolean);
-  if(!valid.length) return null;
-  const xs=valid.map(p=>p.x), ys=valid.map(p=>p.y);
+function projectFurnitureForFrame(item,viewData,imageGeometry){
+  const footprintWorld=getFurnitureFootprintWorld(item);
+  const orientationWorld=getFurnitureOrientationWorldPoints(item);
+  const heightWorld=getFurnitureHeightAnchorWorldPoints(item);
+  if(!footprintWorld || !orientationWorld || !heightWorld) return null;
+
+  const floor=footprintWorld.corners.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
+  const center=compactProjection(projectWorldPoint(footprintWorld.center,viewData,imageGeometry));
+  const frontCenter=compactProjection(projectWorldPoint(orientationWorld.front_center,viewData,imageGeometry));
+  const backCenter=compactProjection(projectWorldPoint(orientationWorld.back_center,viewData,imageGeometry));
+  const frontEdge=orientationWorld.front_edge.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
+  const backEdge=orientationWorld.back_edge.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
+  const heightFloor=compactProjection(projectWorldPoint(heightWorld.floor,viewData,imageGeometry));
+  const heightTop=compactProjection(projectWorldPoint(heightWorld.top,viewData,imageGeometry));
+
+  const dx=frontCenter?.uv?.x-backCenter?.uv?.x;
+  const dy=frontCenter?.uv?.y-backCenter?.uv?.y;
+  const directionLength=Math.hypot(Number(dx),Number(dy));
+
+  const orientationValid=uvInsidePhoto(frontCenter?.uv) && uvInsidePhoto(backCenter?.uv) && Number.isFinite(directionLength) && directionLength>1e-6;
+  const placementValid=uvInsidePhoto(center?.uv) && floor.filter(p=>uvInsidePhoto(p?.uv)).length>=2;
+  const sizeValid=!!heightFloor && !!heightTop && Number.isFinite(heightWorld.height_m);
+
   return {
-    x_min:Math.min(...xs),
-    y_min:Math.min(...ys),
-    x_max:Math.max(...xs),
-    y_max:Math.max(...ys),
-    width:Math.max(...xs)-Math.min(...xs),
-    height:Math.max(...ys)-Math.min(...ys)
-  };
-}
-
-function normalizeAngleDeg(angle){
-  let a=angle;
-  while(a <= -180) a += 360;
-  while(a > 180) a -= 360;
-  return a;
-}
-
-function getScreenForwardAngleDeg(a,b){
-  const p1=a?.os_screenshot_px_estimate || a?.output_px || a?.css_px;
-  const p2=b?.os_screenshot_px_estimate || b?.output_px || b?.css_px;
-  if(!p1 || !p2) return null;
-  const dx=p2.x-p1.x;
-  const dy=p2.y-p1.y;
-  if(!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx)<1e-9 && Math.abs(dy)<1e-9)) return null;
-  let deg=Math.atan2(dy,dx)*180/Math.PI;
-  if(deg<0) deg += 360;
-  return Number(deg);
-}
-
-function getCameraRelativeViewAngleDeg(item,viewData=null){
-  const world=getFurnitureWorldPosition(item);
-  const cam=viewData?.position || getCurrentCameraMetadata()?.position || null;
-  const orient=getFurnitureOrientationWorld(item);
-  if(!world || !cam || !orient?.forward) return null;
-
-  const vx=Number(cam.x)-Number(world.x);
-  const vz=Number(cam.z)-Number(world.z);
-  const len=Math.hypot(vx,vz);
-  if(!Number.isFinite(len) || len < 1e-9) return null;
-  const toCam={x:vx/len,z:vz/len};
-  const f={x:Number(orient.forward.x),z:Number(orient.forward.z)};
-  const dot=f.x*toCam.x + f.z*toCam.z;
-  const cross=f.x*toCam.z - f.z*toCam.x;
-  const angle=Math.atan2(cross,dot)*180/Math.PI;
-  return Number(normalizeAngleDeg(angle));
-}
-
-function getOrientationViewLabel(cameraRelativeAngleDeg){
-  if(!Number.isFinite(cameraRelativeAngleDeg)) return null;
-  const a=normalizeAngleDeg(cameraRelativeAngleDeg);
-
-  if(a >= -22.5 && a < 22.5) return 'front_view';
-  if(a >= 22.5 && a < 67.5) return 'front_right_3q';
-  if(a >= 67.5 && a < 112.5) return 'right_profile';
-  if(a >= 112.5 && a < 157.5) return 'rear_right_3q';
-  if(a >= 157.5 || a < -157.5) return 'back_view';
-  if(a >= -157.5 && a < -112.5) return 'rear_left_3q';
-  if(a >= -112.5 && a < -67.5) return 'left_profile';
-  return 'front_left_3q';
-}
-
-function getFurnitureOrientationSemantics(cameraRelativeAngleDeg){
-  return {
-    authoritative:true,
-    front_edge_role:'chair_front',
-    back_edge_role:'chair_backrest_side',
-    front_back_mirroring_allowed:false,
-    must_place_backrest_on_back_edge:true,
-    must_open_seat_toward_front_edge:true,
-    view_label:getOrientationViewLabel(cameraRelativeAngleDeg),
-    view_label_basis:'camera_relative_view_angle_deg',
-    debug_overlay_colors:{
-      front_edge:'green',
-      back_edge:'light_purple'
+    id:`${item.type}_${String(item.id).padStart(2,'0')}`,
+    center,
+    floor,
+    frontCenter,
+    backCenter,
+    frontEdge,
+    backEdge,
+    heightFloor,
+    heightTop,
+    height_m:heightWorld.height_m,
+    orientation_vector:orientationValid ? {x:dx/directionLength,y:dy/directionLength} : null,
+    validation:{
+      valid:orientationValid && placementValid && sizeValid,
+      orientation:orientationValid,
+      placement:placementValid,
+      size:sizeValid
     }
   };
 }
 
-function normalizePointToViewport(point,imageGeometry){
-  const width=Number(imageGeometry?.viewport_css_width || window.innerWidth || 0);
-  const height=Number(imageGeometry?.viewport_css_height || window.innerHeight || 0);
-  if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || width <= 0 || height <= 0){
-    return null;
-  }
-  return {x:Number(point.x/width),y:Number(point.y/height)};
-}
-
-function normalizedPointInsideUnitSquare(point){
-  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
-}
-
-function buildGenerationOrientationConstraint(frontMid,backMid,imageGeometry=null){
-  const front = normalizePointToViewport(frontMid?.css_px, imageGeometry) || frontMid?.uv || null;
-  const back = normalizePointToViewport(backMid?.css_px, imageGeometry) || backMid?.uv || null;
-  if(!front || !back){
-    return null;
-  }
-
-  const dx=Number(front.x)-Number(back.x);
-  const dy=Number(front.y)-Number(back.y);
-  const len=Math.hypot(dx,dy);
-  const anchors_valid=normalizedPointInsideUnitSquare(front) && normalizedPointInsideUnitSquare(back);
-  if(!Number.isFinite(len) || len<1e-9 || !anchors_valid){
-    return {
-      authority:'ONLY_ORIENTATION_CONSTRAINT_FOR_GENERATION',
-      coordinate_space:'photo_normalized_uv',
-      back_center_uv:back ? {x:Number(back.x),y:Number(back.y)} : null,
-      front_center_uv:front ? {x:Number(front.x),y:Number(front.y)} : null,
-      forward_vector_uv:null,
-      interpretation:'Invalid generation frame: anchors must come from the locked screenshot frame and remain inside the photo bounds.',
+function serializeGenerationTarget(projected,dims){
+  if(!projected) return null;
+  return {
+    placement:{
+      floor_polygon_uv:projected.floor.map(p=>p?.uv || null),
+      center_uv:projected.center?.uv || null
+    },
+    orientation:{
+      back_center_uv:projected.backCenter?.uv || null,
+      front_center_uv:projected.frontCenter?.uv || null,
+      forward_vector_uv:projected.orientation_vector,
+      rule:'BACK to FRONT is authoritative. Never reverse or mirror this vector.',
       allow_180_flip:false,
-      allow_front_back_mirror:false,
-      valid:false
-    };
-  }
-
-  return {
-    authority:'ONLY_ORIENTATION_CONSTRAINT_FOR_GENERATION',
-    coordinate_space:'photo_normalized_uv',
-    source:'locked_screenshot_css_px_normalized',
-    back_center_uv:{x:Number(back.x),y:Number(back.y)},
-    front_center_uv:{x:Number(front.x),y:Number(front.y)},
-    forward_vector_uv:{x:dx/len,y:dy/len},
-    interpretation:'Backrest must be on the BACK anchor side. Open/front side of seat must face the FRONT anchor. Never reverse this vector.',
-    allow_180_flip:false,
-    allow_front_back_mirror:false,
-    valid:true
+      allow_front_back_mirror:false
+    },
+    size:{
+      footprint_width_m:Number(dims.footprint_width ?? dims.width),
+      footprint_depth_m:Number(dims.footprint_depth ?? dims.depth),
+      overall_height_m:Number(dims.overall_height ?? dims.height),
+      height_anchor_uv:{
+        floor:projected.heightFloor?.uv || null,
+        top:projected.heightTop?.uv || null
+      }
+    },
+    validation:projected.validation
   };
 }
 
-function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
-  const box=getFurnitureWorldBox(item);
-  if(!box) return null;
+function validateLockedProjection(items){
+  const issues=[];
+  for(const projected of items){
+    if(!projected){
+      issues.push('A furniture item could not be projected.');
+      continue;
+    }
+    if(!projected.validation.orientation) issues.push(`${projected.id}: FRONT/BACK anchors are not both inside the locked image.`);
+    if(!projected.validation.placement) issues.push(`${projected.id}: footprint center is outside the locked image.`);
+    if(!projected.validation.size) issues.push(`${projected.id}: height projection is unavailable.`);
+  }
+  return {valid:issues.length===0,issues};
+}
 
-  const dims=getFurnitureDimensions(item);
-  const centerWorld={
-    x:box.center.x,
-    y:box.center.y+Number(dims.overall_height ?? dims.height ?? 0)/2,
-    z:box.center.z
-  };
-  const center=projectWorldPoint(centerWorld,viewData,imageGeometry);
-  const floor=box.floor.map(p=>projectWorldPoint(p,viewData,imageGeometry));
-  const top=box.top.map(p=>projectWorldPoint(p,viewData,imageGeometry));
-  const all=[...floor,...top];
-
-  const inFront=all.filter(Boolean).some(p=>p.in_front);
-  const insideCount=all.filter(Boolean).filter(p=>p.inside_view).length;
-  let visibility='out_of_frame';
-  if(!inFront) visibility='behind_camera';
-  else if(insideCount===all.filter(Boolean).length && insideCount>0) visibility='visible';
-  else if(insideCount>0 || center?.inside_view) visibility='partially_visible';
-
-  const simplify=projection=>projection ? {
-    ndc:projection.ndc,
-    uv:projection.uv,
-    css_px:projection.css_px,
-    output_px:projection.output_px,
-    os_screenshot_px_estimate:projection.os_screenshot_px_estimate,
-    depth_m:projection.camera_space?.depth_m,
-    inside_view:projection.inside_view
-  } : null;
-
-  const orientationWorld=getFurnitureOrientationWorldPoints(item);
-  const orientation=orientationWorld ? (()=>{
-    const centerFloor=simplify(projectWorldPoint(orientationWorld.center_floor,viewData,imageGeometry));
-    const frontMid=simplify(projectWorldPoint(orientationWorld.front_mid,viewData,imageGeometry));
-    const backMid=simplify(projectWorldPoint(orientationWorld.back_mid,viewData,imageGeometry));
-    const backEdge=orientationWorld.back_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)));
-    const frontEdge=orientationWorld.front_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)));
-    const cameraRelativeAngle=getCameraRelativeViewAngleDeg(item,viewData);
-    const viewLabel=getOrientationViewLabel(cameraRelativeAngle);
+function getProjectionSnapshotForOverlay(){
+  if(lockedGenerationFrame){
     return {
-      generation_constraint:buildGenerationOrientationConstraint(frontMid,backMid,imageGeometry),
-      debug_only:{
-        forward_world:{
-          x:Number(orientationWorld.forward_world.x),
-          y:Number(orientationWorld.forward_world.y),
-          z:Number(orientationWorld.forward_world.z)
-        },
-        center_floor:centerFloor,
-        front_mid:frontMid,
-        back_mid:backMid,
-        front_edge:frontEdge,
-        back_edge:backEdge,
-        backrest_edge:backEdge,
-        screen_forward_angle_deg:getScreenForwardAngleDeg(centerFloor, frontMid),
-        screen_forward_angle_convention:'0=right, 90=down, 180=left, 270=up in image coordinates',
-        camera_relative_view_angle_deg:cameraRelativeAngle,
-        camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view',
-        view_label:viewLabel,
-        semantic_rule:getFurnitureOrientationSemantics(cameraRelativeAngle)
-      }
+      viewData:lockedGenerationFrame.xr_view,
+      imageGeometry:lockedGenerationFrame.image,
+      projections:lockedGenerationFrame.projections
     };
-  })() : null;
-
-  const heightWorld=getFurnitureHeightAnchorWorldPoints(item);
-  const height_anchor=heightWorld ? {
-    floor:simplify(projectWorldPoint(heightWorld.floor,viewData,imageGeometry)),
-    top:simplify(projectWorldPoint(heightWorld.top,viewData,imageGeometry)),
-    height_m:Number(dims.overall_height ?? dims.height ?? 0)
-  } : null;
-
+  }
+  const imageGeometry=getCaptureImageGeometry();
   return {
-    projection_basis:'XRView view_matrix + projection_matrix',
-    visibility,
-    center:simplify(center),
-    floor_polygon:floor.map(simplify),
-    top_polygon:top.map(simplify),
-    orientation,
-    height_anchor,
-    bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
-    bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
-    bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
-    note:'For generation, use ONLY orientation.generation_constraint for chair facing. orientation.debug_only is diagnostic and must not be interpreted as additional pose instructions. Use floor_polygon for placement and height_anchor for size.'
+    viewData:latestXRViewData,
+    imageGeometry,
+    projections:null
   };
 }
 
@@ -1776,17 +1308,15 @@ function updateProjectionDebugOverlay(){
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
   svg.innerHTML='';
 
-  const activeSnapshot=getActiveProjectionSnapshot();
-  if(!activeSnapshot?.viewData?.view_matrix || !activeSnapshot?.viewData?.projection_matrix) return;
+  const snapshot=getProjectionSnapshotForOverlay();
+  if(!snapshot?.viewData?.view_matrix || !snapshot?.viewData?.projection_matrix) return;
 
-  const imageGeometry=activeSnapshot.imageGeometry || getCaptureImageGeometry();
+  const projections=snapshot.projections || furnitureItems.map(item=>projectFurnitureForFrame(item,snapshot.viewData,snapshot.imageGeometry));
   const ns='http://www.w3.org/2000/svg';
 
-  furnitureItems.forEach(item=>{
-    const projection=getFurnitureScreenProjection(item,activeSnapshot.viewData,imageGeometry);
-    if(!projection || projection.visibility==='behind_camera') return;
-
-    const floorPoints=projection.floor_polygon.map(p=>p?.css_px).filter(Boolean);
+  projections.forEach(projected=>{
+    if(!projected) return;
+    const floorPoints=projected.floor.map(p=>p?.css_px).filter(Boolean);
     if(floorPoints.length===4){
       const poly=document.createElementNS(ns,'polygon');
       poly.setAttribute('class','projectionFootprint');
@@ -1794,19 +1324,18 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(poly);
     }
 
-    const debugOrientation=projection.orientation?.debug_only;
-    const backrest=(debugOrientation?.back_edge || debugOrientation?.backrest_edge || []).map(p=>p?.css_px).filter(Boolean);
-    if(backrest.length===2){
+    const back=projected.backEdge.map(p=>p?.css_px).filter(Boolean);
+    if(back.length===2){
       const line=document.createElementNS(ns,'line');
       line.setAttribute('class','projectionBackrest');
-      line.setAttribute('x1',backrest[0].x.toFixed(1));
-      line.setAttribute('y1',backrest[0].y.toFixed(1));
-      line.setAttribute('x2',backrest[1].x.toFixed(1));
-      line.setAttribute('y2',backrest[1].y.toFixed(1));
+      line.setAttribute('x1',back[0].x.toFixed(1));
+      line.setAttribute('y1',back[0].y.toFixed(1));
+      line.setAttribute('x2',back[1].x.toFixed(1));
+      line.setAttribute('y2',back[1].y.toFixed(1));
       svg.appendChild(line);
     }
 
-    const front=debugOrientation?.front_edge?.map(p=>p?.css_px).filter(Boolean) || [];
+    const front=projected.frontEdge.map(p=>p?.css_px).filter(Boolean);
     if(front.length===2){
       const line=document.createElementNS(ns,'line');
       line.setAttribute('class','projectionFront');
@@ -1819,50 +1348,17 @@ function updateProjectionDebugOverlay(){
   });
 }
 
-function resolvePendingXRFrameSnapshots(){
-  if(!pendingXRFrameResolvers.length) return;
-
-  const snapshot={
-    camera:getCurrentCameraMetadata(),
-    xr_view:cloneData(latestXRViewData)
-  };
-
-  const pending=pendingXRFrameResolvers.splice(0);
-  pending.forEach(entry=>{
-    clearTimeout(entry.timer);
-    entry.resolve(cloneData(snapshot));
-  });
-}
-
-function waitForNextXRFrameSnapshot(timeoutMs=900){
-  return new Promise(resolve=>{
-    const entry={resolve,timer:null};
-    entry.timer=setTimeout(()=>{
-      const index=pendingXRFrameResolvers.indexOf(entry);
-      if(index>=0) pendingXRFrameResolvers.splice(index,1);
-      resolve({
-        camera:getCurrentCameraMetadata(),
-        xr_view:cloneData(latestXRViewData)
-      });
-    },timeoutMs);
-    pendingXRFrameResolvers.push(entry);
-  });
-}
-
-function getCaptureImageGeometry(outputWidth=null,outputHeight=null){
-  const actualDpr=Number(window.devicePixelRatio || 1);
-  const captureDpr=Math.min(actualDpr,2);
-
+function getCaptureImageGeometry(){
+  const dpr=Number(window.devicePixelRatio || 1);
+  const width=Number(window.innerWidth || 1);
+  const height=Number(window.innerHeight || 1);
   return {
-    output_width_px:Number(outputWidth || renderer?.domElement?.width || Math.round(window.innerWidth*captureDpr)),
-    output_height_px:Number(outputHeight || renderer?.domElement?.height || Math.round(window.innerHeight*captureDpr)),
-    viewport_css_width:Number(window.innerWidth),
-    viewport_css_height:Number(window.innerHeight),
-    device_pixel_ratio:actualDpr,
-    capture_pixel_ratio:captureDpr,
-    orientation:window.innerWidth>=window.innerHeight ? 'landscape' : 'portrait',
-    renderer_buffer_width:Number(renderer?.domElement?.width || 0),
-    renderer_buffer_height:Number(renderer?.domElement?.height || 0),
+    viewport_css_width:width,
+    viewport_css_height:height,
+    device_pixel_ratio:dpr,
+    expected_screenshot_width_px:Math.round(width*dpr),
+    expected_screenshot_height_px:Math.round(height*dpr),
+    orientation:width>=height ? 'landscape' : 'portrait',
     xr_viewport:cloneData(latestXRViewData?.viewport || null)
   };
 }
@@ -1880,21 +1376,15 @@ function render(_time,frame){
       latestViewerOrientation = new THREE.Quaternion(tq.x,tq.y,tq.z,tq.w);
       latestXRViewData = captureXRViewData(primaryView,_time);
 
-      if(photoMode && el.photoPoseText){
-        const forward=new THREE.Vector3(0,0,-1)
-          .applyQuaternion(latestViewerOrientation)
-          .normalize();
-        const yaw=Math.atan2(forward.x,-forward.z)*180/Math.PI;
-        el.photoPoseText.textContent=`${yaw.toFixed(0)}°`;
-      }
-
       if(completed && planTransform){
         updatePhonePoseMarker();
       }
 
-      if(screenshotModeActive && el.screenshotPoseStatus){
-        el.screenshotPoseStatus.textContent='Live AR pose + projection ✓';
-        updateProjectionDebugOverlay();
+      if(screenshotModeActive){
+        if(el.screenshotPoseStatus && !lockedGenerationFrame){
+          el.screenshotPoseStatus.textContent='Live AR pose · ready to lock';
+        }
+        if(!lockedGenerationFrame) updateProjectionDebugOverlay();
       }
 
       updateCornerLabelScales();
@@ -1938,7 +1428,6 @@ function render(_time,frame){
   }
 
   renderer.render(scene,camera);
-  resolvePendingXRFrameSnapshots();
 }
 
 function placeCurrentHit(){
@@ -2195,7 +1684,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_10',
+    protocol_version:'EventVision_v9_0_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2270,34 +1759,6 @@ function getCurrentCameraMetadata(){
   };
 }
 
-function renderCaptureDetails(){
-  if(!el.captureDetails) return;
-
-  if(!captures.length){
-    el.captureDetails.innerHTML='<div class="emptyDetail">No camera views captured yet.</div>';
-    return;
-  }
-
-  el.captureDetails.innerHTML='';
-
-  captures.forEach((capture,i)=>{
-    const meta=capture.metadata || capture;
-    const p=meta.camera?.position;
-    const yaw=meta.camera?.yaw_deg;
-
-    const card=document.createElement('div');
-    card.className='captureDetailCard';
-    card.innerHTML=`
-      <strong>View ${i+1}</strong>
-      <span>
-        ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
-        ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
-      </span>
-    `;
-    el.captureDetails.appendChild(card);
-  });
-}
-
 function drawResult(points = finishedCorners.length ? finishedCorners : corners){
   if(!points || points.length < 3) return;
 
@@ -2312,8 +1773,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
   scanSceneData=buildSceneData(points);
   renderCornerDetails();
-  renderScreenshotPoseDetails();
-  renderCaptureDetails();
+  renderGenerationFrameDetails();
 
   const xs=points.map(p=>p.x), zs=points.map(p=>p.z);
   const minX=Math.min(...xs),maxX=Math.max(...xs);
@@ -2500,164 +1960,88 @@ function getPlanPositionFromWorld(worldPosition){
   };
 }
 
-function getActiveProjectionSnapshot(){
-  if(screenshotFrameLocked && lockedGenerationFrame?.xr_view){
-    return {viewData:lockedGenerationFrame.xr_view,imageGeometry:lockedGenerationFrame.image};
+function invalidateGenerationFrame(reason='Furniture layout changed'){
+  if(!lockedGenerationFrame) return;
+  lockedGenerationFrame=null;
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.textContent='Lock frame';
+    el.lockGenerationFrame.classList.remove('locked');
   }
-  return {viewData:latestXRViewData,imageGeometry:getCaptureImageGeometry()};
+  if(el.screenshotPoseStatus && screenshotModeActive){
+    el.screenshotPoseStatus.textContent='Frame invalidated · lock again';
+  }
+  renderGenerationFrameDetails(reason);
+  if(screenshotModeActive) updateProjectionDebugOverlay();
 }
 
-function validateFurnitureGenerationConstraints(furnitureSceneData){
-  const issues=[];
-  (furnitureSceneData || []).forEach(item=>{
-    const gc=item?.screen_projection?.orientation?.generation_constraint;
-    if(!gc || gc.valid === false){
-      issues.push(`${item?.id || 'item'}: missing or invalid orientation constraint`);
-      return;
-    }
-    const pts=[gc.back_center_uv,gc.front_center_uv];
-    pts.forEach((pt,i)=>{
-      if(!normalizedPointInsideUnitSquare(pt)){
-        issues.push(`${item?.id || 'item'}: ${(i===0?'back':'front')} anchor is outside photo bounds`);
-      }
-    });
-  });
-  return {valid:issues.length===0,issues};
-}
-
-async function lockGenerationFrame(){
-  if(!session || !completed){
-    alert('Live AR tracking is not active. Finish the room scan first.');
+function lockGenerationFrame(){
+  if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix){
+    alert('Camera projection is not ready yet. Keep the phone still for a moment and try again.');
     return;
   }
 
-  if(screenshotFrameLocked){
-    screenshotFrameLocked=false;
+  if(lockedGenerationFrame){
     lockedGenerationFrame=null;
-    savedScreenshotPose=null;
     if(el.lockGenerationFrame){
-      el.lockGenerationFrame.textContent='Lock generation frame';
+      el.lockGenerationFrame.textContent='Lock frame';
       el.lockGenerationFrame.classList.remove('locked');
-      el.lockGenerationFrame.disabled=false;
     }
-    if(el.screenshotPoseStatus){
-      el.screenshotPoseStatus.textContent='Live AR pose · not locked';
-    }
-    renderScreenshotPoseDetails();
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready to lock';
+    renderGenerationFrameDetails();
     updateProjectionDebugOverlay();
     return;
   }
 
-  if(el.lockGenerationFrame){
-    el.lockGenerationFrame.disabled=true;
-    el.lockGenerationFrame.textContent='Locking…';
-  }
-
-  const snapshot=await waitForNextXRFrameSnapshot(900);
-  const imageGeometry=getCaptureImageGeometry();
-  const furniture=getFurnitureSceneData(snapshot.xr_view,imageGeometry);
-  const validation=validateFurnitureGenerationConstraints(furniture);
+  const xrView=cloneData(latestXRViewData);
+  const image=getCaptureImageGeometry();
+  const cameraMeta=getCurrentCameraMetadata();
+  const projections=furnitureItems.map(item=>projectFurnitureForFrame(item,xrView,image));
+  const validation=validateLockedProjection(projections);
 
   if(!validation.valid){
-    if(el.lockGenerationFrame){
-      el.lockGenerationFrame.disabled=false;
-      el.lockGenerationFrame.textContent='Lock generation frame';
-      el.lockGenerationFrame.classList.remove('locked');
-    }
-    if(el.screenshotPoseStatus){
-      el.screenshotPoseStatus.textContent='Lock failed · keep chairs inside view';
-    }
-    alert(`Could not lock generation frame.\n\n${validation.issues.join('\n')}`);
+    alert('Cannot lock this generation frame yet:\n\n'+validation.issues.join('\n'));
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Lock failed · adjust view';
     return;
   }
 
   lockedGenerationFrame={
     locked_at:new Date().toISOString(),
-    lock_mode:'generation_frame_lock',
-    camera:cloneData(snapshot.camera),
-    xr_view:cloneData(snapshot.xr_view),
-    image:cloneData(imageGeometry),
-    furniture:cloneData(furniture),
-    validation
-  };
-
-  screenshotFrameLocked=true;
-  savedScreenshotPose={
-    saved_at:lockedGenerationFrame.locked_at,
-    capture_mode:'locked_generation_frame',
-    timing_note:'The generation frame was explicitly locked in Screenshot mode. All orientation anchors are derived from the frozen on-screen overlay in this exact viewport.',
-    camera:cloneData(snapshot.camera),
-    xr_view:cloneData(snapshot.xr_view),
-    image:cloneData(imageGeometry),
-    plan_position:snapshot.camera?.position ? getPlanPositionFromWorld(snapshot.camera.position) : null,
-    furniture:cloneData(furniture),
-    generation_frame_locked:true,
+    camera:cameraMeta,
+    xr_view:xrView,
+    image,
+    projections,
     validation
   };
 
   if(el.lockGenerationFrame){
-    el.lockGenerationFrame.disabled=false;
-    el.lockGenerationFrame.textContent='Unlock live overlay';
+    el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent='Generation frame locked ✓';
-  }
-
-  renderScreenshotPoseDetails();
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Frame locked ✓';
+  renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
 }
 
-function saveScreenshotPose(){function saveScreenshotPose(){
-  const camera=getCurrentCameraMetadata();
-  const xrView=cloneData(latestXRViewData);
-  const imageGeometry=getCaptureImageGeometry();
-
-  savedScreenshotPose={
-    saved_at:new Date().toISOString(),
-    capture_mode:'live_preview_pose',
-    timing_note:'Live preview pose only. For generation, use Lock generation frame so the JSON matches the exact screenshot view.',
-    camera,
-    xr_view:xrView,
-    image:imageGeometry,
-    plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null,
-    furniture:getFurnitureSceneData(xrView,imageGeometry),
-    generation_frame_locked:false
-  };
-
-  renderScreenshotPoseDetails();
-
-  if(el.screenshotPoseStatus && !screenshotFrameLocked){
-    el.screenshotPoseStatus.textContent=camera ? 'Live AR pose · not locked' : 'Pose unavailable';
-  }
-}
-
-function renderScreenshotPoseDetails(){
+function renderGenerationFrameDetails(message=''){
   if(!el.screenshotPoseDetails) return;
-
-  if(!savedScreenshotPose){
-    el.screenshotPoseDetails.innerHTML='<div class="emptyDetail">No screenshot pose saved yet.</div>';
+  if(!lockedGenerationFrame){
+    el.screenshotPoseDetails.innerHTML=`<div class="emptyDetail">${message || 'No generation frame locked yet.'}</div>`;
     return;
   }
 
-  const p=savedScreenshotPose.camera?.position;
-  const plan=savedScreenshotPose.plan_position;
-  const yaw=savedScreenshotPose.camera?.yaw_deg;
-  const locked=!!savedScreenshotPose.generation_frame_locked;
-  const issues=savedScreenshotPose.validation?.issues || [];
-
+  const p=lockedGenerationFrame.camera?.position;
+  const yaw=lockedGenerationFrame.camera?.yaw_deg;
+  const img=lockedGenerationFrame.image;
   el.screenshotPoseDetails.innerHTML=`
     <div class="captureDetailCard">
-      <strong>${locked ? 'Locked generation frame' : 'Latest live preview pose'}</strong>
+      <strong>Locked generation frame ✓</strong>
       <span>
-        ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
-        ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
+        ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera position unavailable'}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
-        ${locked ? `<br>Frame lock active · use this exact frozen overlay for the iPhone screenshot.` : '<br>Frame not locked yet.'}
-        ${issues.length ? `<br>Validation: ${issues.join(' ; ')}` : '<br>Validation: OK'}
+        ${img ? `<br>Viewport ${img.viewport_css_width} × ${img.viewport_css_height} CSS px` : ''}
+        <br>${lockedGenerationFrame.projections.length} furniture target${lockedGenerationFrame.projections.length===1?'':'s'} validated
       </span>
-    </div>
-  `;
+    </div>`;
 }
 
 function enterScreenshotMode(){
@@ -2667,313 +2051,92 @@ function enterScreenshotMode(){
   }
 
   screenshotModeActive=true;
-  screenshotFrameLocked=false;
-  lockedGenerationFrame=null;
-  try{
-    saveScreenshotPose();
-  }catch(err){
-    console.error('Screenshot pose save failed:',err);
-    if(el.screenshotPoseStatus){
-      el.screenshotPoseStatus.textContent='Live AR pose · metadata warning';
-    }
-  }
-
-  if(el.lockGenerationFrame){
-    el.lockGenerationFrame.textContent='Lock generation frame';
-    el.lockGenerationFrame.classList.remove('locked');
-    el.lockGenerationFrame.disabled=false;
-  }
-
   document.body.classList.remove('layout-mode');
-  document.body.classList.remove('photo-mode');
   document.body.classList.add('screenshot-mode');
-
   el.hud.classList.remove('active');
-  el.photoHud?.classList.remove('active');
   el.screenshotHud.classList.add('active');
   el.screenshotHud.setAttribute('aria-hidden','false');
 
-  if(renderer?.domElement){
-    renderer.domElement.style.display='block';
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : 'Lock frame';
+    el.lockGenerationFrame.classList.toggle('locked',!!lockedGenerationFrame);
   }
+  if(el.screenshotPoseStatus){
+    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'Frame locked ✓' : 'Live AR pose · ready to lock';
+  }
+  if(renderer?.domElement) renderer.domElement.style.display='block';
+  updateProjectionDebugOverlay();
 }
 
 function exitScreenshotMode(){
   screenshotModeActive=false;
   if(el.projectionDebug) el.projectionDebug.innerHTML='';
-
   document.body.classList.remove('screenshot-mode');
   document.body.classList.add('layout-mode');
-
   el.screenshotHud.classList.remove('active');
   el.screenshotHud.setAttribute('aria-hidden','true');
-
-  requestAnimationFrame(()=>{
-    el.result.scrollIntoView({behavior:'smooth',block:'start'});
-  });
+  requestAnimationFrame(()=>el.result.scrollIntoView({behavior:'smooth',block:'start'}));
 }
 
 el.screenshotMode?.addEventListener('click',enterScreenshotMode);
 el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
-function enterPhotoMode(){
-  if(!session || !completed){
-    alert('Live AR tracking is not active. Re-scan the room before using camera view.');
-    return;
-  }
-
-  photoMode=true;
-  document.body.classList.remove('layout-mode');
-  document.body.classList.add('photo-mode');
-  el.hud.classList.remove('active');
-  el.photoHud.classList.add('active');
-  el.photoHud.setAttribute('aria-hidden','false');
-
-  if(renderer?.domElement){
-    renderer.domElement.style.display='block';
-  }
-}
-
-function exitPhotoMode(){
-  photoMode=false;
-  document.body.classList.remove('photo-mode');
-  document.body.classList.add('layout-mode');
-  el.photoHud.classList.remove('active');
-  el.photoHud.setAttribute('aria-hidden','true');
-
-  requestAnimationFrame(()=>{
-    el.result.scrollIntoView({
-      behavior:'smooth',
-      block:'start'
-    });
-  });
-}
-
-function captureCanvasLayer(ctx,source,targetWidth,targetHeight){
-  if(!source || !source.width || !source.height) return false;
-
-  const rect=source.getBoundingClientRect();
-  if(rect.width<=0 || rect.height<=0) return false;
-
-  const sx=targetWidth/window.innerWidth;
-  const sy=targetHeight/window.innerHeight;
-
-  try{
-    ctx.drawImage(
-      source,
-      0,0,source.width,source.height,
-      rect.left*sx,
-      rect.top*sy,
-      rect.width*sx,
-      rect.height*sy
-    );
-    return true;
-  }catch(err){
-    console.warn('Could not composite canvas layer',err);
-    return false;
-  }
-}
-
-async function captureARComposite(){
-  if(!photoMode || !renderer) return;
-
-  const flash=document.createElement('div');
-  flash.className='captureFlash';
-  document.body.appendChild(flash);
-  setTimeout(()=>flash.remove(),260);
-
-  // Lock camera pose + projection to the same fresh XR frame used for capture.
-  const frameSnapshot=await waitForNextXRFrameSnapshot();
-
-  const dpr=Math.min(window.devicePixelRatio || 1,2);
-  const width=Math.max(1,Math.round(window.innerWidth*dpr));
-  const height=Math.max(1,Math.round(window.innerHeight*dpr));
-
-  const output=document.createElement('canvas');
-  output.width=width;
-  output.height=height;
-
-  const ctx=output.getContext('2d',{
-    alpha:false
-  });
-
-  ctx.fillStyle='#000';
-  ctx.fillRect(0,0,width,height);
-
-  let layersDrawn=0;
-
-  // HelloXR inserts its AR camera renderer into the page. Draw it first.
-  const bgCandidates=[
-    ...document.querySelectorAll('.arkit-device-wrapper canvas')
-  ];
-
-  bgCandidates.forEach(canvas=>{
-    if(canvas!==renderer.domElement){
-      if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
-    }
-  });
-
-  // Fallback: collect any other visible canvases before our Three.js overlay.
-  if(!bgCandidates.length){
-    [...document.querySelectorAll('canvas')].forEach(canvas=>{
-      if(canvas!==renderer.domElement){
-        if(captureCanvasLayer(ctx,canvas,width,height)) layersDrawn++;
-      }
-    });
-  }
-
-  // Draw EventVision AR lines, numbered corners, etc. last.
-  if(captureCanvasLayer(ctx,renderer.domElement,width,height)){
-    layersDrawn++;
-  }
-
-  const blob=await new Promise(resolve=>{
-    output.toBlob(resolve,'image/jpeg',0.94);
-  });
-
-  if(!blob){
-    alert('Could not create the captured image.');
-    return;
-  }
-
-  const captureXRView=frameSnapshot?.xr_view || cloneData(latestXRViewData);
-  const captureImageGeometry=getCaptureImageGeometry(width,height);
-
-  const metadata={
-    id:`view_${String(captures.length+1).padStart(2,'0')}`,
-    created_at:new Date().toISOString(),
-    capture_mode:'xr_frame_locked_composite',
-    camera:frameSnapshot?.camera || getCurrentCameraMetadata(),
-    xr_view:captureXRView,
-    image:captureImageGeometry,
-    room:scanSceneData,
-    furniture:getFurnitureSceneData(captureXRView,captureImageGeometry),
-    composite_layers:layersDrawn
-  };
-
-  activeCapture={
-    blob,
-    metadata
-  };
-
-  if(activeCaptureURL){
-    URL.revokeObjectURL(activeCaptureURL);
-  }
-  activeCaptureURL=URL.createObjectURL(blob);
-  el.photoPreviewImage.src=activeCaptureURL;
-
-  const p=metadata.camera?.position;
-  const yaw=metadata.camera?.yaw_deg;
-
-  const imageMeta=metadata.image;
-  const projectionSaved=Array.isArray(metadata.camera?.projection_matrix);
-
-  el.photoCaptureMeta.innerHTML=
-    `${p ? `Camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}`
-    + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
-    + `${imageMeta ? `<br>Image: ${imageMeta.output_width_px} × ${imageMeta.output_height_px} px` : ''}`
-    + `<br>Projection matrix: ${projectionSaved ? 'saved ✓' : 'unavailable'}`
-    + `<br>Composite layers captured: ${layersDrawn}`;
-
-  el.photoPreviewModal.classList.add('open');
-  el.photoPreviewModal.setAttribute('aria-hidden','false');
-}
-
-function closePhotoPreview(){
-  el.photoPreviewModal.classList.remove('open');
-  el.photoPreviewModal.setAttribute('aria-hidden','true');
-}
-
-function keepActiveCapture(){
-  if(!activeCapture) return;
-
-  captures.push(activeCapture);
-  activeCapture=null;
-
-  renderCaptureDetails();
-  closePhotoPreview();
-  exitPhotoMode();
-}
-
-async function shareActiveCapture(){
-  if(!activeCapture) return;
-
-  const filename=`eventvision-view-${String(captures.length+1).padStart(2,'0')}.jpg`;
-  const file=new File([activeCapture.blob],filename,{type:'image/jpeg'});
-
-  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-    try{
-      await navigator.share({
-        files:[file],
-        title:'EventVision AR view'
-      });
-      return;
-    }catch(err){
-      if(err?.name==='AbortError') return;
-      console.warn('Share failed, falling back to download',err);
-    }
-  }
-
-  const a=document.createElement('a');
-  a.href=activeCaptureURL;
-  a.download=filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
 function buildSceneExportData(){
-  const projectionView=lockedGenerationFrame?.xr_view || savedScreenshotPose?.xr_view || latestXRViewData;
-  const projectionImage=lockedGenerationFrame?.image || savedScreenshotPose?.image || getCaptureImageGeometry();
+  if(!lockedGenerationFrame) throw new Error('No locked generation frame.');
+
+  const furniture=furnitureItems.map((item,index)=>{
+    const dims=getFurnitureDimensions(item);
+    const world=getFurnitureWorldPosition(item);
+    const plan=world ? getPlanPositionFromWorld(world) : null;
+    const projected=lockedGenerationFrame.projections[index];
+    return {
+      id:`chair_${String(item.id).padStart(2,'0')}`,
+      type:'chair',
+      plan:{
+        position_m:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,
+        rotation_deg_clockwise:Number(item.rotation)
+      },
+      world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
+      dimensions_m:serializeFurnitureDimensions(dims),
+      generation_target:serializeGenerationTarget(projected,dims)
+    };
+  });
 
   return {
-    protocol_version:'EventVision_v8_10',
+    protocol_version:'EventVision_v9_0_clean',
     exported_at:new Date().toISOString(),
-    generation_rules:{
-      schema:'eventvision_frame_locked_orientation_v1',
-      source_of_truth:'json',
-      original_photo_role:'authoritative architecture, camera view, lighting and perspective',
-      screenshot_overlay_role:'authoritative photo-space placement/size verification from the locked generation frame only',
-      generation_plan_role:'global orientation confirmation only',
-      placement_authoritative:true,
-      size_authoritative:true,
-      orientation_authoritative:true,
-      placement_source:'furniture[].screen_projection.floor_polygon',
-      size_source:'furniture[].screen_projection.height_anchor',
-      orientation_source:'furniture[].screen_projection.orientation.generation_constraint',
-      orientation_rule:'For every furniture item, generation_constraint is the ONLY pose/facing instruction. Place the backrest on back_center_uv and the open seat/front toward front_center_uv. Never reverse the vector. All anchors must come from the explicitly locked screenshot frame.',
-      front_back_mirroring_forbidden:true,
-      debug_orientation_policy:'Ignore furniture[].screen_projection.orientation.debug_only during generation. It exists only for diagnostics and UI visualization.',
-      generation_plan_policy:'Use the 2D plan only to visually confirm FRONT/BACK relationships. Never derive photo-space position, scale, or a second orientation angle from it.',
-      furniture_reference_policy:'Reference image controls identity, shape, material and design only. Never inherit its camera angle or facing direction.',
-      multi_item_policy:'Prefer generating/inserting one furniture item at a time so each item has one independent orientation constraint.',
-      source_priority:{
-        architecture_camera_lighting:'original_space_photo',
-        photo_space_placement:'scene_json_screen_projection_floor_polygon',
-        photo_space_size:'scene_json_height_anchor',
-        furniture_orientation:'scene_json_generation_constraint_only',
-        global_orientation_confirmation:'2d_generation_plan',
-        furniture_appearance:'furniture_reference_image'
-      },
-      conflict_resolution:{
-        position:'scene JSON floor_polygon wins',
-        size:'scene JSON height_anchor and dimensions win',
-        orientation:'scene JSON orientation.generation_constraint wins; do not average it with plan icons, view labels, numeric debug angles, or reference pose',
-        architecture:'original space photo wins',
-        appearance:'furniture reference wins for design/material only'
-      }
+    generation_contract:{
+      schema:'eventvision_clean_generation_v1',
+      exact_inventory:true,
+      allow_extra_furniture:false,
+      architecture_source:'original_room_photo',
+      placement_source:'furniture[].generation_target.placement.floor_polygon_uv',
+      size_source:'furniture[].generation_target.size',
+      orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
+      plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
+      reference_image_role:'appearance/material/design only; never inherit reference pose',
+      recommended_render_strategy:'insert one furniture item at a time in inventory order'
     },
     room:scanSceneData,
-    inventory:{
-      exact_count:furnitureItems.length,
-      allow_extra_objects:false,
-      item_ids:furnitureItems.map(item=>`${item.type}_${String(item.id).padStart(2,'0')}`)
+    capture_frame:{
+      locked_at:lockedGenerationFrame.locked_at,
+      camera:cloneData(lockedGenerationFrame.camera),
+      image:cloneData(lockedGenerationFrame.image),
+      xr_view:{
+        position:cloneData(lockedGenerationFrame.xr_view?.position || null),
+        orientation_quaternion:cloneData(lockedGenerationFrame.xr_view?.orientation_quaternion || null),
+        view_matrix:cloneData(lockedGenerationFrame.xr_view?.view_matrix || null),
+        projection_matrix:cloneData(lockedGenerationFrame.xr_view?.projection_matrix || null),
+        viewport:cloneData(lockedGenerationFrame.xr_view?.viewport || null)
+      }
     },
-    furniture:getFurnitureSceneData(projectionView,projectionImage),
-    locked_generation_frame:cloneData(lockedGenerationFrame),
-    latest_screenshot_pose:cloneData(savedScreenshotPose),
-    captured_views:captures.map(capture=>cloneData(capture.metadata || capture))
+    inventory:{
+      exact_count:furniture.length,
+      allow_extra_objects:false,
+      item_ids:furniture.map(item=>item.id)
+    },
+    furniture
   };
 }
 
@@ -3087,7 +2250,7 @@ function buildGenerationPlanCanvas(){
   });
 
   // Camera position and direction from the saved screenshot pose.
-  const cam=savedScreenshotPose?.camera;
+  const cam=lockedGenerationFrame?.camera;
   if(cam?.position){
     const cp=worldToPlanCanvas(cam.position);
     let angle=-Math.PI/2;
@@ -3151,6 +2314,10 @@ function buildGenerationPlanCanvas(){
 }
 
 async function exportGenerationPlanPNG(){
+  if(!lockedGenerationFrame){
+    alert('Lock the generation frame first so the exported plan uses the same camera reference as the JSON and screenshot.');
+    return;
+  }
   let canvas;
   try{
     canvas=buildGenerationPlanCanvas();
@@ -3192,7 +2359,7 @@ async function exportGenerationPlanPNG(){
 
 async function exportSceneJSON(){
   if(!lockedGenerationFrame){
-    alert('Open Screenshot mode, position the phone, and tap Lock generation frame before exporting JSON.');
+    alert('Open Screenshot mode, position the phone, and tap Lock frame before exporting JSON.');
     return;
   }
   const data=buildSceneExportData();
@@ -3241,7 +2408,7 @@ async function exportSceneJSON(){
       await navigator.clipboard.writeText(json);
       alert('Scene JSON copied to clipboard.');
     }catch(copyErr){
-      alert('Could not export JSON in this browser. Open the page in Safari or use Precise capture + data.');
+      alert('Could not export JSON in this browser. Try the native share sheet or open the page in Safari.');
     }
   }
 }
@@ -3249,23 +2416,14 @@ async function exportSceneJSON(){
 el.exportData?.addEventListener('click',exportSceneJSON);
 el.exportPlan?.addEventListener('click',exportGenerationPlanPNG);
 
-el.cameraView?.addEventListener('click',enterPhotoMode);
-el.backToPlan?.addEventListener('click',exitPhotoMode);
-el.capturePhoto?.addEventListener('click',captureARComposite);
-el.closePhotoPreview?.addEventListener('click',closePhotoPreview);
-el.keepPhoto?.addEventListener('click',keepActiveCapture);
-el.sharePhoto?.addEventListener('click',shareActiveCapture);
 
 function endAR(){
   renderer?.setAnimationLoop(null);
   el.hud.classList.remove('active');
   document.body.classList.remove('xr-active');
   document.body.classList.remove('layout-mode');
-  document.body.classList.remove('photo-mode');
   document.body.classList.remove('screenshot-mode');
-  photoMode=false;
   screenshotModeActive=false;
-  el.photoHud?.classList.remove('active');
   el.screenshotHud?.classList.remove('active');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
@@ -3296,63 +2454,7 @@ function endAR(){
 }
 
 
-function openFurniturePicker(){
-  selectedFurnitureType=null;
-  el.furnitureGrid.querySelectorAll('.furnitureType').forEach(btn=>btn.classList.remove('selected'));
-  el.confirmFurniture.disabled=true;
-  el.confirmFurniture.textContent='Choose furniture type';
-  el.furnitureModal.classList.add('open');
-  el.furnitureModal.setAttribute('aria-hidden','false');
-  document.body.classList.add('modal-open');
-}
-
-function closeFurniturePicker(){
-  el.furnitureModal.classList.remove('open');
-  el.furnitureModal.setAttribute('aria-hidden','true');
-  document.body.classList.remove('modal-open');
-}
-
-el.addFurniture.addEventListener('click',openFurniturePicker);
-el.closeFurniture.addEventListener('click',closeFurniturePicker);
-
-el.furnitureModal.addEventListener('click',e=>{
-  if(e.target===el.furnitureModal) closeFurniturePicker();
-});
-
-el.furnitureGrid.addEventListener('click',e=>{
-  const btn=e.target.closest('.furnitureType');
-  if(!btn) return;
-  el.furnitureGrid.querySelectorAll('.furnitureType').forEach(item=>item.classList.remove('selected'));
-  btn.classList.add('selected');
-  selectedFurnitureType=btn.dataset.type;
-  el.confirmFurniture.disabled=false;
-  el.confirmFurniture.textContent=`Continue with ${selectedFurnitureType}`;
-});
-
-function normalizeFurnitureType(text){
-  const value=String(text || '').trim().toLowerCase();
-  if(value.includes('chair')) return 'chair';
-  if(value.includes('table')) return 'table';
-  if(value.includes('lounge')) return 'lounge';
-  if(value.includes('bar')) return 'bar';
-  if(value.includes('stage') || value.includes('dj')) return 'stage';
-  if(value.includes('decor')) return 'decoration';
-  if(value.includes('light')) return 'lighting';
-  if(value.includes('plant')) return 'plant';
-  return null;
-}
-
-el.confirmFurniture.addEventListener('click',()=>{
-  if(!selectedFurnitureType) return;
-
-  const normalizedType = normalizeFurnitureType(selectedFurnitureType) || 'chair';
-  addFurniture(normalizedType);
-
-  closeFurniturePicker();
-  el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add furniture</span>';
-  selectedFurnitureType=null;
-});
-
+el.addFurniture?.addEventListener('click',addFurniture);
 
 el.scanAgain.addEventListener('click',()=>{
   completed=false;
@@ -3362,20 +2464,13 @@ el.scanAgain.addEventListener('click',()=>{
   planTransform=null;
   phonePoseGroup=null;
   scanSceneData=null;
-  captures=[];
-  savedScreenshotPose=null;
+  lockedGenerationFrame=null;
   latestXRViewData=null;
-  pendingXRFrameResolvers=[];
-  activeCapture=null;
-  renderScreenshotPoseDetails();
-  renderCaptureDetails();
+  renderGenerationFrameDetails();
 
   clearObjects();
   el.result.classList.remove('show');
-  closeFurniturePicker();
-
-  selectedFurnitureType=null;
-  el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add furniture</span>';
+  el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add chair</span>';
 
   if(session){
     // Return directly to tracing while preserving the same XR world origin.
@@ -3407,9 +2502,8 @@ window.addEventListener('resize',()=>{
   }
 });
 
-check();
 
-// ===== EventVision v6 furniture layout editor =====
+// ===== Furniture layout editor =====
 const furnitureLayer = document.getElementById('furnitureLayer');
 const planEditor = document.getElementById('planEditor');
 const planViewport = document.getElementById('planViewport');
@@ -3499,10 +2593,7 @@ function setSelectedFurniture(id){
 
   if(item && furnitureToolbar){
     furnitureToolbar.classList.add('visible');
-    const typeLabel=item.type.charAt(0).toUpperCase()+item.type.slice(1);
-    selectedFurnitureLabel.textContent = item.type==='chair'
-      ? `${typeLabel} · 60 × 60 × 85 cm`
-      : `${typeLabel} selected`;
+    selectedFurnitureLabel.textContent='Chair · 60 × 60 × 85 cm';
   } else if(furnitureToolbar){
     furnitureToolbar.classList.remove('visible');
   }
@@ -3534,19 +2625,16 @@ const FURNITURE_DIMENSIONS_M={
 };
 
 function getFurnitureDimensions(item){
-  const preset=FURNITURE_DIMENSIONS_M[item.type] || {};
-  const dims={
-    width:item.width_m ?? preset.width ?? null,
-    depth:item.depth_m ?? preset.depth ?? null,
-    height:item.height_m ?? preset.height ?? null,
-    footprint_width:item.footprint_width_m ?? preset.footprint_width ?? item.width_m ?? preset.width ?? null,
-    footprint_depth:item.footprint_depth_m ?? preset.footprint_depth ?? item.depth_m ?? preset.depth ?? null,
-    overall_height:item.overall_height_m ?? preset.overall_height ?? item.height_m ?? preset.height ?? null
+  const preset=FURNITURE_DIMENSIONS_M[item?.type];
+  if(!preset) throw new Error(`Unsupported furniture type: ${item?.type || 'unknown'}`);
+  return {
+    width:Number(item.width_m ?? preset.width),
+    depth:Number(item.depth_m ?? preset.depth),
+    height:Number(item.height_m ?? preset.height),
+    footprint_width:Number(item.footprint_width_m ?? preset.footprint_width),
+    footprint_depth:Number(item.footprint_depth_m ?? preset.footprint_depth),
+    overall_height:Number(item.overall_height_m ?? preset.overall_height)
   };
-  if(dims.width == null) dims.width = dims.footprint_width;
-  if(dims.depth == null) dims.depth = dims.footprint_depth;
-  if(dims.height == null) dims.height = dims.overall_height;
-  return dims;
 }
 
 function serializeFurnitureDimensions(dims){
@@ -3574,28 +2662,6 @@ function getFurnitureWorldPosition(item){
     y:Number.isFinite(floorY) ? Number(floorY) : Number(scanSceneData?.corners?.[0]?.world?.y || 0),
     z:(svgY-planTransform.cy)/planTransform.k + planTransform.worldCenterZ
   };
-}
-
-function getFurnitureSceneData(viewData=null,imageGeometry=null){
-  return furnitureItems.map(item=>{
-    const dims=getFurnitureDimensions(item);
-    const world=getFurnitureWorldPosition(item);
-    const plan=world ? getPlanPositionFromWorld(world) : null;
-    const projection=viewData ? getFurnitureScreenProjection(item,viewData,imageGeometry) : null;
-
-    return {
-      id:`${item.type}_${String(item.id).padStart(2,'0')}`,
-      source_id:item.id,
-      type:item.type,
-      plan_position:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,
-      world_position:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
-      rotation_plan_deg:Number(item.rotation),
-      rotation_convention:'clockwise_on_plan_from_default_icon_orientation',
-      dimensions_m:serializeFurnitureDimensions(dims),
-      screen_projection:projection,
-      ui_normalized:{x:Number(item.x),y:Number(item.y)}
-    };
-  });
 }
 
 function getPlanScreenScale(){
@@ -3659,6 +2725,7 @@ function makeFurnitureNode(item){
     e.preventDefault();
     e.stopPropagation();
     dragging = true;
+    invalidateGenerationFrame();
     setSelectedFurniture(item.id);
     node.setPointerCapture?.(e.pointerId);
   });
@@ -3707,6 +2774,7 @@ function makeFurnitureNode(item){
       if(e.key === 'ArrowRight') item.x = clamp01(item.x + step);
       if(e.key === 'ArrowUp') item.y = clamp01(item.y - step);
       if(e.key === 'ArrowDown') item.y = clamp01(item.y + step);
+      invalidateGenerationFrame();
       paint();
     }
   });
@@ -3729,35 +2797,32 @@ function renderFurniture(){
   updateFurnitureCount();
 }
 
-function addFurniture(type='chair'){
+function addFurniture(){
   if(!furnitureLayer) return;
-
-  const preset=FURNITURE_DIMENSIONS_M[type] || null;
-
-  const item = {
-    id: furnitureIdCounter++,
-    type,
-    x: 0.5,
-    y: 0.5,
-    rotation: 0,
-    width_m:preset?.width || null,
-    depth_m:preset?.depth || null,
-    height_m:preset?.height || null,
-    footprint_width_m:preset?.footprint_width || null,
-    footprint_depth_m:preset?.footprint_depth || null,
-    overall_height_m:preset?.overall_height || null
+  const preset=FURNITURE_DIMENSIONS_M.chair;
+  const item={
+    id:furnitureIdCounter++,
+    type:'chair',
+    x:0.5,
+    y:0.5,
+    rotation:0,
+    width_m:preset.width,
+    depth_m:preset.depth,
+    height_m:preset.height,
+    footprint_width_m:preset.footprint_width,
+    footprint_depth_m:preset.footprint_depth,
+    overall_height_m:preset.overall_height
   };
 
-  // Offset subsequent chairs slightly so multiple adds do not perfectly overlap.
-  const sameTypeCount = furnitureItems.filter(x => x.type === type).length;
-  if(sameTypeCount){
-    const offset = Math.min(0.18, sameTypeCount * 0.035);
-    item.x = clamp01(0.5 + offset);
-    item.y = clamp01(0.5 + offset);
+  if(furnitureItems.length){
+    const offset=Math.min(0.18,furnitureItems.length*0.035);
+    item.x=clamp01(0.5+offset);
+    item.y=clamp01(0.5+offset);
   }
 
   furnitureItems.push(item);
-  selectedFurnitureId = item.id;
+  invalidateGenerationFrame();
+  selectedFurnitureId=item.id;
   renderFurniture();
 }
 
@@ -3766,11 +2831,13 @@ function rotateSelected(delta){
   if(!item) return;
 
   item.rotation = (item.rotation + delta + 360) % 360;
+  invalidateGenerationFrame();
   renderFurniture();
 }
 
 function deleteSelectedFurniture(){
   if(selectedFurnitureId == null) return;
+  invalidateGenerationFrame();
 
   furnitureItems = furnitureItems.filter(item => item.id !== selectedFurnitureId);
   selectedFurnitureId = furnitureItems.length
@@ -3826,7 +2893,6 @@ const originalScanAgain = document.getElementById('scanAgain');
 originalScanAgain?.addEventListener('click', () => {
   furnitureItems = [];
   selectedFurnitureId = null;
-  selectedFurnitureType = null;
   resetPlanView();
   renderFurniture();
 });
