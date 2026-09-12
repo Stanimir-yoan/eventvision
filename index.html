@@ -757,21 +757,19 @@ body.xr-active.photo-mode canvas{
   vector-effect:non-scaling-stroke;
 }
 
-.projectionCenter{
-  fill:#6b5cff;
-  stroke:#fff;
-  stroke-width:2;
+.projectionBackrest{
+  stroke:#b7afff;
+  stroke-width:5;
+  stroke-linecap:round;
   vector-effect:non-scaling-stroke;
 }
 
-.projectionLabel{
-  fill:#fff;
-  font-size:12px;
-  font-weight:900;
-  paint-order:stroke;
-  stroke:rgba(0,0,0,.8);
-  stroke-width:4px;
-  stroke-linejoin:round;
+.projectionForward{
+  stroke:#d9d5ff;
+  stroke-width:3;
+  stroke-linecap:round;
+  vector-effect:non-scaling-stroke;
+  marker-end:url(#projectionArrowHead);
 }
 
 .screenshotTop{
@@ -1428,6 +1426,43 @@ function getFurnitureWorldBox(item){
   return {center,floor,top,all:[...floor,...top]};
 }
 
+function getFurnitureOrientationWorld(item){
+  const theta=Number(item.rotation || 0)*Math.PI/180;
+  return {
+    forward:{x:-Math.sin(theta),y:0,z:Math.cos(theta)},
+    right:{x:Math.cos(theta),y:0,z:Math.sin(theta)}
+  };
+}
+
+function getFurnitureOrientationWorldPoints(item){
+  const center=getFurnitureWorldPosition(item);
+  const dims=getFurnitureDimensions(item);
+  if(!center || !dims?.width || !dims?.depth) return null;
+
+  const halfW=Number(dims.width)/2;
+  const halfD=Number(dims.depth)/2;
+  const orient=getFurnitureOrientationWorld(item);
+  const F=orient.forward;
+  const R=orient.right;
+
+  const combine=(f,r)=>({
+    x:center.x + F.x*f + R.x*r,
+    y:center.y,
+    z:center.z + F.z*f + R.z*r
+  });
+
+  return {
+    center_floor:{x:center.x,y:center.y,z:center.z},
+    front_mid:combine(halfD,0),
+    back_mid:combine(-halfD,0),
+    backrest_edge:[
+      combine(-halfD,-halfW),
+      combine(-halfD,halfW)
+    ],
+    forward_world:orient.forward
+  };
+}
+
 function getBoundingBoxFromProjected(points,key){
   const valid=points.map(p=>p?.[key]).filter(Boolean);
   if(!valid.length) return null;
@@ -1446,9 +1481,10 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
   const box=getFurnitureWorldBox(item);
   if(!box) return null;
 
+  const dims=getFurnitureDimensions(item);
   const centerWorld={
     x:box.center.x,
-    y:box.center.y+Number(getFurnitureDimensions(item).height || 0)/2,
+    y:box.center.y+Number(dims.height || 0)/2,
     z:box.center.z
   };
   const center=projectWorldPoint(centerWorld,viewData,imageGeometry);
@@ -1473,12 +1509,26 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     inside_view:projection.inside_view
   } : null;
 
+  const orientationWorld=getFurnitureOrientationWorldPoints(item);
+  const orientation=orientationWorld ? {
+    forward_world:{
+      x:Number(orientationWorld.forward_world.x),
+      y:Number(orientationWorld.forward_world.y),
+      z:Number(orientationWorld.forward_world.z)
+    },
+    center_floor:simplify(projectWorldPoint(orientationWorld.center_floor,viewData,imageGeometry)),
+    front_mid:simplify(projectWorldPoint(orientationWorld.front_mid,viewData,imageGeometry)),
+    back_mid:simplify(projectWorldPoint(orientationWorld.back_mid,viewData,imageGeometry)),
+    backrest_edge:orientationWorld.backrest_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)))
+  } : null;
+
   return {
     projection_basis:'XRView view_matrix + projection_matrix',
     visibility,
     center:simplify(center),
     floor_polygon:floor.map(simplify),
     top_polygon:top.map(simplify),
+    orientation,
     bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
     bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
     bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
@@ -1496,6 +1546,22 @@ function updateProjectionDebugOverlay(){
   svg.innerHTML='';
 
   if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix) return;
+
+  const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const marker=document.createElementNS('http://www.w3.org/2000/svg','marker');
+  marker.setAttribute('id','projectionArrowHead');
+  marker.setAttribute('markerWidth','8');
+  marker.setAttribute('markerHeight','8');
+  marker.setAttribute('refX','6');
+  marker.setAttribute('refY','3');
+  marker.setAttribute('orient','auto');
+  marker.setAttribute('markerUnits','strokeWidth');
+  const arrowPath=document.createElementNS('http://www.w3.org/2000/svg','path');
+  arrowPath.setAttribute('d','M0,0 L6,3 L0,6 Z');
+  arrowPath.setAttribute('fill','#d9d5ff');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
 
   const imageGeometry=getCaptureImageGeometry();
   const ns='http://www.w3.org/2000/svg';
@@ -1515,21 +1581,27 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(poly);
     }
 
-    const center=projection.center?.css_px;
-    if(center){
-      const circle=document.createElementNS(ns,'circle');
-      circle.setAttribute('class','projectionCenter');
-      circle.setAttribute('cx',center.x.toFixed(1));
-      circle.setAttribute('cy',center.y.toFixed(1));
-      circle.setAttribute('r','7');
-      svg.appendChild(circle);
+    const backrest=projection.orientation?.backrest_edge?.map(p=>p?.css_px).filter(Boolean) || [];
+    if(backrest.length===2){
+      const line=document.createElementNS(ns,'line');
+      line.setAttribute('class','projectionBackrest');
+      line.setAttribute('x1',backrest[0].x.toFixed(1));
+      line.setAttribute('y1',backrest[0].y.toFixed(1));
+      line.setAttribute('x2',backrest[1].x.toFixed(1));
+      line.setAttribute('y2',backrest[1].y.toFixed(1));
+      svg.appendChild(line);
+    }
 
-      const label=document.createElementNS(ns,'text');
-      label.setAttribute('class','projectionLabel');
-      label.setAttribute('x',(center.x+11).toFixed(1));
-      label.setAttribute('y',(center.y-11).toFixed(1));
-      label.textContent=`${item.type}_${String(item.id).padStart(2,'0')}`;
-      svg.appendChild(label);
+    const arrowStart=projection.orientation?.center_floor?.css_px;
+    const arrowEnd=projection.orientation?.front_mid?.css_px;
+    if(arrowStart && arrowEnd){
+      const arrow=document.createElementNS(ns,'line');
+      arrow.setAttribute('class','projectionForward');
+      arrow.setAttribute('x1',arrowStart.x.toFixed(1));
+      arrow.setAttribute('y1',arrowStart.y.toFixed(1));
+      arrow.setAttribute('x2',arrowEnd.x.toFixed(1));
+      arrow.setAttribute('y2',arrowEnd.y.toFixed(1));
+      svg.appendChild(arrow);
     }
   });
 }
@@ -1910,7 +1982,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_3',
+    protocol_version:'EventVision_v8_3_1',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2223,7 +2295,7 @@ function saveScreenshotPose(){
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
     capture_mode:'manual_os_screenshot_pose',
-    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections.',
+    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Backrest line + arrow indicate orientation.',
     camera,
     xr_view:xrView,
     image:imageGeometry,
@@ -2515,7 +2587,7 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_3',
+    protocol_version:'EventVision_v8_3_1',
     exported_at:new Date().toISOString(),
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
