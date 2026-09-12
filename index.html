@@ -169,33 +169,33 @@ body.xr-active canvas{background:transparent!important}
   width:100%;
   height:100%;
   box-sizing:border-box;
-  border:2px solid #fff;
-  border-radius:18%;
-  background:rgba(107,92,255,.22);
+  border:2px solid #8e83ff;
+  border-radius:8px;
+  background:rgba(107,92,255,.16);
   box-shadow:0 2px 8px rgba(0,0,0,.25);
+  overflow:hidden;
 }
 
-.furnitureVisual.chair:before{
-  content:"";
+.furnitureVisual .planBackEdge,
+.furnitureVisual .planFrontEdge{
   position:absolute;
-  left:15%;
-  right:15%;
-  top:10%;
-  height:24%;
-  border:2px solid #fff;
-  border-bottom:0;
-  border-radius:24% 24% 0 0;
+  left:-2px;
+  right:-2px;
+  height:0;
+  border-top-width:5px;
+  border-top-style:solid;
+  border-radius:999px;
+  pointer-events:none;
 }
 
-.furnitureVisual.chair:after{
-  content:"";
-  position:absolute;
-  left:20%;
-  right:20%;
-  bottom:14%;
-  height:30%;
-  border:2px solid #fff;
-  border-radius:22%;
+.furnitureVisual .planBackEdge{
+  top:-2px;
+  border-top-color:#ffffff;
+}
+
+.furnitureVisual .planFrontEdge{
+  bottom:-2px;
+  border-top-color:#63efb0;
 }
 
 .furnitureItem.selected .furnitureVisual{
@@ -817,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.3 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.1 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1373,16 +1373,79 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   };
 }
 
+function clamp01(v){
+  return Math.max(0,Math.min(1,Number(v)));
+}
+
+function getProjectedUvPoints(projected){
+  const pts=[];
+  const pushUv=(uv)=>{ if(uv && Number.isFinite(uv.x) && Number.isFinite(uv.y)) pts.push({x:Number(uv.x),y:Number(uv.y)}); };
+  projected?.floor?.forEach(p=>pushUv(p?.uv));
+  pushUv(projected?.center?.uv);
+  pushUv(projected?.frontCenter?.uv);
+  pushUv(projected?.backCenter?.uv);
+  pushUv(projected?.heightFloor?.uv);
+  pushUv(projected?.heightTop?.uv);
+  projected?.frontEdge?.forEach(p=>pushUv(p?.uv));
+  projected?.backEdge?.forEach(p=>pushUv(p?.uv));
+  return pts;
+}
+
+function computeFocusRegionUv(projected,padding=0.035){
+  const pts=getProjectedUvPoints(projected);
+  if(!pts.length) return null;
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  const min_x=clamp01(Math.min(...xs)-padding);
+  const max_x=clamp01(Math.max(...xs)+padding);
+  const min_y=clamp01(Math.min(...ys)-padding);
+  const max_y=clamp01(Math.max(...ys)+padding);
+  return {min_x,max_x,min_y,max_y};
+}
+
+function computeOrientationSemantics(projected){
+  const v=projected?.orientation_vector;
+  if(!v || !Number.isFinite(v.x) || !Number.isFinite(v.y)) return null;
+  const dx=Number(v.x), dy=Number(v.y);
+  const angle=Math.atan2(dy,dx);
+  const dirs=['right','bottom_right','bottom','bottom_left','left','top_left','top','top_right'];
+  const idx=((Math.round(angle/(Math.PI/4)) % 8)+8)%8;
+  const image_direction=dirs[idx];
+
+  let visible_view='';
+  if(image_direction==='top') visible_view='chair front faces toward the top of the image';
+  else if(image_direction==='bottom') visible_view='chair front faces toward the bottom of the image';
+  else if(image_direction==='left') visible_view='chair front faces toward the left of the image';
+  else if(image_direction==='right') visible_view='chair front faces toward the right of the image';
+  else visible_view=`chair front faces toward the ${image_direction.replace('_','-')} of the image`;
+
+  return {
+    image_direction_class:image_direction,
+    visible_view_hint:visible_view,
+    front_edge_role:'seat_front_side',
+    back_edge_role:'backrest_side',
+    must_not_flip:true,
+    must_match_reference_model:true
+  };
+}
+
+function buildChairGenerationInstruction(chairId, semantics){
+  const dirText=semantics?.visible_view_hint || 'chair front orientation must follow the FRONT/BACK anchors';
+  return `Insert ${chairId} exactly inside its floor polygon. Match the provided chair reference for appearance only. Put the backrest on the BACK side, open seat/front on the FRONT side, and make the chair face from BACK toward FRONT. ${dirText}. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
+}
+
 function serializeGenerationTarget(projected,dims){
   if(!projected) return null;
   return {
     placement:{
       floor_polygon_uv:projected.floor.map(p=>p?.uv || null),
-      center_uv:projected.center?.uv || null
+      center_uv:projected.center?.uv || null,
+      focus_region_uv:computeFocusRegionUv(projected)
     },
     orientation:{
       back_center_uv:projected.backCenter?.uv || null,
       front_center_uv:projected.frontCenter?.uv || null,
+      back_edge_uv:projected.backEdge.map(p=>p?.uv || null),
+      front_edge_uv:projected.frontEdge.map(p=>p?.uv || null),
       forward_vector_uv:projected.orientation_vector,
       rule:'BACK to FRONT is authoritative. Never reverse or mirror this vector.',
       allow_180_flip:false,
@@ -1842,7 +1905,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_0_3_clean',
+    protocol_version:'EventVision_v9_1_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2249,13 +2312,16 @@ el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 function buildSceneExportData(){
   if(!lockedGenerationFrame) throw new Error('No locked generation frame.');
 
-  const furniture=furnitureItems.map((item,index)=>{
+  const rawFurniture=furnitureItems.map((item,index)=>{
     const dims=getFurnitureDimensions(item);
     const world=getFurnitureWorldPosition(item);
     const plan=world ? getPlanPositionFromWorld(world) : null;
     const projected=lockedGenerationFrame.projections[index];
+    const generationTarget=serializeGenerationTarget(projected,dims);
+    const semantics=computeOrientationSemantics(projected);
+    const id=`chair_${String(item.id).padStart(2,'0')}`;
     return {
-      id:`chair_${String(item.id).padStart(2,'0')}`,
+      id,
       type:'chair',
       plan:{
         position_m:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,
@@ -2263,24 +2329,65 @@ function buildSceneExportData(){
       },
       world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
       dimensions_m:serializeFurnitureDimensions(dims),
-      generation_target:serializeGenerationTarget(projected,dims)
+      generation_target:generationTarget,
+      semantics,
+      orientation_contract:{
+        authoritative:true,
+        front_edge_role:'seat_front_side',
+        back_edge_role:'backrest_side',
+        direction_rule:'The chair must face from generation_target.orientation.back_center_uv toward generation_target.orientation.front_center_uv.',
+        allow_180_flip:false,
+        allow_front_back_mirror:false,
+        must_render_backrest_on_back_side:true,
+        must_render_open_seat_toward_front_side:true
+      },
+      generation_instruction:buildChairGenerationInstruction(id,semantics)
     };
   });
 
+  const orderedByDepth=[...rawFurniture].sort((a,b)=>{
+    const ay=a?.generation_target?.placement?.center_uv?.y ?? 0;
+    const by=b?.generation_target?.placement?.center_uv?.y ?? 0;
+    return ay-by;
+  });
+
+  orderedByDepth.forEach((item,index)=>{
+    item.depth_rank_far_to_near=index+1;
+  });
+
+  const idToIndex=new Map(orderedByDepth.map((item,index)=>[item.id,index]));
+  rawFurniture.sort((a,b)=>(idToIndex.get(a.id) ?? 0)-(idToIndex.get(b.id) ?? 0));
+
+  const exactIds=orderedByDepth.map(item=>item.id);
+
   return {
-    protocol_version:'EventVision_v9_0_3_clean',
+    protocol_version:'EventVision_v9_1_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
-      schema:'eventvision_clean_generation_v1',
+      schema:'eventvision_generation_first_v2',
       exact_inventory:true,
       allow_extra_furniture:false,
+      allow_missing_furniture:false,
       architecture_source:'original_room_photo',
       placement_source:'furniture[].generation_target.placement.floor_polygon_uv',
       size_source:'furniture[].generation_target.size',
       orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      recommended_render_strategy:'insert one furniture item at a time in inventory order'
+      recommended_render_strategy:'insert one furniture item at a time in far-to-near order using depth_rank_far_to_near',
+      hard_rules:[
+        'Preserve the original room architecture and camera exactly.',
+        'Insert exactly the listed number of chairs and no extra chairs.',
+        'Use the reference image only for chair appearance and materials.',
+        'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
+        'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
+        'Never mirror front and back.'
+      ]
+    },
+    generation_summary:{
+      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. Follow each chair\'s floor polygon, size anchors and orientation contract exactly. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
+      generation_mode:'one_chair_at_a_time',
+      render_order_far_to_near:exactIds
     },
     room:scanSceneData,
     capture_frame:{
@@ -2296,11 +2403,30 @@ function buildSceneExportData(){
       }
     },
     inventory:{
-      exact_count:furniture.length,
+      exact_count:rawFurniture.length,
       allow_extra_objects:false,
-      item_ids:furniture.map(item=>item.id)
+      allow_missing_objects:false,
+      item_ids:exactIds
     },
-    furniture
+    furniture:rawFurniture,
+    generation_payload:{
+      inventory:{
+        exact_count:rawFurniture.length,
+        allow_extra_objects:false,
+        allow_missing_objects:false,
+        item_ids:exactIds
+      },
+      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly.`,
+      chairs:rawFurniture.map(item=>({
+        id:item.id,
+        type:item.type,
+        depth_rank_far_to_near:item.depth_rank_far_to_near,
+        generation_target:item.generation_target,
+        semantics:item.semantics,
+        orientation_contract:item.orientation_contract,
+        generation_instruction:item.generation_instruction
+      }))
+    }
   };
 }
 
@@ -3064,6 +3190,12 @@ function makeFurnitureNode(item){
 
   const visual = document.createElement('div');
   visual.className = `furnitureVisual ${item.type}`;
+  const backEdge=document.createElement('div');
+  backEdge.className='planBackEdge';
+  const frontEdge=document.createElement('div');
+  frontEdge.className='planFrontEdge';
+  visual.appendChild(backEdge);
+  visual.appendChild(frontEdge);
   node.appendChild(visual);
 
   // Figma-style repeat-grid handles: dragging any corner previews and commits more chairs.
