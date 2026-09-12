@@ -215,6 +215,68 @@ body.xr-active canvas{background:transparent!important}
   transform:translateX(-50%);
 }
 
+/* Chair-array repeat handles. Drag any selected-chair corner to grow a physical grid. */
+.arrayHandle{
+  position:absolute;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  border:3px solid #6b5cff;
+  background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.45);
+  z-index:8;
+  display:none;
+  pointer-events:auto;
+  touch-action:none;
+  cursor:nwse-resize;
+}
+.furnitureItem.selected .arrayHandle{display:block}
+.arrayHandle[data-sx="-1"][data-sz="-1"]{left:0;top:0;transform:translate(-50%,-50%)}
+.arrayHandle[data-sx="1"][data-sz="-1"]{right:0;top:0;transform:translate(50%,-50%)}
+.arrayHandle[data-sx="1"][data-sz="1"]{right:0;bottom:0;transform:translate(50%,50%)}
+.arrayHandle[data-sx="-1"][data-sz="1"]{left:0;bottom:0;transform:translate(-50%,50%)}
+
+.arrayPreviewChair{
+  position:absolute;
+  box-sizing:border-box;
+  border:2px dashed rgba(107,92,255,.95);
+  border-radius:18%;
+  background:rgba(107,92,255,.13);
+  pointer-events:none;
+  z-index:3;
+}
+.arrayPreviewChair:before{
+  content:"";
+  position:absolute;
+  left:15%;right:15%;top:10%;height:24%;
+  border:2px solid rgba(255,255,255,.78);
+  border-bottom:0;
+  border-radius:24% 24% 0 0;
+}
+.arrayPreviewChair:after{
+  content:"";
+  position:absolute;
+  left:20%;right:20%;bottom:14%;height:30%;
+  border:2px solid rgba(255,255,255,.78);
+  border-radius:22%;
+}
+.arrayPreviewBadge{
+  position:absolute;
+  transform:translate(-50%,-130%);
+  min-width:92px;
+  padding:7px 10px;
+  border-radius:999px;
+  background:rgba(16,16,20,.92);
+  border:1px solid rgba(255,255,255,.16);
+  color:#fff;
+  font-size:11px;
+  font-weight:850;
+  text-align:center;
+  white-space:nowrap;
+  pointer-events:none;
+  z-index:20;
+}
+
 #furnitureToolbar{
   display:none;
   grid-template-columns:1fr auto auto auto;
@@ -755,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.2 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.3 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -809,8 +871,8 @@ body.xr-active.screenshot-mode .screenshotHud{
       <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
     </div>
     <div id="furnitureCount"></div>
-    <div class="furnitureHint">Drag chairs on the plan. Select a chair to rotate or delete it. Any edit invalidates the locked generation frame.</div>
-    <div class="furnitureScaleNote">Core test furniture: chair 0.60 × 0.60 m footprint · 0.85 m overall height.</div>
+    <div class="furnitureHint">Drag chairs on the plan. Select a chair, then drag any purple corner handle outward to create an evenly spaced chair array. Any edit invalidates the locked generation frame.</div>
+    <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
       <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
@@ -1780,7 +1842,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_0_2_clean',
+    protocol_version:'EventVision_v9_0_3_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2206,7 +2268,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_0_2_clean',
+    protocol_version:'EventVision_v9_0_3_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_clean_generation_v1',
@@ -2645,6 +2707,12 @@ let furnitureItems = [];
 let selectedFurnitureId = null;
 let furnitureIdCounter = 1;
 
+const CHAIR_ARRAY_GAP_M=0.15;
+const CHAIR_ARRAY_MAX_COLUMNS=12;
+const CHAIR_ARRAY_MAX_ROWS=12;
+let activeArrayPreviewNodes=[];
+let activeArrayPreviewCandidates=[];
+
 const planViewState={zoom:1,rotation:0,panX:0,panY:0};
 
 function normalizePlanViewRotation(deg){
@@ -2811,6 +2879,176 @@ function getFurnitureScreenSize(item){
   };
 }
 
+function planPointToWorld(local){
+  if(!local || !planTransform || !el.plan) return null;
+  const vb=el.plan.viewBox?.baseVal;
+  if(!vb?.width || !vb?.height || !local.width || !local.height) return null;
+  const nx=local.x/local.width;
+  const ny=local.y/local.height;
+  const svgX=vb.x + nx*vb.width;
+  const svgY=vb.y + ny*vb.height;
+  return {
+    x:(svgX-planTransform.cx)/planTransform.k + planTransform.worldCenterX,
+    y:Number.isFinite(floorY) ? Number(floorY) : Number(scanSceneData?.corners?.[0]?.world?.y || 0),
+    z:(svgY-planTransform.cy)/planTransform.k + planTransform.worldCenterZ
+  };
+}
+
+function worldPointToPlanNormalized(world){
+  if(!world || !planTransform || !el.plan) return null;
+  const vb=el.plan.viewBox?.baseVal;
+  if(!vb?.width || !vb?.height) return null;
+  const svgX=(Number(world.x)-planTransform.worldCenterX)*planTransform.k+planTransform.cx;
+  const svgY=(Number(world.z)-planTransform.worldCenterZ)*planTransform.k+planTransform.cy;
+  return {
+    x:(svgX-vb.x)/vb.width,
+    y:(svgY-vb.y)/vb.height
+  };
+}
+
+function pointInsideRoomXZ(point){
+  const polygon=scanSceneData?.corners?.map(c=>c.world).filter(Boolean) || [];
+  if(!point || polygon.length<3) return false;
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const xi=Number(polygon[i].x), zi=Number(polygon[i].z);
+    const xj=Number(polygon[j].x), zj=Number(polygon[j].z);
+    const crosses=((zi>point.z)!=(zj>point.z)) &&
+      (point.x < (xj-xi)*(point.z-zi)/((zj-zi)||1e-12)+xi);
+    if(crosses) inside=!inside;
+  }
+  return inside;
+}
+
+function furnitureFitsInsideRoom(item){
+  const footprint=getFurnitureFootprintWorld(item);
+  if(!footprint?.corners?.length) return false;
+  return pointInsideRoomXZ(footprint.center) && footprint.corners.every(pointInsideRoomXZ);
+}
+
+function chairCandidateOverlapsExisting(candidate,sourceId){
+  const center=getFurnitureWorldPosition(candidate);
+  if(!center) return true;
+  const minimumCenterDistance=0.52;
+  return furnitureItems.some(existing=>{
+    if(existing.id===sourceId) return false;
+    const p=getFurnitureWorldPosition(existing);
+    return p && Math.hypot(p.x-center.x,p.z-center.z)<minimumCenterDistance;
+  });
+}
+
+function clearChairArrayPreview(){
+  activeArrayPreviewNodes.forEach(node=>node.remove());
+  activeArrayPreviewNodes=[];
+  activeArrayPreviewCandidates=[];
+}
+
+function computeChairArrayCandidates(source,sx,sz,pointerWorld){
+  const sourceWorld=getFurnitureWorldPosition(source);
+  const dims=getFurnitureDimensions(source);
+  if(!sourceWorld || !pointerWorld) return {candidates:[],columns:1,rows:1};
+
+  const theta=Number(source.rotation||0)*Math.PI/180;
+  const cos=Math.cos(theta),sin=Math.sin(theta);
+  const dx=pointerWorld.x-sourceWorld.x;
+  const dz=pointerWorld.z-sourceWorld.z;
+
+  // Convert the dragged pointer into the chair's local floor axes.
+  const localX=dx*cos+dz*sin;
+  const localZ=-dx*sin+dz*cos;
+  const halfW=Number(dims.footprint_width||dims.width)/2;
+  const halfD=Number(dims.footprint_depth||dims.depth)/2;
+  const stepX=Number(dims.footprint_width||dims.width)+CHAIR_ARRAY_GAP_M;
+  const stepZ=Number(dims.footprint_depth||dims.depth)+CHAIR_ARRAY_GAP_M;
+
+  const extentX=Math.max(halfW,localX*sx);
+  const extentZ=Math.max(halfD,localZ*sz);
+  const columns=Math.min(CHAIR_ARRAY_MAX_COLUMNS,Math.max(1,1+Math.floor(Math.max(0,extentX-halfW+stepX/2)/stepX)));
+  const rows=Math.min(CHAIR_ARRAY_MAX_ROWS,Math.max(1,1+Math.floor(Math.max(0,extentZ-halfD+stepZ/2)/stepZ)));
+
+  const candidates=[];
+  for(let row=0;row<rows;row++){
+    for(let column=0;column<columns;column++){
+      if(row===0 && column===0) continue; // source chair already exists
+      const localOffsetX=sx*column*stepX;
+      const localOffsetZ=sz*row*stepZ;
+      const world={
+        x:sourceWorld.x + localOffsetX*cos - localOffsetZ*sin,
+        y:sourceWorld.y,
+        z:sourceWorld.z + localOffsetX*sin + localOffsetZ*cos
+      };
+      const normalized=worldPointToPlanNormalized(world);
+      if(!normalized || normalized.x<=0 || normalized.x>=1 || normalized.y<=0 || normalized.y>=1) continue;
+
+      const candidate={
+        id:-1,
+        type:'chair',
+        x:Number(normalized.x),
+        y:Number(normalized.y),
+        rotation:Number(source.rotation||0),
+        width_m:Number(dims.width),
+        depth_m:Number(dims.depth),
+        height_m:Number(dims.height),
+        footprint_width_m:Number(dims.footprint_width),
+        footprint_depth_m:Number(dims.footprint_depth),
+        overall_height_m:Number(dims.overall_height)
+      };
+
+      if(!furnitureFitsInsideRoom(candidate)) continue;
+      if(chairCandidateOverlapsExisting(candidate,source.id)) continue;
+      candidates.push(candidate);
+    }
+  }
+
+  return {candidates,columns,rows};
+}
+
+function renderChairArrayPreview(source,result,pointerLocal){
+  clearChairArrayPreview();
+  if(!furnitureLayer || !result) return;
+
+  result.candidates.forEach(candidate=>{
+    const size=getFurnitureScreenSize(candidate);
+    const ghost=document.createElement('div');
+    ghost.className='arrayPreviewChair';
+    ghost.style.width=`${size.width.toFixed(2)}px`;
+    ghost.style.height=`${size.height.toFixed(2)}px`;
+    ghost.style.left=`${(candidate.x*100).toFixed(4)}%`;
+    ghost.style.top=`${(candidate.y*100).toFixed(4)}%`;
+    ghost.style.transform=`translate(-50%,-50%) rotate(${candidate.rotation}deg)`;
+    furnitureLayer.appendChild(ghost);
+    activeArrayPreviewNodes.push(ghost);
+  });
+
+  if(pointerLocal?.width && pointerLocal?.height){
+    const badge=document.createElement('div');
+    badge.className='arrayPreviewBadge';
+    badge.style.left=`${Math.max(0,Math.min(100,pointerLocal.x/pointerLocal.width*100)).toFixed(3)}%`;
+    badge.style.top=`${Math.max(0,Math.min(100,pointerLocal.y/pointerLocal.height*100)).toFixed(3)}%`;
+    badge.textContent=`${result.columns} × ${result.rows} · ${1+result.candidates.length} chairs`;
+    furnitureLayer.appendChild(badge);
+    activeArrayPreviewNodes.push(badge);
+  }
+
+  activeArrayPreviewCandidates=result.candidates;
+}
+
+function commitChairArray(source){
+  if(!activeArrayPreviewCandidates.length){
+    clearChairArrayPreview();
+    return;
+  }
+  const additions=activeArrayPreviewCandidates.map(candidate=>({
+    ...candidate,
+    id:furnitureIdCounter++
+  }));
+  clearChairArrayPreview();
+  furnitureItems.push(...additions);
+  invalidateGenerationFrame();
+  selectedFurnitureId=source.id;
+  renderFurniture();
+}
+
 function makeFurnitureNode(item){
   const node = document.createElement('div');
   node.className = 'furnitureItem';
@@ -2827,6 +3065,59 @@ function makeFurnitureNode(item){
   const visual = document.createElement('div');
   visual.className = `furnitureVisual ${item.type}`;
   node.appendChild(visual);
+
+  // Figma-style repeat-grid handles: dragging any corner previews and commits more chairs.
+  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz])=>{
+    const handle=document.createElement('div');
+    handle.className='arrayHandle';
+    handle.dataset.sx=String(sx);
+    handle.dataset.sz=String(sz);
+    handle.setAttribute('role','button');
+    handle.setAttribute('aria-label','Drag to create more chairs');
+
+    let arrayDragging=false;
+    let lastResult=null;
+
+    handle.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      arrayDragging=true;
+      lastResult=null;
+      setSelectedFurniture(item.id);
+      invalidateGenerationFrame();
+      try{handle.setPointerCapture?.(e.pointerId);}catch(_){}
+    });
+
+    handle.addEventListener('pointermove',e=>{
+      if(!arrayDragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const local=clientPointToUntransformedPlan(e.clientX,e.clientY);
+      const pointerWorld=planPointToWorld(local);
+      if(!local || !pointerWorld) return;
+      lastResult=computeChairArrayCandidates(item,sx,sz,pointerWorld);
+      renderChairArrayPreview(item,lastResult,local);
+    });
+
+    const finishArray=e=>{
+      if(!arrayDragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      arrayDragging=false;
+      try{handle.releasePointerCapture?.(e.pointerId);}catch(_){}
+      commitChairArray(item);
+      lastResult=null;
+    };
+
+    handle.addEventListener('pointerup',finishArray);
+    handle.addEventListener('pointercancel',e=>{
+      arrayDragging=false;
+      clearChairArrayPreview();
+      try{handle.releasePointerCapture?.(e.pointerId);}catch(_){}
+    });
+    handle.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();});
+    node.appendChild(handle);
+  });
 
   function paint(){
     const size=getFurnitureScreenSize(item);
@@ -2907,6 +3198,7 @@ function makeFurnitureNode(item){
 function renderFurniture(){
   if(!furnitureLayer) return;
 
+  clearChairArrayPreview();
   furnitureLayer.innerHTML = '';
 
   furnitureItems.forEach(item => {
