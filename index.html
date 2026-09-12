@@ -741,6 +741,39 @@ body.xr-active.photo-mode canvas{
   display:block;
 }
 
+.projectionDebug{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:visible;
+  pointer-events:none;
+}
+
+.projectionFootprint{
+  fill:rgba(107,92,255,.16);
+  stroke:#9c92ff;
+  stroke-width:2;
+  vector-effect:non-scaling-stroke;
+}
+
+.projectionCenter{
+  fill:#6b5cff;
+  stroke:#fff;
+  stroke-width:2;
+  vector-effect:non-scaling-stroke;
+}
+
+.projectionLabel{
+  fill:#fff;
+  font-size:12px;
+  font-weight:900;
+  paint-order:stroke;
+  stroke:rgba(0,0,0,.8);
+  stroke-width:4px;
+  stroke-linejoin:round;
+}
+
 .screenshotTop{
   position:absolute;
   top:calc(8px + env(safe-area-inset-top));
@@ -847,7 +880,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2.1</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.3</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -1010,6 +1043,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </div>
 
 <div id="screenshotHud" class="screenshotHud" aria-hidden="true">
+  <svg id="projectionDebug" class="projectionDebug" aria-label="Projected furniture targets"></svg>
   <div class="screenshotTop">
     <div class="pill" id="screenshotPoseStatus">Live pose</div>
     <div class="pill">Use iPhone screenshot</div>
@@ -1018,7 +1052,7 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText">
-      Use the iPhone side button + volume up to save what you see.
+      Purple targets show the mathematically projected furniture positions. Use side button + volume up to save the test screenshot.
     </div>
   </div>
 
@@ -1093,6 +1127,7 @@ const el = {
   exportData: document.getElementById('exportData'),
   screenshotMode: document.getElementById('screenshotMode'),
   screenshotHud: document.getElementById('screenshotHud'),
+  projectionDebug: document.getElementById('projectionDebug'),
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
@@ -1293,6 +1328,212 @@ function cloneData(value){
   return value == null ? null : JSON.parse(JSON.stringify(value));
 }
 
+
+function getProjectionImageSpaces(imageGeometry=null){
+  const g=imageGeometry || getCaptureImageGeometry();
+  const cssWidth=Number(g?.viewport_css_width || window.innerWidth || 1);
+  const cssHeight=Number(g?.viewport_css_height || window.innerHeight || 1);
+  const outputWidth=Number(g?.output_width_px || cssWidth);
+  const outputHeight=Number(g?.output_height_px || cssHeight);
+  const dpr=Number(g?.device_pixel_ratio || window.devicePixelRatio || 1);
+
+  return {
+    css:{width:cssWidth,height:cssHeight},
+    output:{width:outputWidth,height:outputHeight},
+    os_screenshot_estimate:{width:cssWidth*dpr,height:cssHeight*dpr}
+  };
+}
+
+function projectWorldPoint(worldPoint,viewData,imageGeometry=null){
+  if(!worldPoint || !Array.isArray(viewData?.view_matrix) || !Array.isArray(viewData?.projection_matrix)){
+    return null;
+  }
+
+  const viewMatrix=new THREE.Matrix4().fromArray(viewData.view_matrix);
+  const projectionMatrix=new THREE.Matrix4().fromArray(viewData.projection_matrix);
+
+  const cameraPoint=new THREE.Vector4(
+    Number(worldPoint.x),
+    Number(worldPoint.y),
+    Number(worldPoint.z),
+    1
+  ).applyMatrix4(viewMatrix);
+
+  const clipPoint=cameraPoint.clone().applyMatrix4(projectionMatrix);
+  if(!Number.isFinite(clipPoint.w) || Math.abs(clipPoint.w)<1e-8){
+    return null;
+  }
+
+  const ndc={
+    x:clipPoint.x/clipPoint.w,
+    y:clipPoint.y/clipPoint.w,
+    z:clipPoint.z/clipPoint.w
+  };
+
+  const uv={
+    x:(ndc.x+1)/2,
+    y:(1-ndc.y)/2
+  };
+
+  const spaces=getProjectionImageSpaces(imageGeometry);
+  const mapPoint=space=>({
+    x:uv.x*space.width,
+    y:uv.y*space.height
+  });
+
+  return {
+    camera_space:{
+      x:Number(cameraPoint.x),
+      y:Number(cameraPoint.y),
+      z:Number(cameraPoint.z),
+      depth_m:Number(-cameraPoint.z)
+    },
+    clip_w:Number(clipPoint.w),
+    ndc:{x:Number(ndc.x),y:Number(ndc.y),z:Number(ndc.z)},
+    uv:{x:Number(uv.x),y:Number(uv.y)},
+    css_px:mapPoint(spaces.css),
+    output_px:mapPoint(spaces.output),
+    os_screenshot_px_estimate:mapPoint(spaces.os_screenshot_estimate),
+    in_front:cameraPoint.z<0,
+    inside_view:cameraPoint.z<0 && ndc.x>=-1 && ndc.x<=1 && ndc.y>=-1 && ndc.y<=1 && ndc.z>=-1 && ndc.z<=1
+  };
+}
+
+function getFurnitureWorldBox(item){
+  const center=getFurnitureWorldPosition(item);
+  const dims=getFurnitureDimensions(item);
+  if(!center || !dims?.width || !dims?.depth || !dims?.height) return null;
+
+  const halfW=Number(dims.width)/2;
+  const halfD=Number(dims.depth)/2;
+  const height=Number(dims.height);
+  const theta=Number(item.rotation || 0)*Math.PI/180;
+  const cos=Math.cos(theta);
+  const sin=Math.sin(theta);
+
+  const localFloor=[
+    {x:-halfW,z:-halfD},
+    {x: halfW,z:-halfD},
+    {x: halfW,z: halfD},
+    {x:-halfW,z: halfD}
+  ];
+
+  const floor=localFloor.map(p=>{
+    const rx=p.x*cos-p.z*sin;
+    const rz=p.x*sin+p.z*cos;
+    return {x:center.x+rx,y:center.y,z:center.z+rz};
+  });
+
+  const top=floor.map(p=>({x:p.x,y:p.y+height,z:p.z}));
+  return {center,floor,top,all:[...floor,...top]};
+}
+
+function getBoundingBoxFromProjected(points,key){
+  const valid=points.map(p=>p?.[key]).filter(Boolean);
+  if(!valid.length) return null;
+  const xs=valid.map(p=>p.x), ys=valid.map(p=>p.y);
+  return {
+    x_min:Math.min(...xs),
+    y_min:Math.min(...ys),
+    x_max:Math.max(...xs),
+    y_max:Math.max(...ys),
+    width:Math.max(...xs)-Math.min(...xs),
+    height:Math.max(...ys)-Math.min(...ys)
+  };
+}
+
+function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
+  const box=getFurnitureWorldBox(item);
+  if(!box) return null;
+
+  const centerWorld={
+    x:box.center.x,
+    y:box.center.y+Number(getFurnitureDimensions(item).height || 0)/2,
+    z:box.center.z
+  };
+  const center=projectWorldPoint(centerWorld,viewData,imageGeometry);
+  const floor=box.floor.map(p=>projectWorldPoint(p,viewData,imageGeometry));
+  const top=box.top.map(p=>projectWorldPoint(p,viewData,imageGeometry));
+  const all=[...floor,...top];
+
+  const inFront=all.filter(Boolean).some(p=>p.in_front);
+  const insideCount=all.filter(Boolean).filter(p=>p.inside_view).length;
+  let visibility='out_of_frame';
+  if(!inFront) visibility='behind_camera';
+  else if(insideCount===all.filter(Boolean).length && insideCount>0) visibility='visible';
+  else if(insideCount>0 || center?.inside_view) visibility='partially_visible';
+
+  const simplify=projection=>projection ? {
+    ndc:projection.ndc,
+    uv:projection.uv,
+    css_px:projection.css_px,
+    output_px:projection.output_px,
+    os_screenshot_px_estimate:projection.os_screenshot_px_estimate,
+    depth_m:projection.camera_space?.depth_m,
+    inside_view:projection.inside_view
+  } : null;
+
+  return {
+    projection_basis:'XRView view_matrix + projection_matrix',
+    visibility,
+    center:simplify(center),
+    floor_polygon:floor.map(simplify),
+    top_polygon:top.map(simplify),
+    bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
+    bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
+    bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
+    note:'os_screenshot_px_estimate uses CSS viewport × devicePixelRatio; manual iPhone screenshots are not frame-locked.'
+  };
+}
+
+function updateProjectionDebugOverlay(){
+  const svg=el.projectionDebug;
+  if(!svg || !screenshotModeActive) return;
+
+  const width=Math.max(1,window.innerWidth);
+  const height=Math.max(1,window.innerHeight);
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  svg.innerHTML='';
+
+  if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix) return;
+
+  const imageGeometry=getCaptureImageGeometry();
+  const ns='http://www.w3.org/2000/svg';
+
+  furnitureItems.forEach(item=>{
+    const projection=getFurnitureScreenProjection(item,latestXRViewData,imageGeometry);
+    if(!projection || projection.visibility==='behind_camera') return;
+
+    const floorPoints=projection.floor_polygon
+      .map(p=>p?.css_px)
+      .filter(Boolean);
+
+    if(floorPoints.length===4){
+      const poly=document.createElementNS(ns,'polygon');
+      poly.setAttribute('class','projectionFootprint');
+      poly.setAttribute('points',floorPoints.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+      svg.appendChild(poly);
+    }
+
+    const center=projection.center?.css_px;
+    if(center){
+      const circle=document.createElementNS(ns,'circle');
+      circle.setAttribute('class','projectionCenter');
+      circle.setAttribute('cx',center.x.toFixed(1));
+      circle.setAttribute('cy',center.y.toFixed(1));
+      circle.setAttribute('r','7');
+      svg.appendChild(circle);
+
+      const label=document.createElementNS(ns,'text');
+      label.setAttribute('class','projectionLabel');
+      label.setAttribute('x',(center.x+11).toFixed(1));
+      label.setAttribute('y',(center.y-11).toFixed(1));
+      label.textContent=`${item.type}_${String(item.id).padStart(2,'0')}`;
+      svg.appendChild(label);
+    }
+  });
+}
+
 function resolvePendingXRFrameSnapshots(){
   if(!pendingXRFrameResolvers.length) return;
 
@@ -1367,7 +1608,8 @@ function render(_time,frame){
       }
 
       if(screenshotModeActive && el.screenshotPoseStatus){
-        el.screenshotPoseStatus.textContent='Live AR pose ✓';
+        el.screenshotPoseStatus.textContent='Live AR pose + projection ✓';
+        updateProjectionDebugOverlay();
       }
 
       updateCornerLabelScales();
@@ -1668,7 +1910,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_2',
+    protocol_version:'EventVision_v8_3',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1975,16 +2217,18 @@ function getPlanPositionFromWorld(worldPosition){
 
 function saveScreenshotPose(){
   const camera=getCurrentCameraMetadata();
+  const xrView=cloneData(latestXRViewData);
+  const imageGeometry=getCaptureImageGeometry();
 
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
     capture_mode:'manual_os_screenshot_pose',
-    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately.',
+    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections.',
     camera,
-    xr_view:cloneData(latestXRViewData),
-    image:getCaptureImageGeometry(),
+    xr_view:xrView,
+    image:imageGeometry,
     plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null,
-    furniture:getFurnitureSceneData()
+    furniture:getFurnitureSceneData(xrView,imageGeometry)
   };
 
   renderScreenshotPoseDetails();
@@ -2044,6 +2288,7 @@ function enterScreenshotMode(){
 function exitScreenshotMode(){
   screenshotModeActive=false;
   saveScreenshotPose();
+  if(el.projectionDebug) el.projectionDebug.innerHTML='';
 
   document.body.classList.remove('screenshot-mode');
   document.body.classList.add('layout-mode');
@@ -2179,15 +2424,18 @@ async function captureARComposite(){
     return;
   }
 
+  const captureXRView=frameSnapshot?.xr_view || cloneData(latestXRViewData);
+  const captureImageGeometry=getCaptureImageGeometry(width,height);
+
   const metadata={
     id:`view_${String(captures.length+1).padStart(2,'0')}`,
     created_at:new Date().toISOString(),
     capture_mode:'xr_frame_locked_composite',
     camera:frameSnapshot?.camera || getCurrentCameraMetadata(),
-    xr_view:frameSnapshot?.xr_view || cloneData(latestXRViewData),
-    image:getCaptureImageGeometry(width,height),
+    xr_view:captureXRView,
+    image:captureImageGeometry,
     room:scanSceneData,
-    furniture:getFurnitureSceneData(),
+    furniture:getFurnitureSceneData(captureXRView,captureImageGeometry),
     composite_layers:layersDrawn
   };
 
@@ -2263,11 +2511,14 @@ async function shareActiveCapture(){
 }
 
 function buildSceneExportData(){
+  const projectionView=savedScreenshotPose?.xr_view || latestXRViewData;
+  const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
+
   return {
-    protocol_version:'EventVision_v8_2',
+    protocol_version:'EventVision_v8_3',
     exported_at:new Date().toISOString(),
     room:scanSceneData,
-    furniture:getFurnitureSceneData(),
+    furniture:getFurnitureSceneData(projectionView,projectionImage),
     latest_screenshot_pose:cloneData(savedScreenshotPose),
     captured_views:captures.map(capture=>cloneData(capture.metadata || capture))
   };
@@ -2572,11 +2823,12 @@ function getFurnitureWorldPosition(item){
   };
 }
 
-function getFurnitureSceneData(){
+function getFurnitureSceneData(viewData=null,imageGeometry=null){
   return furnitureItems.map(item=>{
     const dims=getFurnitureDimensions(item);
     const world=getFurnitureWorldPosition(item);
     const plan=world ? getPlanPositionFromWorld(world) : null;
+    const projection=viewData ? getFurnitureScreenProjection(item,viewData,imageGeometry) : null;
 
     return {
       id:`${item.type}_${String(item.id).padStart(2,'0')}`,
@@ -2591,6 +2843,7 @@ function getFurnitureSceneData(){
         depth:dims.depth == null ? null : Number(dims.depth),
         height:dims.height == null ? null : Number(dims.height)
       },
+      screen_projection:projection,
       ui_normalized:{x:Number(item.x),y:Number(item.y)}
     };
   });
