@@ -847,7 +847,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2.1</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -2273,17 +2273,56 @@ function buildSceneExportData(){
   };
 }
 
-function exportSceneJSON(){
+async function exportSceneJSON(){
   const data=buildSceneExportData();
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download=`eventvision-scene-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const json=JSON.stringify(data,null,2);
+  const filename=`eventvision-scene-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+  const file=new File([json],filename,{type:'application/json'});
+
+  // iOS/HelloXR runs inside a WebKit webview where programmatic <a download>
+  // can be ignored. Prefer the native share sheet, which can save the JSON
+  // to Files, AirDrop it, or send it to another app.
+  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+    try{
+      await navigator.share({
+        files:[file],
+        title:'EventVision scene JSON'
+      });
+      return;
+    }catch(err){
+      if(err?.name==='AbortError') return;
+      console.warn('JSON share failed, falling back',err);
+    }
+  }
+
+  // Normal browser fallback.
+  try{
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=filename;
+    a.style.display='none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+
+    // On browsers that support downloads this is enough. On embedded iOS
+    // webviews it may still be ignored, so also keep a clipboard escape hatch.
+    if(!navigator.share && navigator.clipboard?.writeText){
+      await navigator.clipboard.writeText(json);
+      alert('Scene JSON copied to clipboard. This browser may block file downloads.');
+    }
+  }catch(err){
+    console.warn('JSON download failed',err);
+    try{
+      await navigator.clipboard.writeText(json);
+      alert('Scene JSON copied to clipboard.');
+    }catch(copyErr){
+      alert('Could not export JSON in this browser. Open the page in Safari or use Precise capture + data.');
+    }
+  }
 }
 
 el.exportData?.addEventListener('click',exportSceneJSON);
