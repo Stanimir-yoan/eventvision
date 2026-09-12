@@ -1552,7 +1552,7 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
   const dims=getFurnitureDimensions(item);
   const centerWorld={
     x:box.center.x,
-    y:box.center.y+Number(dims.overall_height ?? dims.height || 0)/2,
+    y:box.center.y+Number(dims.overall_height ?? dims.height ?? 0)/2,
     z:box.center.z
   };
   const center=projectWorldPoint(centerWorld,viewData,imageGeometry);
@@ -2071,7 +2071,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_4',
+    protocol_version:'EventVision_v8_4_1',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2676,7 +2676,7 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_4',
+    protocol_version:'EventVision_v8_4_1',
     exported_at:new Date().toISOString(),
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
