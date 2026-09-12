@@ -1518,9 +1518,9 @@ function getScreenForwardAngleDeg(a,b){
   return Number(deg);
 }
 
-function getCameraRelativeViewAngleDeg(item){
+function getCameraRelativeViewAngleDeg(item,viewData=null){
   const world=getFurnitureWorldPosition(item);
-  const cam=latestXRViewData?.camera_position || latestScreenshotPoseData?.camera?.position || latestCameraMeta?.position;
+  const cam=viewData?.position || getCurrentCameraMetadata()?.position || null;
   const orient=getFurnitureOrientationWorld(item);
   if(!world || !cam || !orient?.forward) return null;
 
@@ -1588,7 +1588,7 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
       front_edge:frontEdge,
       screen_forward_angle_deg:getScreenForwardAngleDeg(centerFloor, frontMid),
       screen_forward_angle_convention:'0=right, 90=down, 180=left, 270=up in image coordinates',
-      camera_relative_view_angle_deg:getCameraRelativeViewAngleDeg(item),
+      camera_relative_view_angle_deg:getCameraRelativeViewAngleDeg(item,viewData),
       camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view'
     };
   })() : null;
@@ -2041,7 +2041,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_6',
+    protocol_version:'EventVision_v8_6_1',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2400,7 +2400,14 @@ function enterScreenshotMode(){
   }
 
   screenshotModeActive=true;
-  saveScreenshotPose();
+  try{
+    saveScreenshotPose();
+  }catch(err){
+    console.error('Screenshot pose save failed:',err);
+    if(el.screenshotPoseStatus){
+      el.screenshotPoseStatus.textContent='Live AR pose · metadata warning';
+    }
+  }
 
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('photo-mode');
@@ -2646,7 +2653,7 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_6',
+    protocol_version:'EventVision_v8_6_1',
     exported_at:new Date().toISOString(),
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
