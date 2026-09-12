@@ -755,7 +755,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.1 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.2 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -763,7 +763,7 @@ body.xr-active.screenshot-mode .screenshotHud{
     <strong>Scan workflow</strong>
     <div class="steps">
       <div class="step"><div class="num">1</div><div><b>Enter AR</b><div class="small">Move the phone slowly until the floor target appears.</div></div></div>
-      <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner and press Add corner.</div></div></div>
+      <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner. The first point locks the ground height; every later corner is projected onto that same floor plane.</div></div></div>
       <div class="step"><div class="num">3</div><div><b>Close room</b><div class="small">Finish after at least 3 corners to create the measured top view.</div></div></div>
     </div>
     <button id="start" class="primary" disabled>Enter AR scan</button>
@@ -973,6 +973,29 @@ const CORNER_LABEL_MIN_SCALE = 0.18;
 const CORNER_LABEL_MAX_SCALE = 0.52;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
+
+// Ground-plane rule: WebXR uses Y as the vertical axis.
+// X/Z remain free so the room can have any floor-plan shape; every saved corner shares one Y.
+function getLockedGroundY(rawY=null){
+  if(Number.isFinite(floorY)) return Number(floorY);
+  return Number.isFinite(rawY) ? Number(rawY) : null;
+}
+
+function projectPointToGround(rawPoint){
+  if(!rawPoint) return null;
+  const y=getLockedGroundY(rawPoint.y);
+  return new THREE.Vector3(
+    Number(rawPoint.x),
+    Number.isFinite(y) ? y : Number(rawPoint.y || 0),
+    Number(rawPoint.z)
+  );
+}
+
+function normalizeCornerGroundPlane(){
+  if(!Number.isFinite(floorY)) return;
+  corners.forEach(point=>{ point.y=Number(floorY); });
+  finishedCorners.forEach(point=>{ point.y=Number(floorY); });
+}
 
 function createRenderer(){
   renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
@@ -1445,20 +1468,30 @@ function render(_time,frame){
     if(hits.length){
       const pose=hits[0].getPose(refSpace);
       if(pose){
+        const rawMatrix=new THREE.Matrix4().fromArray(pose.transform.matrix);
+        const rawPoint=new THREE.Vector3().setFromMatrixPosition(rawMatrix);
+        const groundPoint=projectPointToGround(rawPoint);
+
+        // Never inherit a tilted wall/surface orientation from hit testing. The scan reticle
+        // is always rendered flat on the locked ground plane.
         reticle.visible=true;
-        reticle.matrix.fromArray(pose.transform.matrix);
+        reticle.matrix.compose(
+          groundPoint,
+          new THREE.Quaternion(),
+          new THREE.Vector3(1,1,1)
+        );
         hitValid=true;
         el.addCorner.disabled=false;
+        latestHit=groundPoint.clone();
 
-        const p=new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-        latestHit=p.clone();
-
-        if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
+        if(corners.length>=3 && distanceXZ(groundPoint,corners[0])<.25){
           reticle.material.color.set(0x43d47c);
-          el.hint.textContent='Near first corner — tap to close';
+          el.hint.textContent='Near first corner — tap to close · ground locked';
         }else{
-          reticle.material.color.set(0xffffff);
-          el.hint.textContent=corners.length?'Aim at next floor corner':'Floor found — aim at first corner';
+          reticle.material.color.set(Number.isFinite(floorY)?0x43d47c:0xffffff);
+          el.hint.textContent=Number.isFinite(floorY)
+            ? 'Ground locked · aim at next wall/floor corner'
+            : 'Floor found — first corner will lock ground height';
         }
       }
     }else{
@@ -1466,7 +1499,7 @@ function render(_time,frame){
       hitValid=false;
       latestHit=null;
       el.addCorner.disabled=true;
-      el.hint.textContent='Finding floor — move slowly';
+      el.hint.textContent='Finding floor — first corner will lock ground height';
     }
   }else if(completed){
     reticle.visible=false;
@@ -1485,13 +1518,16 @@ function placeCurrentHit(){
 
   const p=latestHit.clone();
 
+  // The first accepted corner calibrates the scan floor. After this moment every hit,
+  // corner marker, wall line and exported corner is forced to this exact Y coordinate.
+  if(!Number.isFinite(floorY)) floorY=Number(p.y);
+  p.y=Number(floorY);
+  normalizeCornerGroundPlane();
+
   if(corners.length>=3 && distanceXZ(p,corners[0])<.25){
     closeRoom();
     return;
   }
-
-  if(floorY===null) floorY=p.y;
-  p.y=floorY;
 
   if(corners.length && distanceXZ(p,corners[corners.length-1])<.10){
     el.hint.textContent='Move farther from previous corner';
@@ -1501,7 +1537,7 @@ function placeCurrentHit(){
   corners.push(p.clone());
   rebuildObjects();
   updateControls();
-  el.hint.textContent='Corner added ✓';
+  el.hint.textContent=`Corner added ✓ · ground locked at Y ${Number(floorY).toFixed(3)} m`;
 }
 
 function makeNumberSprite(number){
@@ -1615,8 +1651,13 @@ function updateControls(){
 function closeRoom(){
   if(corners.length<3) return;
 
+  normalizeCornerGroundPlane();
   completed=true;
-  finishedCorners=corners.map(p=>p.clone());
+  finishedCorners=corners.map(p=>{
+    const point=p.clone();
+    if(Number.isFinite(floorY)) point.y=Number(floorY);
+    return point;
+  });
 
   rebuildObjects();
   updateControls();
@@ -1654,7 +1695,13 @@ el.undo.addEventListener('click',e=>{
   e.stopPropagation();
   if(completed || !corners.length) return;
   corners.pop();
-  if(!corners.length) floorY=null;
+  if(!corners.length){
+    floorY=null;
+    el.hint.textContent='Floor found — first corner will lock ground height';
+  }else{
+    normalizeCornerGroundPlane();
+    el.hint.textContent=`Ground locked at Y ${Number(floorY).toFixed(3)} m`;
+  }
   rebuildObjects();
   updateControls();
 });
@@ -1703,9 +1750,11 @@ function toPlanLocal(point,system){
 }
 
 function buildSceneData(points){
-  const system=buildPlanCoordinateSystem(points);
+  const lockedY=Number.isFinite(floorY) ? Number(floorY) : Number(points?.[0]?.y || 0);
+  const groundPoints=(points || []).map(p=>new THREE.Vector3(Number(p.x),lockedY,Number(p.z)));
+  const system=buildPlanCoordinateSystem(groundPoints);
 
-  const cornerData=points.map((p,i)=>{
+  const cornerData=groundPoints.map((p,i)=>{
     const local=system ? toPlanLocal(p,system) : {x:0,z:0};
 
     return {
@@ -1723,22 +1772,25 @@ function buildSceneData(points){
     };
   });
 
-  const wallData=points.map((p,i)=>({
+  const wallData=groundPoints.map((p,i)=>({
     id:`wall_${String(i+1).padStart(2,'0')}`,
     from:i+1,
-    to:((i+1)%points.length)+1,
-    length_m:distanceXZ(p,points[(i+1)%points.length])
+    to:((i+1)%groundPoints.length)+1,
+    length_m:distanceXZ(p,groundPoints[(i+1)%groundPoints.length])
   }));
 
   return {
-    protocol_version:'EventVision_v9_0_1_clean',
+    protocol_version:'EventVision_v9_0_2_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
+      vertical_axis:'Y',
+      ground_lock:true,
+      ground_y_m:lockedY,
       plan_origin:'corner_01',
       plan_x_axis:'corner_01_to_corner_02'
     },
-    area_m2:areaXZ(points),
+    area_m2:areaXZ(groundPoints),
     corners:cornerData,
     walls:wallData
   };
@@ -2154,7 +2206,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_0_1_clean',
+    protocol_version:'EventVision_v9_0_2_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_clean_generation_v1',
