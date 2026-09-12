@@ -710,6 +710,14 @@ body.xr-active.photo-mode canvas{
   font-weight:750;
 }
 
+.debugActionRow{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:8px;
+}
+.debugActionRow .debugCaptureLink{margin-top:0;}
+
 .planWallLabel{
   fill:#9fa1ad;
   font-size:10px;
@@ -839,7 +847,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.1e</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.2</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -896,9 +904,14 @@ body.xr-active.screenshot-mode .screenshotHud{
       </button>
     </div>
 
-    <button id="cameraView" class="debugCaptureLink" type="button">
-      Experimental overlay capture
-    </button>
+    <div class="debugActionRow">
+      <button id="cameraView" class="debugCaptureLink" type="button">
+        Precise capture + data
+      </button>
+      <button id="exportData" class="debugCaptureLink" type="button">
+        Export scene JSON
+      </button>
+    </div>
 
     <details id="detailsPanel">
       <summary>
@@ -998,7 +1011,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 
 <div id="screenshotHud" class="screenshotHud" aria-hidden="true">
   <div class="screenshotTop">
-    <div class="pill" id="screenshotPoseStatus">Pose saved</div>
+    <div class="pill" id="screenshotPoseStatus">Live pose</div>
     <div class="pill">Use iPhone screenshot</div>
   </div>
 
@@ -1077,6 +1090,7 @@ const el = {
   furnitureGrid: document.getElementById('furnitureGrid'),
   confirmFurniture: document.getElementById('confirmFurniture'),
   cameraView: document.getElementById('cameraView'),
+  exportData: document.getElementById('exportData'),
   screenshotMode: document.getElementById('screenshotMode'),
   screenshotHud: document.getElementById('screenshotHud'),
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
@@ -1115,6 +1129,8 @@ let activeCaptureURL = null;
 let photoMode = false;
 let screenshotModeActive = false;
 let savedScreenshotPose = null;
+let latestXRViewData = null;
+let pendingXRFrameResolvers = [];
 
 const CORNER_LABEL_BASE_SCALE = 0.18;
 const CORNER_LABEL_SCALE_PER_METER = 0.05;
@@ -1197,6 +1213,8 @@ async function enterAR(){
   scanSceneData=null;
   captures=[];
   savedScreenshotPose=null;
+  latestXRViewData=null;
+  pendingXRFrameResolvers=[];
   activeCapture=null;
   if(activeCaptureURL){
     URL.revokeObjectURL(activeCaptureURL);
@@ -1230,6 +1248,99 @@ async function enterAR(){
   renderer.setAnimationLoop(render);
 }
 
+function matrixToArray(matrix){
+  return matrix ? Array.from(matrix, value=>Number(value)) : null;
+}
+
+function getXRViewport(view){
+  try{
+    const baseLayer=session?.renderState?.baseLayer;
+    const vp=baseLayer?.getViewport?.(view);
+    if(!vp) return null;
+
+    return {
+      x:Number(vp.x),
+      y:Number(vp.y),
+      width:Number(vp.width),
+      height:Number(vp.height),
+      framebuffer_width:Number(baseLayer.framebufferWidth || 0),
+      framebuffer_height:Number(baseLayer.framebufferHeight || 0)
+    };
+  }catch(err){
+    return null;
+  }
+}
+
+function captureXRViewData(view,frameTimeMs){
+  if(!view) return null;
+
+  const t=view.transform;
+  const p=t?.position;
+  const q=t?.orientation;
+
+  return {
+    frame_time_ms:Number(frameTimeMs),
+    eye:view.eye || 'none',
+    position:p ? {x:Number(p.x),y:Number(p.y),z:Number(p.z)} : null,
+    orientation_quaternion:q ? {x:Number(q.x),y:Number(q.y),z:Number(q.z),w:Number(q.w)} : null,
+    view_matrix:matrixToArray(t?.inverse?.matrix),
+    projection_matrix:matrixToArray(view.projectionMatrix),
+    viewport:getXRViewport(view)
+  };
+}
+
+function cloneData(value){
+  return value == null ? null : JSON.parse(JSON.stringify(value));
+}
+
+function resolvePendingXRFrameSnapshots(){
+  if(!pendingXRFrameResolvers.length) return;
+
+  const snapshot={
+    camera:getCurrentCameraMetadata(),
+    xr_view:cloneData(latestXRViewData)
+  };
+
+  const pending=pendingXRFrameResolvers.splice(0);
+  pending.forEach(entry=>{
+    clearTimeout(entry.timer);
+    entry.resolve(cloneData(snapshot));
+  });
+}
+
+function waitForNextXRFrameSnapshot(timeoutMs=900){
+  return new Promise(resolve=>{
+    const entry={resolve,timer:null};
+    entry.timer=setTimeout(()=>{
+      const index=pendingXRFrameResolvers.indexOf(entry);
+      if(index>=0) pendingXRFrameResolvers.splice(index,1);
+      resolve({
+        camera:getCurrentCameraMetadata(),
+        xr_view:cloneData(latestXRViewData)
+      });
+    },timeoutMs);
+    pendingXRFrameResolvers.push(entry);
+  });
+}
+
+function getCaptureImageGeometry(outputWidth=null,outputHeight=null){
+  const actualDpr=Number(window.devicePixelRatio || 1);
+  const captureDpr=Math.min(actualDpr,2);
+
+  return {
+    output_width_px:Number(outputWidth || renderer?.domElement?.width || Math.round(window.innerWidth*captureDpr)),
+    output_height_px:Number(outputHeight || renderer?.domElement?.height || Math.round(window.innerHeight*captureDpr)),
+    viewport_css_width:Number(window.innerWidth),
+    viewport_css_height:Number(window.innerHeight),
+    device_pixel_ratio:actualDpr,
+    capture_pixel_ratio:captureDpr,
+    orientation:window.innerWidth>=window.innerHeight ? 'landscape' : 'portrait',
+    renderer_buffer_width:Number(renderer?.domElement?.width || 0),
+    renderer_buffer_height:Number(renderer?.domElement?.height || 0),
+    xr_viewport:cloneData(latestXRViewData?.viewport || null)
+  };
+}
+
 function render(_time,frame){
   if(frame && refSpace){
     const viewerPose = frame.getViewerPose(refSpace);
@@ -1237,9 +1348,11 @@ function render(_time,frame){
     if(viewerPose){
       const tp = viewerPose.transform.position;
       const tq = viewerPose.transform.orientation;
+      const primaryView=viewerPose.views?.[0] || null;
 
       latestViewerPosition = new THREE.Vector3(tp.x,tp.y,tp.z);
       latestViewerOrientation = new THREE.Quaternion(tq.x,tq.y,tq.z,tq.w);
+      latestXRViewData = captureXRViewData(primaryView,_time);
 
       if(photoMode && el.photoPoseText){
         const forward=new THREE.Vector3(0,0,-1)
@@ -1298,6 +1411,7 @@ function render(_time,frame){
   }
 
   renderer.render(scene,camera);
+  resolvePendingXRFrameSnapshots();
 }
 
 function placeCurrentHit(){
@@ -1554,7 +1668,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_1d',
+    protocol_version:'EventVision_v8_2',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1619,7 +1733,13 @@ function getCurrentCameraMetadata(){
       y:Number(forward.y),
       z:Number(forward.z)
     },
-    yaw_deg:Number(yaw)
+    yaw_deg:Number(yaw),
+    xr_view_position:cloneData(latestXRViewData?.position || null),
+    xr_view_orientation_quaternion:cloneData(latestXRViewData?.orientation_quaternion || null),
+    view_matrix:cloneData(latestXRViewData?.view_matrix || null),
+    projection_matrix:cloneData(latestXRViewData?.projection_matrix || null),
+    xr_viewport:cloneData(latestXRViewData?.viewport || null),
+    xr_frame_time_ms:Number.isFinite(latestXRViewData?.frame_time_ms) ? Number(latestXRViewData.frame_time_ms) : null
   };
 }
 
@@ -1634,8 +1754,9 @@ function renderCaptureDetails(){
   el.captureDetails.innerHTML='';
 
   captures.forEach((capture,i)=>{
-    const p=capture.camera?.position;
-    const yaw=capture.camera?.yaw_deg;
+    const meta=capture.metadata || capture;
+    const p=meta.camera?.position;
+    const yaw=meta.camera?.yaw_deg;
 
     const card=document.createElement('div');
     card.className='captureDetailCard';
@@ -1857,14 +1978,19 @@ function saveScreenshotPose(){
 
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
+    capture_mode:'manual_os_screenshot_pose',
+    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately.',
     camera,
-    plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null
+    xr_view:cloneData(latestXRViewData),
+    image:getCaptureImageGeometry(),
+    plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null,
+    furniture:getFurnitureSceneData()
   };
 
   renderScreenshotPoseDetails();
 
   if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent=camera ? 'Pose saved ✓' : 'Pose unavailable';
+    el.screenshotPoseStatus.textContent=camera ? 'Pose saved · manual screenshot' : 'Pose unavailable';
   }
 }
 
@@ -1882,7 +2008,7 @@ function renderScreenshotPoseDetails(){
 
   el.screenshotPoseDetails.innerHTML=`
     <div class="captureDetailCard">
-      <strong>Latest screenshot pose</strong>
+      <strong>Latest manual screenshot pose</strong>
       <span>
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
         ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
@@ -1999,8 +2125,8 @@ async function captureARComposite(){
   document.body.appendChild(flash);
   setTimeout(()=>flash.remove(),260);
 
-  // Wait for a fresh XR frame.
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  // Lock camera pose + projection to the same fresh XR frame used for capture.
+  const frameSnapshot=await waitForNextXRFrameSnapshot();
 
   const dpr=Math.min(window.devicePixelRatio || 1,2);
   const width=Math.max(1,Math.round(window.innerWidth*dpr));
@@ -2056,8 +2182,12 @@ async function captureARComposite(){
   const metadata={
     id:`view_${String(captures.length+1).padStart(2,'0')}`,
     created_at:new Date().toISOString(),
-    camera:getCurrentCameraMetadata(),
+    capture_mode:'xr_frame_locked_composite',
+    camera:frameSnapshot?.camera || getCurrentCameraMetadata(),
+    xr_view:frameSnapshot?.xr_view || cloneData(latestXRViewData),
+    image:getCaptureImageGeometry(width,height),
     room:scanSceneData,
+    furniture:getFurnitureSceneData(),
     composite_layers:layersDrawn
   };
 
@@ -2075,9 +2205,14 @@ async function captureARComposite(){
   const p=metadata.camera?.position;
   const yaw=metadata.camera?.yaw_deg;
 
+  const imageMeta=metadata.image;
+  const projectionSaved=Array.isArray(metadata.camera?.projection_matrix);
+
   el.photoCaptureMeta.innerHTML=
     `${p ? `Camera: X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}`
     + `${Number.isFinite(yaw) ? `<br>Direction: ${yaw.toFixed(1)}°` : ''}`
+    + `${imageMeta ? `<br>Image: ${imageMeta.output_width_px} × ${imageMeta.output_height_px} px` : ''}`
+    + `<br>Projection matrix: ${projectionSaved ? 'saved ✓' : 'unavailable'}`
     + `<br>Composite layers captured: ${layersDrawn}`;
 
   el.photoPreviewModal.classList.add('open');
@@ -2126,6 +2261,32 @@ async function shareActiveCapture(){
   a.click();
   a.remove();
 }
+
+function buildSceneExportData(){
+  return {
+    protocol_version:'EventVision_v8_2',
+    exported_at:new Date().toISOString(),
+    room:scanSceneData,
+    furniture:getFurnitureSceneData(),
+    latest_screenshot_pose:cloneData(savedScreenshotPose),
+    captured_views:captures.map(capture=>cloneData(capture.metadata || capture))
+  };
+}
+
+function exportSceneJSON(){
+  const data=buildSceneExportData();
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`eventvision-scene-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+el.exportData?.addEventListener('click',exportSceneJSON);
 
 el.cameraView?.addEventListener('click',enterPhotoMode);
 el.backToPlan?.addEventListener('click',exitPhotoMode);
@@ -2242,6 +2403,8 @@ el.scanAgain.addEventListener('click',()=>{
   scanSceneData=null;
   captures=[];
   savedScreenshotPose=null;
+  latestXRViewData=null;
+  pendingXRFrameResolvers=[];
   activeCapture=null;
   renderScreenshotPoseDetails();
   renderCaptureDetails();
@@ -2339,7 +2502,8 @@ function clamp01(v){
 }
 
 const FURNITURE_DIMENSIONS_M={
-  chair:{width:0.55,depth:0.55}
+  // Height is an editable default. Replace with the real furniture-model height when known.
+  chair:{width:0.55,depth:0.55,height:0.85}
 };
 
 function getFurnitureDimensions(item){
@@ -2348,8 +2512,49 @@ function getFurnitureDimensions(item){
 
   return {
     width:item.width_m || null,
-    depth:item.depth_m || null
+    depth:item.depth_m || null,
+    height:item.height_m || null
   };
+}
+
+function getFurnitureWorldPosition(item){
+  if(!item || !planTransform || !el.plan) return null;
+
+  const vb=el.plan.viewBox?.baseVal;
+  if(!vb?.width || !vb?.height) return null;
+
+  const svgX=vb.x + item.x*vb.width;
+  const svgY=vb.y + item.y*vb.height;
+
+  return {
+    x:(svgX-planTransform.cx)/planTransform.k + planTransform.worldCenterX,
+    y:Number.isFinite(floorY) ? Number(floorY) : Number(scanSceneData?.corners?.[0]?.world?.y || 0),
+    z:(svgY-planTransform.cy)/planTransform.k + planTransform.worldCenterZ
+  };
+}
+
+function getFurnitureSceneData(){
+  return furnitureItems.map(item=>{
+    const dims=getFurnitureDimensions(item);
+    const world=getFurnitureWorldPosition(item);
+    const plan=world ? getPlanPositionFromWorld(world) : null;
+
+    return {
+      id:`${item.type}_${String(item.id).padStart(2,'0')}`,
+      source_id:item.id,
+      type:item.type,
+      plan_position:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,
+      world_position:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
+      rotation_plan_deg:Number(item.rotation),
+      rotation_convention:'clockwise_on_plan_from_default_icon_orientation',
+      dimensions_m:{
+        width:dims.width == null ? null : Number(dims.width),
+        depth:dims.depth == null ? null : Number(dims.depth),
+        height:dims.height == null ? null : Number(dims.height)
+      },
+      ui_normalized:{x:Number(item.x),y:Number(item.y)}
+    };
+  });
 }
 
 function getPlanScreenScale(){
@@ -2498,7 +2703,8 @@ function addFurniture(type='chair'){
     y: 0.5,
     rotation: 0,
     width_m:preset?.width || null,
-    depth_m:preset?.depth || null
+    depth_m:preset?.depth || null,
+    height_m:preset?.height || null
   };
 
   // Offset subsequent chairs slightly so multiple adds do not perfectly overlap.
