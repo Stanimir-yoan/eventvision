@@ -955,13 +955,13 @@ body.xr-active.screenshot-mode .screenshotHud{
 
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
-    <div class="screenshotGuideText">
-      Position the phone, tap <b>Lock frame</b>, then take the iPhone screenshot without moving the phone.
+    <div class="screenshotGuideText" id="screenshotGuideText">
+      Aim the phone, tap <b>Prepare capture</b>, then hold it roughly steady. The app will lock automatically when the camera pose is stable. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
     </div>
   </div>
 
   <div class="screenshotBottom">
-    <button id="lockGenerationFrame" class="screenshotLock">Lock frame</button>
+    <button id="lockGenerationFrame" class="screenshotLock">Prepare capture</button>
     <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
   </div>
 </div>
@@ -1033,6 +1033,7 @@ const el = {
   screenshotHud: document.getElementById('screenshotHud'),
   projectionDebug: document.getElementById('projectionDebug'),
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
+  screenshotGuideText: document.getElementById('screenshotGuideText'),
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
@@ -1054,6 +1055,14 @@ let phonePoseGroup = null;
 let scanSceneData = null;
 let screenshotModeActive = false;
 let lockedGenerationFrame = null;
+let capturePreparationActive = false;
+let captureStabilitySamples = [];
+let capturePreparationStartedAt = 0;
+
+const CAPTURE_STABILITY_WINDOW_MS = 500;
+const CAPTURE_STABILITY_MIN_MS = 420;
+const CAPTURE_MAX_POSITION_SPREAD_M = 0.025;
+const CAPTURE_MAX_ROTATION_SPREAD_DEG = 2.2;
 let latestXRViewData = null;
 
 const CORNER_LABEL_BASE_SCALE = 0.18;
@@ -1603,10 +1612,13 @@ function render(_time,frame){
       }
 
       if(screenshotModeActive){
-        if(el.screenshotPoseStatus && !lockedGenerationFrame){
-          el.screenshotPoseStatus.textContent='Live AR pose · ready to lock';
+        if(el.screenshotPoseStatus && !lockedGenerationFrame && !capturePreparationActive){
+          el.screenshotPoseStatus.textContent='Live AR pose · ready';
         }
         if(!lockedGenerationFrame) updateProjectionDebugOverlay();
+        if(capturePreparationActive && !lockedGenerationFrame){
+          updateCapturePreparation(_time);
+        }
       }
 
       updateCornerLabelScales();
@@ -1932,7 +1944,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_2_clean',
+    protocol_version:'EventVision_v9_3_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2211,38 +2223,45 @@ function getPlanPositionFromWorld(worldPosition){
   };
 }
 
+function stopCapturePreparation(message=''){
+  capturePreparationActive=false;
+  captureStabilitySamples=[];
+  capturePreparationStartedAt=0;
+  if(el.lockGenerationFrame && !lockedGenerationFrame){
+    el.lockGenerationFrame.textContent='Prepare capture';
+    el.lockGenerationFrame.classList.remove('locked');
+  }
+  if(message && el.screenshotPoseStatus && screenshotModeActive){
+    el.screenshotPoseStatus.textContent=message;
+  }
+}
+
 function invalidateGenerationFrame(reason='Furniture layout changed'){
+  if(capturePreparationActive){
+    stopCapturePreparation('Layout changed · prepare again');
+  }
   if(!lockedGenerationFrame) return;
   lockedGenerationFrame=null;
   if(el.lockGenerationFrame){
-    el.lockGenerationFrame.textContent='Lock frame';
+    el.lockGenerationFrame.textContent='Prepare capture';
     el.lockGenerationFrame.classList.remove('locked');
   }
   if(el.screenshotPoseStatus && screenshotModeActive){
-    el.screenshotPoseStatus.textContent='Frame invalidated · lock again';
+    el.screenshotPoseStatus.textContent='Frame invalidated · prepare again';
+  }
+  if(el.screenshotGuideText && screenshotModeActive){
+    el.screenshotGuideText.innerHTML='Aim the phone, tap <b>Prepare capture</b>, and hold it roughly steady. The app will lock automatically.';
   }
   renderGenerationFrameDetails(reason);
-  setExportStatus('Frame changed. Lock a new generation frame before exporting.','warn');
+  setExportStatus('Frame changed. Prepare and lock a new generation frame before exporting.','warn');
   if(screenshotModeActive) updateProjectionDebugOverlay();
 }
 
-function lockGenerationFrame(){
+function captureCurrentGenerationFrame(){
   if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix){
-    alert('Camera projection is not ready yet. Keep the phone still for a moment and try again.');
-    return;
-  }
-
-  if(lockedGenerationFrame){
-    lockedGenerationFrame=null;
-    if(el.lockGenerationFrame){
-      el.lockGenerationFrame.textContent='Lock frame';
-      el.lockGenerationFrame.classList.remove('locked');
-    }
-    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready to lock';
-    setExportStatus('Frame unlocked. Lock again before exporting.','warn');
-    renderGenerationFrameDetails();
-    updateProjectionDebugOverlay();
-    return;
+    stopCapturePreparation('Camera projection not ready');
+    alert('Camera projection is not ready yet. Keep the phone aimed at the scene and try again.');
+    return false;
   }
 
   const xrView=cloneData(latestXRViewData);
@@ -2252,9 +2271,9 @@ function lockGenerationFrame(){
   const validation=validateLockedProjection(projections);
 
   if(!validation.valid){
+    stopCapturePreparation('Lock failed · adjust view');
     alert('Cannot lock this generation frame yet:\n\n'+validation.issues.join('\n'));
-    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Lock failed · adjust view';
-    return;
+    return false;
   }
 
   lockedGenerationFrame={
@@ -2263,17 +2282,122 @@ function lockGenerationFrame(){
     xr_view:xrView,
     image,
     projections,
-    validation
+    validation,
+    capture_method:'automatic_pose_stability_lock',
+    stability_requirement:{
+      window_ms:CAPTURE_STABILITY_WINDOW_MS,
+      minimum_stable_ms:CAPTURE_STABILITY_MIN_MS,
+      max_position_spread_m:CAPTURE_MAX_POSITION_SPREAD_M,
+      max_rotation_spread_deg:CAPTURE_MAX_ROTATION_SPREAD_DEG
+    }
   };
+
+  stopCapturePreparation();
 
   if(el.lockGenerationFrame){
     el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Frame locked ✓';
-  setExportStatus('Frame locked. JSON and 2D plan are ready to export.','good');
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
+  if(el.screenshotGuideText){
+    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
+  }
+  try{ navigator.vibrate?.(80); }catch(_){ }
+  setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
+  return true;
+}
+
+function updateCapturePreparation(frameTimeMs){
+  if(!capturePreparationActive || lockedGenerationFrame || !latestViewerPosition || !latestViewerOrientation) return;
+
+  const t=Number.isFinite(frameTimeMs) ? Number(frameTimeMs) : performance.now();
+  captureStabilitySamples.push({
+    t,
+    position:latestViewerPosition.clone(),
+    orientation:latestViewerOrientation.clone()
+  });
+
+  const cutoff=t-CAPTURE_STABILITY_WINDOW_MS;
+  captureStabilitySamples=captureStabilitySamples.filter(sample=>sample.t>=cutoff);
+  if(!captureStabilitySamples.length) return;
+
+  const newest=captureStabilitySamples[captureStabilitySamples.length-1];
+  let maxPositionSpread=0;
+  let maxRotationSpreadDeg=0;
+
+  for(const sample of captureStabilitySamples){
+    maxPositionSpread=Math.max(maxPositionSpread,newest.position.distanceTo(sample.position));
+    const angleDeg=newest.orientation.angleTo(sample.orientation)*180/Math.PI;
+    maxRotationSpreadDeg=Math.max(maxRotationSpreadDeg,angleDeg);
+  }
+
+  const duration=t-captureStabilitySamples[0].t;
+  const stable=maxPositionSpread<=CAPTURE_MAX_POSITION_SPREAD_M && maxRotationSpreadDeg<=CAPTURE_MAX_ROTATION_SPREAD_DEG;
+  const progress=Math.max(0,Math.min(100,Math.round((duration/CAPTURE_STABILITY_MIN_MS)*100)));
+
+  if(el.screenshotPoseStatus){
+    if(stable){
+      el.screenshotPoseStatus.textContent=`Stabilizing… ${progress}%`;
+    }else{
+      el.screenshotPoseStatus.textContent='Hold roughly steady…';
+    }
+  }
+
+  if(!stable){
+    // Reset the stability window around the newest pose, but keep preparation active.
+    captureStabilitySamples=[newest];
+    return;
+  }
+
+  if(duration>=CAPTURE_STABILITY_MIN_MS){
+    captureCurrentGenerationFrame();
+  }
+}
+
+function lockGenerationFrame(){
+  if(lockedGenerationFrame){
+    lockedGenerationFrame=null;
+    stopCapturePreparation();
+    if(el.lockGenerationFrame){
+      el.lockGenerationFrame.textContent='Prepare capture';
+      el.lockGenerationFrame.classList.remove('locked');
+    }
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
+    if(el.screenshotGuideText){
+      el.screenshotGuideText.innerHTML='Aim the phone, tap <b>Prepare capture</b>, then hold it roughly steady. The app will lock automatically when the camera pose is stable.';
+    }
+    setExportStatus('Frame unlocked. Prepare capture again before exporting.','warn');
+    renderGenerationFrameDetails();
+    updateProjectionDebugOverlay();
+    return;
+  }
+
+  if(capturePreparationActive){
+    stopCapturePreparation('Capture cancelled');
+    if(el.screenshotGuideText){
+      el.screenshotGuideText.innerHTML='Aim the phone, tap <b>Prepare capture</b>, then hold it roughly steady. The app will lock automatically when the camera pose is stable.';
+    }
+    return;
+  }
+
+  if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix){
+    alert('Camera projection is not ready yet. Aim at the scene for a moment and try again.');
+    return;
+  }
+
+  capturePreparationActive=true;
+  captureStabilitySamples=[];
+  capturePreparationStartedAt=performance.now();
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.textContent='Cancel preparation';
+    el.lockGenerationFrame.classList.remove('locked');
+  }
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Hold roughly steady…';
+  if(el.screenshotGuideText){
+    el.screenshotGuideText.innerHTML='Keep the framing you want. You do <b>not</b> need to be perfectly motionless. The app will automatically lock after a short stable moment.';
+  }
 }
 
 function renderGenerationFrameDetails(message=''){
@@ -2312,17 +2436,23 @@ function enterScreenshotMode(){
   el.screenshotHud.setAttribute('aria-hidden','false');
 
   if(el.lockGenerationFrame){
-    el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : 'Lock frame';
+    el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : (capturePreparationActive ? 'Cancel preparation' : 'Prepare capture');
     el.lockGenerationFrame.classList.toggle('locked',!!lockedGenerationFrame);
   }
   if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'Frame locked ✓' : 'Live AR pose · ready to lock';
+    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'FRAME LOCKED ✓ · TAKE SCREENSHOT NOW' : (capturePreparationActive ? 'Hold roughly steady…' : 'Live AR pose · ready');
+  }
+  if(el.screenshotGuideText){
+    el.screenshotGuideText.innerHTML=lockedGenerationFrame
+      ? '<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After it is saved, you can move freely.'
+      : 'Aim the phone, tap <b>Prepare capture</b>, then hold it roughly steady. The app will lock automatically when the camera pose is stable.';
   }
   if(renderer?.domElement) renderer.domElement.style.display='block';
   updateProjectionDebugOverlay();
 }
 
 function exitScreenshotMode(){
+  if(capturePreparationActive) stopCapturePreparation();
   screenshotModeActive=false;
   if(el.projectionDebug) el.projectionDebug.innerHTML='';
   document.body.classList.remove('screenshot-mode');
@@ -2525,7 +2655,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_2_clean',
+    protocol_version:'EventVision_v9_3_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v3_aligned_layout',
