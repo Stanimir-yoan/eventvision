@@ -103,6 +103,7 @@ body.xr-active canvas{background:transparent!important}
   width:100%;
   transform-origin:50% 50%;
   will-change:transform;
+  transition:none;
 }
 
 .planEditor #plan{
@@ -169,33 +170,42 @@ body.xr-active canvas{background:transparent!important}
   width:100%;
   height:100%;
   box-sizing:border-box;
-  border:2px solid #fff;
+  border:2.5px solid #d9d5ff;
   border-radius:18%;
-  background:rgba(107,92,255,.22);
+  background:rgba(107,92,255,.14);
   box-shadow:0 2px 8px rgba(0,0,0,.25);
 }
 
-.furnitureVisual.chair:before{
-  content:"";
+.furnitureVisual.chair .chairBackrest{
   position:absolute;
   left:15%;
   right:15%;
   top:10%;
   height:24%;
-  border:2px solid #fff;
+  border:2.5px solid #fff;
   border-bottom:0;
   border-radius:24% 24% 0 0;
 }
 
-.furnitureVisual.chair:after{
-  content:"";
+.furnitureVisual.chair .chairSeat{
   position:absolute;
   left:20%;
   right:20%;
   bottom:14%;
   height:30%;
-  border:2px solid #fff;
+  border:2.5px solid #fff;
   border-radius:22%;
+}
+
+.furnitureVisual.chair .chairFrontMarker{
+  position:absolute;
+  left:12%;
+  right:12%;
+  bottom:6%;
+  height:0;
+  border-top:5px solid #63efb0;
+  border-radius:999px;
+  opacity:1;
 }
 
 .furnitureItem.selected .furnitureVisual{
@@ -239,9 +249,11 @@ body.xr-active canvas{background:transparent!important}
 .arrayPreviewChair{
   position:absolute;
   box-sizing:border-box;
-  border:2px dashed rgba(107,92,255,.95);
+  border:2px dashed rgba(217,213,255,.95);
   border-radius:18%;
-  background:rgba(107,92,255,.13);
+  background:
+    linear-gradient(to top, transparent 0 84%, rgba(99,239,176,.96) 84% 88%, transparent 88% 100%),
+    rgba(107,92,255,.14);
   pointer-events:none;
   z-index:3;
 }
@@ -249,7 +261,7 @@ body.xr-active canvas{background:transparent!important}
   content:"";
   position:absolute;
   left:15%;right:15%;top:10%;height:24%;
-  border:2px solid rgba(255,255,255,.78);
+  border:2px solid rgba(255,255,255,.88);
   border-bottom:0;
   border-radius:24% 24% 0 0;
 }
@@ -257,8 +269,9 @@ body.xr-active canvas{background:transparent!important}
   content:"";
   position:absolute;
   left:20%;right:20%;bottom:14%;height:30%;
-  border:2px solid rgba(255,255,255,.78);
+  border:2px solid rgba(255,255,255,.88);
   border-radius:22%;
+  box-shadow:0 0 0 999px rgba(0,0,0,0);
 }
 .arrayPreviewBadge{
   position:absolute;
@@ -691,21 +704,32 @@ body.xr-active.layout-mode canvas{
 
 .projectionFootprint{
   fill:rgba(107,92,255,.14);
-  stroke:#9c92ff;
-  stroke-width:2;
+  stroke:#d9d5ff;
+  stroke-width:2.6;
   vector-effect:non-scaling-stroke;
 }
 
 .projectionBackrest{
-  stroke:#d9d5ff;
-  stroke-width:5;
+  fill:none;
+  stroke:#fff;
+  stroke-width:4.8;
   stroke-linecap:round;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+}
+
+.projectionSeat{
+  fill:none;
+  stroke:#fff;
+  stroke-width:4.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
   vector-effect:non-scaling-stroke;
 }
 
 .projectionFront{
   stroke:#63efb0;
-  stroke-width:5;
+  stroke-width:5.5;
   stroke-linecap:round;
   vector-effect:non-scaling-stroke;
 }
@@ -817,7 +841,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.3 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.6 SMOOTH PLAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1431,6 +1455,53 @@ function getProjectionSnapshotForOverlay(){
   };
 }
 
+function mapUnitPointToProjectedQuad(quad,u,v){
+  if(!Array.isArray(quad) || quad.length!==4) return null;
+  const p00=quad[0]?.css_px;
+  const p10=quad[1]?.css_px;
+  const p11=quad[2]?.css_px;
+  const p01=quad[3]?.css_px;
+  if(!p00 || !p10 || !p11 || !p01) return null;
+  return {
+    x:(1-u)*(1-v)*p00.x + u*(1-v)*p10.x + u*v*p11.x + (1-u)*v*p01.x,
+    y:(1-u)*(1-v)*p00.y + u*(1-v)*p10.y + u*v*p11.y + (1-u)*v*p01.y
+  };
+}
+
+function projectedPolygonPoints(quad,uvPoints){
+  const pts=uvPoints.map(([u,v])=>mapUnitPointToProjectedQuad(quad,u,v)).filter(Boolean);
+  return pts.length===uvPoints.length ? pts : null;
+}
+
+function pointsToSvgString(points){
+  return points.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+}
+
+function appendProjectedChairIcon(svg,ns,projected){
+  if(!projected?.floor || projected.floor.length!==4) return;
+
+  const backrest=projectedPolygonPoints(projected.floor,[
+    [0.18,0.12],[0.82,0.12],[0.82,0.34],[0.70,0.34],[0.70,0.22],[0.30,0.22],[0.30,0.34],[0.18,0.34]
+  ]);
+  if(backrest){
+    const poly=document.createElementNS(ns,'polyline');
+    const path=[backrest[0],backrest[1],backrest[2],backrest[3],backrest[4],backrest[5],backrest[6],backrest[7]];
+    poly.setAttribute('class','projectionBackrest');
+    poly.setAttribute('points',pointsToSvgString(path));
+    svg.appendChild(poly);
+  }
+
+  const seat=projectedPolygonPoints(projected.floor,[
+    [0.24,0.56],[0.76,0.56],[0.76,0.84],[0.24,0.84]
+  ]);
+  if(seat){
+    const poly=document.createElementNS(ns,'polygon');
+    poly.setAttribute('class','projectionSeat');
+    poly.setAttribute('points',pointsToSvgString(seat));
+    svg.appendChild(poly);
+  }
+}
+
 function updateProjectionDebugOverlay(){
   const svg=el.projectionDebug;
   if(!svg || !screenshotModeActive) return;
@@ -1456,16 +1527,7 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(poly);
     }
 
-    const back=projected.backEdge.map(p=>p?.css_px).filter(Boolean);
-    if(back.length===2){
-      const line=document.createElementNS(ns,'line');
-      line.setAttribute('class','projectionBackrest');
-      line.setAttribute('x1',back[0].x.toFixed(1));
-      line.setAttribute('y1',back[0].y.toFixed(1));
-      line.setAttribute('x2',back[1].x.toFixed(1));
-      line.setAttribute('y2',back[1].y.toFixed(1));
-      svg.appendChild(line);
-    }
+    appendProjectedChairIcon(svg,ns,projected);
 
     const front=projected.frontEdge.map(p=>p?.css_px).filter(Boolean);
     if(front.length===2){
@@ -2714,6 +2776,9 @@ let activeArrayPreviewNodes=[];
 let activeArrayPreviewCandidates=[];
 
 const planViewState={zoom:1,rotation:0,panX:0,panY:0};
+const PLAN_ROTATION_STEP_DEG=5;
+const PLAN_TRANSFORM_EASE_MS=170;
+let planTransformEaseTimer=null;
 
 function normalizePlanViewRotation(deg){
   let v=Number(deg)||0;
@@ -2722,20 +2787,32 @@ function normalizePlanViewRotation(deg){
   return v;
 }
 
-function applyPlanViewTransform(){
+function applyPlanViewTransform({animate=false}={}){
   if(!planViewport) return;
+
+  if(animate){
+    planViewport.style.transition=`transform ${PLAN_TRANSFORM_EASE_MS}ms cubic-bezier(.22,.8,.22,1)`;
+    if(planTransformEaseTimer) clearTimeout(planTransformEaseTimer);
+    planTransformEaseTimer=setTimeout(()=>{
+      if(planViewport) planViewport.style.transition='none';
+      planTransformEaseTimer=null;
+    },PLAN_TRANSFORM_EASE_MS+30);
+  }else if(!planTransformEaseTimer){
+    planViewport.style.transition='none';
+  }
+
   planViewport.style.transform=`translate(${planViewState.panX.toFixed(1)}px, ${planViewState.panY.toFixed(1)}px) scale(${planViewState.zoom.toFixed(3)}) rotate(${planViewState.rotation.toFixed(2)}deg)`;
-  if(planViewReadout) planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}° · drag empty space to pan`;
+  if(planViewReadout) planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${planViewState.rotation.toFixed(0)}° · drag empty space to pan`;
 }
 
-function setPlanZoom(nextZoom){
+function setPlanZoom(nextZoom,{animate=true}={}){
   planViewState.zoom=Math.max(.65,Math.min(2.75,Number(nextZoom)||1));
-  applyPlanViewTransform();
+  applyPlanViewTransform({animate});
 }
 
 function rotatePlanView(delta){
   planViewState.rotation=normalizePlanViewRotation(planViewState.rotation+Number(delta||0));
-  applyPlanViewTransform();
+  applyPlanViewTransform({animate:true});
 }
 
 function resetPlanView(){
@@ -2743,7 +2820,7 @@ function resetPlanView(){
   planViewState.rotation=0;
   planViewState.panX=0;
   planViewState.panY=0;
-  applyPlanViewTransform();
+  applyPlanViewTransform({animate:true});
 }
 
 function clientPointToUntransformedPlan(clientX,clientY){
@@ -3064,6 +3141,19 @@ function makeFurnitureNode(item){
 
   const visual = document.createElement('div');
   visual.className = `furnitureVisual ${item.type}`;
+  if(item.type==='chair'){
+    const backrest=document.createElement('div');
+    backrest.className='chairBackrest';
+    visual.appendChild(backrest);
+
+    const seat=document.createElement('div');
+    seat.className='chairSeat';
+    visual.appendChild(seat);
+
+    const frontMarker=document.createElement('div');
+    frontMarker.className='chairFrontMarker';
+    visual.appendChild(frontMarker);
+  }
   node.appendChild(visual);
 
   // Figma-style repeat-grid handles: dragging any corner previews and commits more chairs.
@@ -3266,13 +3356,13 @@ deleteFurnitureBtn?.addEventListener('click', deleteSelectedFurniture);
 
 planZoomOutBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom-.15));
 planZoomInBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom+.15));
-planRotateLeftBtn?.addEventListener('click',()=>rotatePlanView(-15));
-planRotateRightBtn?.addEventListener('click',()=>rotatePlanView(15));
+planRotateLeftBtn?.addEventListener('click',()=>rotatePlanView(-PLAN_ROTATION_STEP_DEG));
+planRotateRightBtn?.addEventListener('click',()=>rotatePlanView(PLAN_ROTATION_STEP_DEG));
 planViewResetBtn?.addEventListener('click',resetPlanView);
 
 planEditor?.addEventListener('wheel',e=>{
   e.preventDefault();
-  setPlanZoom(planViewState.zoom + (e.deltaY<0 ? .12 : -.12));
+  setPlanZoom(planViewState.zoom + (e.deltaY<0 ? .12 : -.12),{animate:false});
 },{passive:false});
 
 let planPanPointerId=null;
@@ -3280,6 +3370,8 @@ let planPanLast=null;
 planEditor?.addEventListener('pointerdown', e => {
   if(e.target?.closest?.('.furnitureItem')) return;
   setSelectedFurniture(null);
+  if(planTransformEaseTimer){ clearTimeout(planTransformEaseTimer); planTransformEaseTimer=null; }
+  if(planViewport) planViewport.style.transition='none';
   planPanPointerId=e.pointerId;
   planPanLast={x:e.clientX,y:e.clientY};
   try{planEditor.setPointerCapture?.(e.pointerId);}catch(_){}
