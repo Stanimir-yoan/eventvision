@@ -109,6 +109,17 @@ body.modal-open{overflow:hidden}
   position:relative;
   width:calc(100% + 12px);
   margin-left:-6px;
+  overflow:hidden;
+  border-radius:16px;
+  touch-action:none;
+  background:#0d0d10;
+}
+
+.planViewport{
+  position:relative;
+  width:100%;
+  transform-origin:50% 50%;
+  will-change:transform;
 }
 
 .planEditor #plan{
@@ -117,6 +128,19 @@ body.modal-open{overflow:hidden}
   display:block;
   touch-action:none;
 }
+
+.planViewToolbar{
+  display:grid;
+  grid-template-columns:auto repeat(5,minmax(0,1fr));
+  gap:8px;
+  align-items:center;
+  margin:10px 0 4px;
+}
+.planViewToolbar .planViewLabel{color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
+.planViewBtn{min-height:38px;border:1px solid rgba(255,255,255,.12);border-radius:11px;background:#17171c;color:#fff;font-size:15px;font-weight:850}
+.planViewBtn:active{transform:scale(.97)}
+.planViewReadout{grid-column:1 / -1;text-align:center;color:var(--muted);font-size:11px;font-weight:700;min-height:15px}
+@media(max-width:430px){.planViewToolbar{grid-template-columns:repeat(5,minmax(0,1fr))}.planViewToolbar .planViewLabel{grid-column:1 / -1;text-align:center}}
 
 #furnitureLayer{
   position:absolute;
@@ -878,7 +902,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.8</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.9</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -909,8 +933,20 @@ body.xr-active.screenshot-mode .screenshotHud{
     </div>
 
     <div class="planEditor" id="planEditor">
-      <svg id="plan" viewBox="0 0 500 430"></svg>
-      <div id="furnitureLayer" aria-label="Furniture layout layer"></div>
+      <div class="planViewport" id="planViewport">
+        <svg id="plan" viewBox="0 0 500 430"></svg>
+        <div id="furnitureLayer" aria-label="Furniture layout layer"></div>
+      </div>
+    </div>
+
+    <div class="planViewToolbar" aria-label="Plan view controls">
+      <div class="planViewLabel">Plan view</div>
+      <button type="button" class="planViewBtn" id="planZoomOut" aria-label="Zoom plan out">−</button>
+      <button type="button" class="planViewBtn" id="planZoomIn" aria-label="Zoom plan in">＋</button>
+      <button type="button" class="planViewBtn" id="planRotateLeft" aria-label="Rotate whole plan left">↺</button>
+      <button type="button" class="planViewBtn" id="planRotateRight" aria-label="Rotate whole plan right">↻</button>
+      <button type="button" class="planViewBtn" id="planViewReset" aria-label="Reset plan view">Reset</button>
+      <div class="planViewReadout" id="planViewReadout">100% · 0° · drag empty space to pan</div>
     </div>
 
     <div id="furnitureToolbar" aria-live="polite">
@@ -1577,6 +1613,26 @@ function getFurnitureOrientationSemantics(cameraRelativeAngleDeg){
   };
 }
 
+function buildGenerationOrientationConstraint(frontMid,backMid){
+  const front=frontMid?.uv;
+  const back=backMid?.uv;
+  if(!front || !back) return null;
+  const dx=Number(front.x)-Number(back.x);
+  const dy=Number(front.y)-Number(back.y);
+  const len=Math.hypot(dx,dy);
+  if(!Number.isFinite(len) || len<1e-9) return null;
+  return {
+    authority:'ONLY_ORIENTATION_CONSTRAINT_FOR_GENERATION',
+    coordinate_space:'photo_normalized_uv',
+    back_center_uv:{x:Number(back.x),y:Number(back.y)},
+    front_center_uv:{x:Number(front.x),y:Number(front.y)},
+    forward_vector_uv:{x:dx/len,y:dy/len},
+    interpretation:'Backrest must be on the BACK anchor side. Open/front side of seat must face the FRONT anchor. Never reverse this vector.',
+    allow_180_flip:false,
+    allow_front_back_mirror:false
+  };
+}
+
 function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
   const box=getFurnitureWorldBox(item);
   if(!box) return null;
@@ -1619,25 +1675,26 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     const cameraRelativeAngle=getCameraRelativeViewAngleDeg(item,viewData);
     const viewLabel=getOrientationViewLabel(cameraRelativeAngle);
     return {
-      orientation_authoritative:true,
-      forward_world:{
-        x:Number(orientationWorld.forward_world.x),
-        y:Number(orientationWorld.forward_world.y),
-        z:Number(orientationWorld.forward_world.z)
-      },
-      center_floor:centerFloor,
-      front_mid:frontMid,
-      back_mid:backMid,
-      front_edge:frontEdge,
-      back_edge:backEdge,
-      // Deprecated alias retained for compatibility with v8.6 readers.
-      backrest_edge:backEdge,
-      screen_forward_angle_deg:getScreenForwardAngleDeg(centerFloor, frontMid),
-      screen_forward_angle_convention:'0=right, 90=down, 180=left, 270=up in image coordinates',
-      camera_relative_view_angle_deg:cameraRelativeAngle,
-      camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view',
-      view_label:viewLabel,
-      semantic_rule:getFurnitureOrientationSemantics(cameraRelativeAngle)
+      generation_constraint:buildGenerationOrientationConstraint(frontMid,backMid),
+      debug_only:{
+        forward_world:{
+          x:Number(orientationWorld.forward_world.x),
+          y:Number(orientationWorld.forward_world.y),
+          z:Number(orientationWorld.forward_world.z)
+        },
+        center_floor:centerFloor,
+        front_mid:frontMid,
+        back_mid:backMid,
+        front_edge:frontEdge,
+        back_edge:backEdge,
+        backrest_edge:backEdge,
+        screen_forward_angle_deg:getScreenForwardAngleDeg(centerFloor, frontMid),
+        screen_forward_angle_convention:'0=right, 90=down, 180=left, 270=up in image coordinates',
+        camera_relative_view_angle_deg:cameraRelativeAngle,
+        camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view',
+        view_label:viewLabel,
+        semantic_rule:getFurnitureOrientationSemantics(cameraRelativeAngle)
+      }
     };
   })() : null;
 
@@ -1659,7 +1716,7 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
     bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
     bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
-    note:'JSON orientation semantics are authoritative. Use floor_polygon for placement, orientation.front_edge as chair front, orientation.back_edge as chair backrest side, orientation.view_label for camera-facing view, and height_anchor for overall perceived height. Never mirror front/back.'
+    note:'For generation, use ONLY orientation.generation_constraint for chair facing. orientation.debug_only is diagnostic and must not be interpreted as additional pose instructions. Use floor_polygon for placement and height_anchor for size.'
   };
 }
 
@@ -1689,7 +1746,8 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(poly);
     }
 
-    const backrest=(projection.orientation?.back_edge || projection.orientation?.backrest_edge || []).map(p=>p?.css_px).filter(Boolean);
+    const debugOrientation=projection.orientation?.debug_only;
+    const backrest=(debugOrientation?.back_edge || debugOrientation?.backrest_edge || []).map(p=>p?.css_px).filter(Boolean);
     if(backrest.length===2){
       const line=document.createElementNS(ns,'line');
       line.setAttribute('class','projectionBackrest');
@@ -1700,7 +1758,7 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(line);
     }
 
-    const front=projection.orientation?.front_edge?.map(p=>p?.css_px).filter(Boolean) || [];
+    const front=debugOrientation?.front_edge?.map(p=>p?.css_px).filter(Boolean) || [];
     if(front.length===2){
       const line=document.createElementNS(ns,'line');
       line.setAttribute('class','projectionFront');
@@ -2089,7 +2147,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_8',
+    protocol_version:'EventVision_v8_9',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2402,7 +2460,7 @@ function saveScreenshotPose(){
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
     capture_mode:'manual_os_screenshot_pose',
-    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Footprint, back edge and front edge indicate placement and orientation.',
+    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Footprint confirms placement/size; green FRONT and light-purple BACK visualize the single canonical orientation vector.',
     camera,
     xr_view:xrView,
     image:imageGeometry,
@@ -2701,55 +2759,40 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_8',
+    protocol_version:'EventVision_v8_9',
     exported_at:new Date().toISOString(),
     generation_rules:{
-      schema:'eventvision_multisource_generation_v2',
+      schema:'eventvision_canonical_orientation_v3',
       source_of_truth:'json',
       original_photo_role:'authoritative architecture, camera view, lighting and perspective',
-      overlay_role:'debug_only',
-      generation_plan_role:'orientation_and_global_layout_reference_only',
-      generation_plan_must_not_override_photo_space_placement:true,
-      generation_plan_must_not_override_photo_space_scale:true,
+      screenshot_overlay_role:'authoritative photo-space placement/size verification only',
+      generation_plan_role:'global orientation confirmation only',
       placement_authoritative:true,
-      orientation_authoritative:true,
       size_authoritative:true,
-      front_back_mirroring_forbidden:true,
+      orientation_authoritative:true,
       placement_source:'furniture[].screen_projection.floor_polygon',
       size_source:'furniture[].screen_projection.height_anchor',
-      front_source:'furniture[].screen_projection.orientation.front_edge',
-      back_source:'furniture[].screen_projection.orientation.back_edge',
-      view_source:'furniture[].screen_projection.orientation.view_label',
-      numeric_orientation_sources:[
-        'furniture[].screen_projection.orientation.screen_forward_angle_deg',
-        'furniture[].screen_projection.orientation.camera_relative_view_angle_deg'
-      ],
+      orientation_source:'furniture[].screen_projection.orientation.generation_constraint',
+      orientation_rule:'For every furniture item, generation_constraint is the ONLY pose/facing instruction. Place the backrest on back_center_uv and the open seat/front toward front_center_uv. Never reverse the vector.',
+      front_back_mirroring_forbidden:true,
+      debug_orientation_policy:'Ignore furniture[].screen_projection.orientation.debug_only during generation. It exists only for diagnostics and UI visualization.',
+      generation_plan_policy:'Use the 2D plan only to visually confirm FRONT/BACK relationships. Never derive photo-space position, scale, or a second orientation angle from it.',
+      furniture_reference_policy:'Reference image controls identity, shape, material and design only. Never inherit its camera angle or facing direction.',
+      multi_item_policy:'Prefer generating/inserting one furniture item at a time so each item has one independent orientation constraint.',
       source_priority:{
         architecture_camera_lighting:'original_space_photo',
-        photo_space_placement:'scene_json_screen_projection',
+        photo_space_placement:'scene_json_screen_projection_floor_polygon',
         photo_space_size:'scene_json_height_anchor',
-        furniture_orientation:'scene_json_semantics_confirmed_by_2d_generation_plan',
-        global_layout_orientation_check:'2d_generation_plan',
+        furniture_orientation:'scene_json_generation_constraint_only',
+        global_orientation_confirmation:'2d_generation_plan',
         furniture_appearance:'furniture_reference_image'
       },
-      generation_plan_semantics:{
-        green_edge:'chair_front',
-        light_purple_edge:'chair_backrest_side',
-        orange_marker:'camera_position_and_direction',
-        chair_id:'must_match furniture[].id',
-        role:'Use this plan to understand which way every furniture item faces and its relationship to the other items. Do not use it to estimate pixel position or rendered size in the photograph.'
-      },
-      chair_semantics:{
-        front_edge:'open/front side of chair seat; never place backrest here',
-        back_edge:'backrest side of chair; backrest must remain on this side',
-        mirroring:'forbidden'
-      },
       conflict_resolution:{
-        photo_space_position:'scene JSON screen projection wins over the 2D plan',
-        photo_space_size:'scene JSON height anchor and dimensions win over the 2D plan',
-        orientation:'scene JSON front/back semantics are authoritative; 2D generation plan is a visual confirmation',
+        position:'scene JSON floor_polygon wins',
+        size:'scene JSON height_anchor and dimensions win',
+        orientation:'scene JSON orientation.generation_constraint wins; do not average it with plan icons, view labels, numeric debug angles, or reference pose',
         architecture:'original space photo wins',
-        appearance:'furniture reference controls design/material only, never pose'
+        appearance:'furniture reference wins for design/material only'
       }
     },
     room:scanSceneData,
@@ -2905,7 +2948,7 @@ function buildGenerationPlanCanvas(){
     ctx.fillText('CAMERA',cp.x+10,cp.y-10);
   }
 
-  // Compact legend. This is intentionally semantic, not decorative.
+  // Compact legend. Orientation confirmation only; JSON remains the generation authority.
   const legendY=baseH-18;
   ctx.font='800 9px system-ui, -apple-system, sans-serif';
   ctx.textBaseline='middle';
@@ -2923,6 +2966,11 @@ function buildGenerationPlanCanvas(){
   ctx.fillStyle='#ff9a4d';
   ctx.beginPath(); ctx.arc(216,legendY,5,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#ffffff'; ctx.fillText('CAMERA',227,legendY);
+
+  ctx.fillStyle='#a7a8b3';
+  ctx.font='700 8px system-ui, -apple-system, sans-serif';
+  ctx.textAlign='right';
+  ctx.fillText('ORIENTATION CHECK ONLY',baseW-18,legendY);
 
   return canvas;
 }
@@ -3185,6 +3233,13 @@ check();
 // ===== EventVision v6 furniture layout editor =====
 const furnitureLayer = document.getElementById('furnitureLayer');
 const planEditor = document.getElementById('planEditor');
+const planViewport = document.getElementById('planViewport');
+const planZoomOutBtn = document.getElementById('planZoomOut');
+const planZoomInBtn = document.getElementById('planZoomIn');
+const planRotateLeftBtn = document.getElementById('planRotateLeft');
+const planRotateRightBtn = document.getElementById('planRotateRight');
+const planViewResetBtn = document.getElementById('planViewReset');
+const planViewReadout = document.getElementById('planViewReadout');
 const furnitureToolbar = document.getElementById('furnitureToolbar');
 const selectedFurnitureLabel = document.getElementById('selectedFurnitureLabel');
 const rotateLeftBtn = document.getElementById('rotateLeft');
@@ -3195,6 +3250,58 @@ const furnitureCountEl = document.getElementById('furnitureCount');
 let furnitureItems = [];
 let selectedFurnitureId = null;
 let furnitureIdCounter = 1;
+
+const planViewState={zoom:1,rotation:0,panX:0,panY:0};
+
+function normalizePlanViewRotation(deg){
+  let v=Number(deg)||0;
+  while(v<=-180) v+=360;
+  while(v>180) v-=360;
+  return v;
+}
+
+function applyPlanViewTransform(){
+  if(!planViewport) return;
+  planViewport.style.transform=`translate(${planViewState.panX.toFixed(1)}px, ${planViewState.panY.toFixed(1)}px) scale(${planViewState.zoom.toFixed(3)}) rotate(${planViewState.rotation.toFixed(2)}deg)`;
+  if(planViewReadout) planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}° · drag empty space to pan`;
+}
+
+function setPlanZoom(nextZoom){
+  planViewState.zoom=Math.max(.65,Math.min(2.75,Number(nextZoom)||1));
+  applyPlanViewTransform();
+}
+
+function rotatePlanView(delta){
+  planViewState.rotation=normalizePlanViewRotation(planViewState.rotation+Number(delta||0));
+  applyPlanViewTransform();
+}
+
+function resetPlanView(){
+  planViewState.zoom=1;
+  planViewState.rotation=0;
+  planViewState.panX=0;
+  planViewState.panY=0;
+  applyPlanViewTransform();
+}
+
+function clientPointToUntransformedPlan(clientX,clientY){
+  if(!planEditor) return null;
+  const rect=planEditor.getBoundingClientRect();
+  if(!rect.width || !rect.height) return null;
+  const cx=rect.left+rect.width/2;
+  const cy=rect.top+rect.height/2;
+  const dx=Number(clientX)-cx-planViewState.panX;
+  const dy=Number(clientY)-cy-planViewState.panY;
+  const a=planViewState.rotation*Math.PI/180;
+  const cos=Math.cos(a), sin=Math.sin(a);
+  const invZoom=1/Math.max(.0001,planViewState.zoom);
+  return {
+    x:rect.width/2+(cos*dx+sin*dy)*invZoom,
+    y:rect.height/2+(-sin*dx+cos*dy)*invZoom,
+    width:rect.width,
+    height:rect.height
+  };
+}
 
 function getFurnitureItem(id){
   return furnitureItems.find(item => item.id === id) || null;
@@ -3313,13 +3420,10 @@ function getFurnitureSceneData(viewData=null,imageGeometry=null){
 }
 
 function getPlanScreenScale(){
-  if(!planTransform || !el.plan) return null;
-
-  const rect=el.plan.getBoundingClientRect();
+  if(!planTransform || !el.plan || !planEditor) return null;
+  const rect=planEditor.getBoundingClientRect();
   const vb=el.plan.viewBox?.baseVal;
-
   if(!rect.width || !rect.height || !vb?.width || !vb?.height) return null;
-
   return {
     pxPerMeterX:planTransform.k*(rect.width/vb.width),
     pxPerMeterY:planTransform.k*(rect.height/vb.height)
@@ -3383,15 +3487,15 @@ function makeFurnitureNode(item){
   node.addEventListener('pointermove', e => {
     if(!dragging || !planEditor) return;
 
-    const rect = planEditor.getBoundingClientRect();
-    if(!rect.width || !rect.height) return;
+    const local=clientPointToUntransformedPlan(e.clientX,e.clientY);
+    if(!local?.width || !local?.height) return;
 
     const size=getFurnitureScreenSize(item);
-    const halfX=Math.min(0.49,(size.width/2)/rect.width);
-    const halfY=Math.min(0.49,(size.height/2)/rect.height);
+    const halfX=Math.min(0.49,(size.width/2)/local.width);
+    const halfY=Math.min(0.49,(size.height/2)/local.height);
 
-    item.x = Math.max(halfX,Math.min(1-halfX,(e.clientX-rect.left)/rect.width));
-    item.y = Math.max(halfY,Math.min(1-halfY,(e.clientY-rect.top)/rect.height));
+    item.x = Math.max(halfX,Math.min(1-halfX,local.x/local.width));
+    item.y = Math.max(halfY,Math.min(1-halfY,local.y/local.height));
 
     paint();
   });
@@ -3501,11 +3605,42 @@ rotateLeftBtn?.addEventListener('click', () => rotateSelected(-15));
 rotateRightBtn?.addEventListener('click', () => rotateSelected(15));
 deleteFurnitureBtn?.addEventListener('click', deleteSelectedFurniture);
 
+planZoomOutBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom-.15));
+planZoomInBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom+.15));
+planRotateLeftBtn?.addEventListener('click',()=>rotatePlanView(-15));
+planRotateRightBtn?.addEventListener('click',()=>rotatePlanView(15));
+planViewResetBtn?.addEventListener('click',resetPlanView);
+
+planEditor?.addEventListener('wheel',e=>{
+  e.preventDefault();
+  setPlanZoom(planViewState.zoom + (e.deltaY<0 ? .12 : -.12));
+},{passive:false});
+
+let planPanPointerId=null;
+let planPanLast=null;
 planEditor?.addEventListener('pointerdown', e => {
-  if(e.target === planEditor || e.target?.id === 'plan' || e.target?.id === 'furnitureLayer'){
-    setSelectedFurniture(null);
-  }
+  if(e.target?.closest?.('.furnitureItem')) return;
+  setSelectedFurniture(null);
+  planPanPointerId=e.pointerId;
+  planPanLast={x:e.clientX,y:e.clientY};
+  try{planEditor.setPointerCapture?.(e.pointerId);}catch(_){}
 });
+planEditor?.addEventListener('pointermove',e=>{
+  if(planPanPointerId!==e.pointerId || !planPanLast) return;
+  planViewState.panX += e.clientX-planPanLast.x;
+  planViewState.panY += e.clientY-planPanLast.y;
+  planPanLast={x:e.clientX,y:e.clientY};
+  applyPlanViewTransform();
+});
+function finishPlanPan(e){
+  if(planPanPointerId!==e.pointerId) return;
+  planPanPointerId=null;
+  planPanLast=null;
+  try{planEditor?.releasePointerCapture?.(e.pointerId);}catch(_){}
+}
+planEditor?.addEventListener('pointerup',finishPlanPan);
+planEditor?.addEventListener('pointercancel',finishPlanPan);
+applyPlanViewTransform();
 
 // Reset furniture when a completely new room scan is started.
 const originalScanAgain = document.getElementById('scanAgain');
@@ -3513,6 +3648,7 @@ originalScanAgain?.addEventListener('click', () => {
   furnitureItems = [];
   selectedFurnitureId = null;
   selectedFurnitureType = null;
+  resetPlanView();
   renderFurniture();
 });
 
