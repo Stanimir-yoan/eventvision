@@ -842,9 +842,12 @@ body.xr-active.photo-mode canvas{
   bottom:calc(14px + env(safe-area-inset-bottom));
   display:flex;
   justify-content:center;
+  gap:10px;
   pointer-events:auto;
 }
 
+.screenshotLock,
+.screenshotLock,
 .screenshotBack{
   min-width:170px;
   min-height:48px;
@@ -856,6 +859,14 @@ body.xr-active.photo-mode canvas{
   font-weight:850;
   backdrop-filter:blur(10px);
   -webkit-backdrop-filter:blur(10px);
+}
+
+.screenshotLock{
+  background:rgba(53,93,255,.72);
+}
+
+.screenshotLock.locked{
+  background:rgba(25,142,84,.78);
 }
 
 body.xr-active.screenshot-mode{
@@ -902,7 +913,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.9</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.10</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -1089,11 +1100,12 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText">
-      Purple targets show the projected chair footprint, back edge and front edge. Use side button + volume up to save the test screenshot.
+      Position the phone, tap <b>Lock generation frame</b>, then take the iPhone screenshot without moving the phone. Purple targets show the projected chair footprint, back edge and front edge.
     </div>
   </div>
 
   <div class="screenshotBottom">
+    <button id="lockGenerationFrame" class="screenshotLock">Lock generation frame</button>
     <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
   </div>
 </div>
@@ -1167,6 +1179,7 @@ const el = {
   screenshotHud: document.getElementById('screenshotHud'),
   projectionDebug: document.getElementById('projectionDebug'),
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
+  lockGenerationFrame: document.getElementById('lockGenerationFrame'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
   cornerDetails: document.getElementById('cornerDetails'),
@@ -1202,6 +1215,8 @@ let activeCaptureURL = null;
 let photoMode = false;
 let screenshotModeActive = false;
 let savedScreenshotPose = null;
+let screenshotFrameLocked = false;
+let lockedGenerationFrame = null;
 let latestXRViewData = null;
 let pendingXRFrameResolvers = [];
 
@@ -1613,23 +1628,55 @@ function getFurnitureOrientationSemantics(cameraRelativeAngleDeg){
   };
 }
 
-function buildGenerationOrientationConstraint(frontMid,backMid){
-  const front=frontMid?.uv;
-  const back=backMid?.uv;
-  if(!front || !back) return null;
+function normalizePointToViewport(point,imageGeometry){
+  const width=Number(imageGeometry?.viewport_css_width || window.innerWidth || 0);
+  const height=Number(imageGeometry?.viewport_css_height || window.innerHeight || 0);
+  if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || width <= 0 || height <= 0){
+    return null;
+  }
+  return {x:Number(point.x/width),y:Number(point.y/height)};
+}
+
+function normalizedPointInsideUnitSquare(point){
+  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+}
+
+function buildGenerationOrientationConstraint(frontMid,backMid,imageGeometry=null){
+  const front = normalizePointToViewport(frontMid?.css_px, imageGeometry) || frontMid?.uv || null;
+  const back = normalizePointToViewport(backMid?.css_px, imageGeometry) || backMid?.uv || null;
+  if(!front || !back){
+    return null;
+  }
+
   const dx=Number(front.x)-Number(back.x);
   const dy=Number(front.y)-Number(back.y);
   const len=Math.hypot(dx,dy);
-  if(!Number.isFinite(len) || len<1e-9) return null;
+  const anchors_valid=normalizedPointInsideUnitSquare(front) && normalizedPointInsideUnitSquare(back);
+  if(!Number.isFinite(len) || len<1e-9 || !anchors_valid){
+    return {
+      authority:'ONLY_ORIENTATION_CONSTRAINT_FOR_GENERATION',
+      coordinate_space:'photo_normalized_uv',
+      back_center_uv:back ? {x:Number(back.x),y:Number(back.y)} : null,
+      front_center_uv:front ? {x:Number(front.x),y:Number(front.y)} : null,
+      forward_vector_uv:null,
+      interpretation:'Invalid generation frame: anchors must come from the locked screenshot frame and remain inside the photo bounds.',
+      allow_180_flip:false,
+      allow_front_back_mirror:false,
+      valid:false
+    };
+  }
+
   return {
     authority:'ONLY_ORIENTATION_CONSTRAINT_FOR_GENERATION',
     coordinate_space:'photo_normalized_uv',
+    source:'locked_screenshot_css_px_normalized',
     back_center_uv:{x:Number(back.x),y:Number(back.y)},
     front_center_uv:{x:Number(front.x),y:Number(front.y)},
     forward_vector_uv:{x:dx/len,y:dy/len},
     interpretation:'Backrest must be on the BACK anchor side. Open/front side of seat must face the FRONT anchor. Never reverse this vector.',
     allow_180_flip:false,
-    allow_front_back_mirror:false
+    allow_front_back_mirror:false,
+    valid:true
   };
 }
 
@@ -1675,7 +1722,7 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     const cameraRelativeAngle=getCameraRelativeViewAngleDeg(item,viewData);
     const viewLabel=getOrientationViewLabel(cameraRelativeAngle);
     return {
-      generation_constraint:buildGenerationOrientationConstraint(frontMid,backMid),
+      generation_constraint:buildGenerationOrientationConstraint(frontMid,backMid,imageGeometry),
       debug_only:{
         forward_world:{
           x:Number(orientationWorld.forward_world.x),
@@ -1729,13 +1776,14 @@ function updateProjectionDebugOverlay(){
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
   svg.innerHTML='';
 
-  if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix) return;
+  const activeSnapshot=getActiveProjectionSnapshot();
+  if(!activeSnapshot?.viewData?.view_matrix || !activeSnapshot?.viewData?.projection_matrix) return;
 
-  const imageGeometry=getCaptureImageGeometry();
+  const imageGeometry=activeSnapshot.imageGeometry || getCaptureImageGeometry();
   const ns='http://www.w3.org/2000/svg';
 
   furnitureItems.forEach(item=>{
-    const projection=getFurnitureScreenProjection(item,latestXRViewData,imageGeometry);
+    const projection=getFurnitureScreenProjection(item,activeSnapshot.viewData,imageGeometry);
     if(!projection || projection.visibility==='behind_camera') return;
 
     const floorPoints=projection.floor_polygon.map(p=>p?.css_px).filter(Boolean);
@@ -2147,7 +2195,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_9',
+    protocol_version:'EventVision_v8_10',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2452,26 +2500,135 @@ function getPlanPositionFromWorld(worldPosition){
   };
 }
 
-function saveScreenshotPose(){
+function getActiveProjectionSnapshot(){
+  if(screenshotFrameLocked && lockedGenerationFrame?.xr_view){
+    return {viewData:lockedGenerationFrame.xr_view,imageGeometry:lockedGenerationFrame.image};
+  }
+  return {viewData:latestXRViewData,imageGeometry:getCaptureImageGeometry()};
+}
+
+function validateFurnitureGenerationConstraints(furnitureSceneData){
+  const issues=[];
+  (furnitureSceneData || []).forEach(item=>{
+    const gc=item?.screen_projection?.orientation?.generation_constraint;
+    if(!gc || gc.valid === false){
+      issues.push(`${item?.id || 'item'}: missing or invalid orientation constraint`);
+      return;
+    }
+    const pts=[gc.back_center_uv,gc.front_center_uv];
+    pts.forEach((pt,i)=>{
+      if(!normalizedPointInsideUnitSquare(pt)){
+        issues.push(`${item?.id || 'item'}: ${(i===0?'back':'front')} anchor is outside photo bounds`);
+      }
+    });
+  });
+  return {valid:issues.length===0,issues};
+}
+
+async function lockGenerationFrame(){
+  if(!session || !completed){
+    alert('Live AR tracking is not active. Finish the room scan first.');
+    return;
+  }
+
+  if(screenshotFrameLocked){
+    screenshotFrameLocked=false;
+    lockedGenerationFrame=null;
+    savedScreenshotPose=null;
+    if(el.lockGenerationFrame){
+      el.lockGenerationFrame.textContent='Lock generation frame';
+      el.lockGenerationFrame.classList.remove('locked');
+      el.lockGenerationFrame.disabled=false;
+    }
+    if(el.screenshotPoseStatus){
+      el.screenshotPoseStatus.textContent='Live AR pose · not locked';
+    }
+    renderScreenshotPoseDetails();
+    updateProjectionDebugOverlay();
+    return;
+  }
+
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.disabled=true;
+    el.lockGenerationFrame.textContent='Locking…';
+  }
+
+  const snapshot=await waitForNextXRFrameSnapshot(900);
+  const imageGeometry=getCaptureImageGeometry();
+  const furniture=getFurnitureSceneData(snapshot.xr_view,imageGeometry);
+  const validation=validateFurnitureGenerationConstraints(furniture);
+
+  if(!validation.valid){
+    if(el.lockGenerationFrame){
+      el.lockGenerationFrame.disabled=false;
+      el.lockGenerationFrame.textContent='Lock generation frame';
+      el.lockGenerationFrame.classList.remove('locked');
+    }
+    if(el.screenshotPoseStatus){
+      el.screenshotPoseStatus.textContent='Lock failed · keep chairs inside view';
+    }
+    alert(`Could not lock generation frame.\n\n${validation.issues.join('\n')}`);
+    return;
+  }
+
+  lockedGenerationFrame={
+    locked_at:new Date().toISOString(),
+    lock_mode:'generation_frame_lock',
+    camera:cloneData(snapshot.camera),
+    xr_view:cloneData(snapshot.xr_view),
+    image:cloneData(imageGeometry),
+    furniture:cloneData(furniture),
+    validation
+  };
+
+  screenshotFrameLocked=true;
+  savedScreenshotPose={
+    saved_at:lockedGenerationFrame.locked_at,
+    capture_mode:'locked_generation_frame',
+    timing_note:'The generation frame was explicitly locked in Screenshot mode. All orientation anchors are derived from the frozen on-screen overlay in this exact viewport.',
+    camera:cloneData(snapshot.camera),
+    xr_view:cloneData(snapshot.xr_view),
+    image:cloneData(imageGeometry),
+    plan_position:snapshot.camera?.position ? getPlanPositionFromWorld(snapshot.camera.position) : null,
+    furniture:cloneData(furniture),
+    generation_frame_locked:true,
+    validation
+  };
+
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.disabled=false;
+    el.lockGenerationFrame.textContent='Unlock live overlay';
+    el.lockGenerationFrame.classList.add('locked');
+  }
+  if(el.screenshotPoseStatus){
+    el.screenshotPoseStatus.textContent='Generation frame locked ✓';
+  }
+
+  renderScreenshotPoseDetails();
+  updateProjectionDebugOverlay();
+}
+
+function saveScreenshotPose(){function saveScreenshotPose(){
   const camera=getCurrentCameraMetadata();
   const xrView=cloneData(latestXRViewData);
   const imageGeometry=getCaptureImageGeometry();
 
   savedScreenshotPose={
     saved_at:new Date().toISOString(),
-    capture_mode:'manual_os_screenshot_pose',
-    timing_note:'Pose is saved by the web app; the physical iPhone screenshot occurs separately. Projection targets shown in Screenshot mode are live XR projections. Footprint confirms placement/size; green FRONT and light-purple BACK visualize the single canonical orientation vector.',
+    capture_mode:'live_preview_pose',
+    timing_note:'Live preview pose only. For generation, use Lock generation frame so the JSON matches the exact screenshot view.',
     camera,
     xr_view:xrView,
     image:imageGeometry,
     plan_position:camera?.position ? getPlanPositionFromWorld(camera.position) : null,
-    furniture:getFurnitureSceneData(xrView,imageGeometry)
+    furniture:getFurnitureSceneData(xrView,imageGeometry),
+    generation_frame_locked:false
   };
 
   renderScreenshotPoseDetails();
 
-  if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent=camera ? 'Pose saved · manual screenshot' : 'Pose unavailable';
+  if(el.screenshotPoseStatus && !screenshotFrameLocked){
+    el.screenshotPoseStatus.textContent=camera ? 'Live AR pose · not locked' : 'Pose unavailable';
   }
 }
 
@@ -2486,14 +2643,18 @@ function renderScreenshotPoseDetails(){
   const p=savedScreenshotPose.camera?.position;
   const plan=savedScreenshotPose.plan_position;
   const yaw=savedScreenshotPose.camera?.yaw_deg;
+  const locked=!!savedScreenshotPose.generation_frame_locked;
+  const issues=savedScreenshotPose.validation?.issues || [];
 
   el.screenshotPoseDetails.innerHTML=`
     <div class="captureDetailCard">
-      <strong>Latest manual screenshot pose</strong>
+      <strong>${locked ? 'Locked generation frame' : 'Latest live preview pose'}</strong>
       <span>
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera pose unavailable'}
         ${plan ? `<br>Plan X ${plan.x.toFixed(3)} · Z ${plan.z.toFixed(3)} m` : ''}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
+        ${locked ? `<br>Frame lock active · use this exact frozen overlay for the iPhone screenshot.` : '<br>Frame not locked yet.'}
+        ${issues.length ? `<br>Validation: ${issues.join(' ; ')}` : '<br>Validation: OK'}
       </span>
     </div>
   `;
@@ -2506,6 +2667,8 @@ function enterScreenshotMode(){
   }
 
   screenshotModeActive=true;
+  screenshotFrameLocked=false;
+  lockedGenerationFrame=null;
   try{
     saveScreenshotPose();
   }catch(err){
@@ -2513,6 +2676,12 @@ function enterScreenshotMode(){
     if(el.screenshotPoseStatus){
       el.screenshotPoseStatus.textContent='Live AR pose · metadata warning';
     }
+  }
+
+  if(el.lockGenerationFrame){
+    el.lockGenerationFrame.textContent='Lock generation frame';
+    el.lockGenerationFrame.classList.remove('locked');
+    el.lockGenerationFrame.disabled=false;
   }
 
   document.body.classList.remove('layout-mode');
@@ -2531,7 +2700,6 @@ function enterScreenshotMode(){
 
 function exitScreenshotMode(){
   screenshotModeActive=false;
-  saveScreenshotPose();
   if(el.projectionDebug) el.projectionDebug.innerHTML='';
 
   document.body.classList.remove('screenshot-mode');
@@ -2546,6 +2714,7 @@ function exitScreenshotMode(){
 }
 
 el.screenshotMode?.addEventListener('click',enterScreenshotMode);
+el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
 function enterPhotoMode(){
@@ -2755,17 +2924,17 @@ async function shareActiveCapture(){
 }
 
 function buildSceneExportData(){
-  const projectionView=savedScreenshotPose?.xr_view || latestXRViewData;
-  const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
+  const projectionView=lockedGenerationFrame?.xr_view || savedScreenshotPose?.xr_view || latestXRViewData;
+  const projectionImage=lockedGenerationFrame?.image || savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_9',
+    protocol_version:'EventVision_v8_10',
     exported_at:new Date().toISOString(),
     generation_rules:{
-      schema:'eventvision_canonical_orientation_v3',
+      schema:'eventvision_frame_locked_orientation_v1',
       source_of_truth:'json',
       original_photo_role:'authoritative architecture, camera view, lighting and perspective',
-      screenshot_overlay_role:'authoritative photo-space placement/size verification only',
+      screenshot_overlay_role:'authoritative photo-space placement/size verification from the locked generation frame only',
       generation_plan_role:'global orientation confirmation only',
       placement_authoritative:true,
       size_authoritative:true,
@@ -2773,7 +2942,7 @@ function buildSceneExportData(){
       placement_source:'furniture[].screen_projection.floor_polygon',
       size_source:'furniture[].screen_projection.height_anchor',
       orientation_source:'furniture[].screen_projection.orientation.generation_constraint',
-      orientation_rule:'For every furniture item, generation_constraint is the ONLY pose/facing instruction. Place the backrest on back_center_uv and the open seat/front toward front_center_uv. Never reverse the vector.',
+      orientation_rule:'For every furniture item, generation_constraint is the ONLY pose/facing instruction. Place the backrest on back_center_uv and the open seat/front toward front_center_uv. Never reverse the vector. All anchors must come from the explicitly locked screenshot frame.',
       front_back_mirroring_forbidden:true,
       debug_orientation_policy:'Ignore furniture[].screen_projection.orientation.debug_only during generation. It exists only for diagnostics and UI visualization.',
       generation_plan_policy:'Use the 2D plan only to visually confirm FRONT/BACK relationships. Never derive photo-space position, scale, or a second orientation angle from it.',
@@ -2796,7 +2965,13 @@ function buildSceneExportData(){
       }
     },
     room:scanSceneData,
+    inventory:{
+      exact_count:furnitureItems.length,
+      allow_extra_objects:false,
+      item_ids:furnitureItems.map(item=>`${item.type}_${String(item.id).padStart(2,'0')}`)
+    },
     furniture:getFurnitureSceneData(projectionView,projectionImage),
+    locked_generation_frame:cloneData(lockedGenerationFrame),
     latest_screenshot_pose:cloneData(savedScreenshotPose),
     captured_views:captures.map(capture=>cloneData(capture.metadata || capture))
   };
@@ -3016,6 +3191,10 @@ async function exportGenerationPlanPNG(){
 }
 
 async function exportSceneJSON(){
+  if(!lockedGenerationFrame){
+    alert('Open Screenshot mode, position the phone, and tap Lock generation frame before exporting JSON.');
+    return;
+  }
   const data=buildSceneExportData();
   const json=JSON.stringify(data,null,2);
   const filename=`eventvision-scene-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
