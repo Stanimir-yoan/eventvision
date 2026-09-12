@@ -1459,6 +1459,11 @@ function getFurnitureOrientationWorldPoints(item){
     center_floor:{x:center.x,y:center.y,z:center.z},
     front_mid:combine(halfD,0),
     back_mid:combine(-halfD,0),
+    back_edge:[
+      combine(-halfD,-halfW),
+      combine(-halfD,halfW)
+    ],
+    // Deprecated alias kept for older exports/readers.
     backrest_edge:[
       combine(-halfD,-halfW),
       combine(-halfD,halfW)
@@ -1536,6 +1541,37 @@ function getCameraRelativeViewAngleDeg(item,viewData=null){
   return Number(normalizeAngleDeg(angle));
 }
 
+function getOrientationViewLabel(cameraRelativeAngleDeg){
+  if(!Number.isFinite(cameraRelativeAngleDeg)) return null;
+  const a=normalizeAngleDeg(cameraRelativeAngleDeg);
+
+  if(a >= -22.5 && a < 22.5) return 'front_view';
+  if(a >= 22.5 && a < 67.5) return 'front_right_3q';
+  if(a >= 67.5 && a < 112.5) return 'right_profile';
+  if(a >= 112.5 && a < 157.5) return 'rear_right_3q';
+  if(a >= 157.5 || a < -157.5) return 'back_view';
+  if(a >= -157.5 && a < -112.5) return 'rear_left_3q';
+  if(a >= -112.5 && a < -67.5) return 'left_profile';
+  return 'front_left_3q';
+}
+
+function getFurnitureOrientationSemantics(cameraRelativeAngleDeg){
+  return {
+    authoritative:true,
+    front_edge_role:'chair_front',
+    back_edge_role:'chair_backrest_side',
+    front_back_mirroring_allowed:false,
+    must_place_backrest_on_back_edge:true,
+    must_open_seat_toward_front_edge:true,
+    view_label:getOrientationViewLabel(cameraRelativeAngleDeg),
+    view_label_basis:'camera_relative_view_angle_deg',
+    debug_overlay_colors:{
+      front_edge:'green',
+      back_edge:'light_purple'
+    }
+  };
+}
+
 function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
   const box=getFurnitureWorldBox(item);
   if(!box) return null;
@@ -1573,9 +1609,12 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     const centerFloor=simplify(projectWorldPoint(orientationWorld.center_floor,viewData,imageGeometry));
     const frontMid=simplify(projectWorldPoint(orientationWorld.front_mid,viewData,imageGeometry));
     const backMid=simplify(projectWorldPoint(orientationWorld.back_mid,viewData,imageGeometry));
-    const backrestEdge=orientationWorld.backrest_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)));
+    const backEdge=orientationWorld.back_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)));
     const frontEdge=orientationWorld.front_edge.map(p=>simplify(projectWorldPoint(p,viewData,imageGeometry)));
+    const cameraRelativeAngle=getCameraRelativeViewAngleDeg(item,viewData);
+    const viewLabel=getOrientationViewLabel(cameraRelativeAngle);
     return {
+      orientation_authoritative:true,
       forward_world:{
         x:Number(orientationWorld.forward_world.x),
         y:Number(orientationWorld.forward_world.y),
@@ -1584,12 +1623,16 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
       center_floor:centerFloor,
       front_mid:frontMid,
       back_mid:backMid,
-      backrest_edge:backrestEdge,
       front_edge:frontEdge,
+      back_edge:backEdge,
+      // Deprecated alias retained for compatibility with v8.6 readers.
+      backrest_edge:backEdge,
       screen_forward_angle_deg:getScreenForwardAngleDeg(centerFloor, frontMid),
       screen_forward_angle_convention:'0=right, 90=down, 180=left, 270=up in image coordinates',
-      camera_relative_view_angle_deg:getCameraRelativeViewAngleDeg(item,viewData),
-      camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view'
+      camera_relative_view_angle_deg:cameraRelativeAngle,
+      camera_relative_view_angle_convention:'signed ground-plane angle from chair forward to chair-to-camera vector; 0=front view, +90=right-side view, -90=left-side view, ±180=back view',
+      view_label:viewLabel,
+      semantic_rule:getFurnitureOrientationSemantics(cameraRelativeAngle)
     };
   })() : null;
 
@@ -1611,7 +1654,7 @@ function getFurnitureScreenProjection(item,viewData,imageGeometry=null){
     bounding_box_css_px:getBoundingBoxFromProjected(all,'css_px'),
     bounding_box_output_px:getBoundingBoxFromProjected(all,'output_px'),
     bounding_box_os_screenshot_px_estimate:getBoundingBoxFromProjected(all,'os_screenshot_px_estimate'),
-    note:'Use floor_polygon for placement, orientation.backrest_edge and orientation.front_edge for facing, orientation.screen_forward_angle_deg and orientation.camera_relative_view_angle_deg for numeric orientation, and height_anchor for overall perceived height.'
+    note:'JSON orientation semantics are authoritative. Use floor_polygon for placement, orientation.front_edge as chair front, orientation.back_edge as chair backrest side, orientation.view_label for camera-facing view, and height_anchor for overall perceived height. Never mirror front/back.'
   };
 }
 
@@ -1641,7 +1684,7 @@ function updateProjectionDebugOverlay(){
       svg.appendChild(poly);
     }
 
-    const backrest=projection.orientation?.backrest_edge?.map(p=>p?.css_px).filter(Boolean) || [];
+    const backrest=(projection.orientation?.back_edge || projection.orientation?.backrest_edge || []).map(p=>p?.css_px).filter(Boolean);
     if(backrest.length===2){
       const line=document.createElementNS(ns,'line');
       line.setAttribute('class','projectionBackrest');
@@ -2041,7 +2084,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_6_1',
+    protocol_version:'EventVision_v8_7',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2653,8 +2696,31 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_6_1',
+    protocol_version:'EventVision_v8_7',
     exported_at:new Date().toISOString(),
+    generation_rules:{
+      schema:'eventvision_orientation_semantics_v1',
+      source_of_truth:'json',
+      overlay_role:'debug_only',
+      placement_authoritative:true,
+      orientation_authoritative:true,
+      front_back_mirroring_forbidden:true,
+      placement_source:'furniture[].screen_projection.floor_polygon',
+      front_source:'furniture[].screen_projection.orientation.front_edge',
+      back_source:'furniture[].screen_projection.orientation.back_edge',
+      view_source:'furniture[].screen_projection.orientation.view_label',
+      numeric_orientation_sources:[
+        'furniture[].screen_projection.orientation.screen_forward_angle_deg',
+        'furniture[].screen_projection.orientation.camera_relative_view_angle_deg'
+      ],
+      size_source:'furniture[].screen_projection.height_anchor',
+      chair_semantics:{
+        front_edge:'open/front side of chair seat; never place backrest here',
+        back_edge:'backrest side of chair; backrest must remain on this side',
+        mirroring:'forbidden'
+      },
+      conflict_resolution:'If overlay appearance, reference-image pose, or model inference conflicts with JSON semantics, follow JSON.'
+    },
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
     latest_screenshot_pose:cloneData(savedScreenshotPose),
