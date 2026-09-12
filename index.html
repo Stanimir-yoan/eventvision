@@ -717,6 +717,7 @@ body.xr-active.photo-mode canvas{
   margin-top:8px;
 }
 .debugActionRow .debugCaptureLink{margin-top:0;}
+.debugActionRow .exportPlanBtn{grid-column:1 / -1;}
 
 .planWallLabel{
   fill:#9fa1ad;
@@ -877,7 +878,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.3</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · HELLOXR TEST</div><span class="versionBadge">v8.8</span></div>
   <h1>Scan the real floor</h1>
   <p>This build uses WebXR hit testing for real 3D floor points while HelloXR supplies ARKit camera passthrough and tracking.</p>
 
@@ -920,7 +921,7 @@ body.xr-active.screenshot-mode .screenshotHud{
     </div>
     <div id="furnitureCount"></div>
     <div class="furnitureHint">Drag furniture directly on the plan. Select an item to rotate or delete it.</div>
-    <div class="furnitureScaleNote">Chair footprint: 0.55 × 0.55 m, scaled from the measured room.</div>
+    <div class="furnitureScaleNote">Chair footprint: 0.60 × 0.60 m, scaled from the measured room.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
       <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
@@ -940,6 +941,9 @@ body.xr-active.screenshot-mode .screenshotHud{
       </button>
       <button id="exportData" class="debugCaptureLink" type="button">
         Export scene JSON
+      </button>
+      <button id="exportPlan" class="debugCaptureLink exportPlanBtn" type="button">
+        Export 2D generation plan
       </button>
     </div>
 
@@ -1122,6 +1126,7 @@ const el = {
   confirmFurniture: document.getElementById('confirmFurniture'),
   cameraView: document.getElementById('cameraView'),
   exportData: document.getElementById('exportData'),
+  exportPlan: document.getElementById('exportPlan'),
   screenshotMode: document.getElementById('screenshotMode'),
   screenshotHud: document.getElementById('screenshotHud'),
   projectionDebug: document.getElementById('projectionDebug'),
@@ -2084,7 +2089,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v8_7',
+    protocol_version:'EventVision_v8_8',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2696,16 +2701,22 @@ function buildSceneExportData(){
   const projectionImage=savedScreenshotPose?.image || getCaptureImageGeometry();
 
   return {
-    protocol_version:'EventVision_v8_7',
+    protocol_version:'EventVision_v8_8',
     exported_at:new Date().toISOString(),
     generation_rules:{
-      schema:'eventvision_orientation_semantics_v1',
+      schema:'eventvision_multisource_generation_v2',
       source_of_truth:'json',
+      original_photo_role:'authoritative architecture, camera view, lighting and perspective',
       overlay_role:'debug_only',
+      generation_plan_role:'orientation_and_global_layout_reference_only',
+      generation_plan_must_not_override_photo_space_placement:true,
+      generation_plan_must_not_override_photo_space_scale:true,
       placement_authoritative:true,
       orientation_authoritative:true,
+      size_authoritative:true,
       front_back_mirroring_forbidden:true,
       placement_source:'furniture[].screen_projection.floor_polygon',
+      size_source:'furniture[].screen_projection.height_anchor',
       front_source:'furniture[].screen_projection.orientation.front_edge',
       back_source:'furniture[].screen_projection.orientation.back_edge',
       view_source:'furniture[].screen_projection.orientation.view_label',
@@ -2713,19 +2724,247 @@ function buildSceneExportData(){
         'furniture[].screen_projection.orientation.screen_forward_angle_deg',
         'furniture[].screen_projection.orientation.camera_relative_view_angle_deg'
       ],
-      size_source:'furniture[].screen_projection.height_anchor',
+      source_priority:{
+        architecture_camera_lighting:'original_space_photo',
+        photo_space_placement:'scene_json_screen_projection',
+        photo_space_size:'scene_json_height_anchor',
+        furniture_orientation:'scene_json_semantics_confirmed_by_2d_generation_plan',
+        global_layout_orientation_check:'2d_generation_plan',
+        furniture_appearance:'furniture_reference_image'
+      },
+      generation_plan_semantics:{
+        green_edge:'chair_front',
+        light_purple_edge:'chair_backrest_side',
+        orange_marker:'camera_position_and_direction',
+        chair_id:'must_match furniture[].id',
+        role:'Use this plan to understand which way every furniture item faces and its relationship to the other items. Do not use it to estimate pixel position or rendered size in the photograph.'
+      },
       chair_semantics:{
         front_edge:'open/front side of chair seat; never place backrest here',
         back_edge:'backrest side of chair; backrest must remain on this side',
         mirroring:'forbidden'
       },
-      conflict_resolution:'If overlay appearance, reference-image pose, or model inference conflicts with JSON semantics, follow JSON.'
+      conflict_resolution:{
+        photo_space_position:'scene JSON screen projection wins over the 2D plan',
+        photo_space_size:'scene JSON height anchor and dimensions win over the 2D plan',
+        orientation:'scene JSON front/back semantics are authoritative; 2D generation plan is a visual confirmation',
+        architecture:'original space photo wins',
+        appearance:'furniture reference controls design/material only, never pose'
+      }
     },
     room:scanSceneData,
     furniture:getFurnitureSceneData(projectionView,projectionImage),
     latest_screenshot_pose:cloneData(savedScreenshotPose),
     captured_views:captures.map(capture=>cloneData(capture.metadata || capture))
   };
+}
+
+function buildGenerationPlanCanvas(){
+  if(!scanSceneData?.corners?.length || !planTransform){
+    throw new Error('No completed plan available.');
+  }
+
+  const baseW=500;
+  const baseH=430;
+  const scale=2.4;
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(baseW*scale);
+  canvas.height=Math.round(baseH*scale);
+  const ctx=canvas.getContext('2d');
+  if(!ctx) throw new Error('Canvas unavailable.');
+
+  ctx.scale(scale,scale);
+  ctx.fillStyle='#0d0d10';
+  ctx.fillRect(0,0,baseW,baseH);
+
+  const {k,cx,cy,worldCenterX,worldCenterZ}=planTransform;
+  const worldToPlanCanvas=(p)=>({
+    x:(Number(p.x)-worldCenterX)*k+cx,
+    y:(Number(p.z)-worldCenterZ)*k+cy
+  });
+
+  const mapped=scanSceneData.corners.map(c=>worldToPlanCanvas(c.world));
+
+  // Room shape.
+  ctx.beginPath();
+  mapped.forEach((p,i)=> i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+  ctx.closePath();
+  ctx.fillStyle='#18181d';
+  ctx.fill();
+  ctx.strokeStyle='#ffffff';
+  ctx.lineWidth=4;
+  ctx.lineJoin='round';
+  ctx.stroke();
+
+  // Wall labels + corner numbers.
+  ctx.font='700 10px system-ui, -apple-system, sans-serif';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  mapped.forEach((p,i)=>{
+    const q=mapped[(i+1)%mapped.length];
+    const mx=(p.x+q.x)/2;
+    const my=(p.y+q.y)/2;
+    ctx.fillStyle='#a7a8b3';
+    ctx.fillText(`W${i+1}`,mx,my-9);
+  });
+
+  mapped.forEach((p,i)=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,11,0,Math.PI*2);
+    ctx.fillStyle=i===0 ? '#6b5cff' : '#0d0d10';
+    ctx.fill();
+    ctx.strokeStyle='#ffffff';
+    ctx.lineWidth=3;
+    ctx.stroke();
+    ctx.fillStyle='#ffffff';
+    ctx.font='800 11px system-ui, -apple-system, sans-serif';
+    ctx.fillText(String(i+1),p.x,p.y+.5);
+  });
+
+  // Furniture: footprint only, with explicit semantic front/back edges.
+  furnitureItems.forEach(item=>{
+    const dims=getFurnitureDimensions(item);
+    const fw=Number(dims.footprint_width ?? dims.width);
+    const fd=Number(dims.footprint_depth ?? dims.depth);
+    if(!Number.isFinite(fw) || !Number.isFinite(fd)) return;
+
+    const center={x:item.x*baseW,y:item.y*baseH};
+    const w=fw*k;
+    const d=fd*k;
+    const theta=Number(item.rotation || 0)*Math.PI/180;
+
+    ctx.save();
+    ctx.translate(center.x,center.y);
+    ctx.rotate(theta);
+
+    ctx.fillStyle='rgba(107,92,255,.16)';
+    ctx.strokeStyle='#8e83ff';
+    ctx.lineWidth=2;
+    ctx.fillRect(-w/2,-d/2,w,d);
+    ctx.strokeRect(-w/2,-d/2,w,d);
+
+    // Backrest side = local top edge.
+    ctx.strokeStyle='#d9d5ff';
+    ctx.lineWidth=5;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(-w/2,-d/2);
+    ctx.lineTo(w/2,-d/2);
+    ctx.stroke();
+
+    // Front/open side = local bottom edge.
+    ctx.strokeStyle='#63efb0';
+    ctx.beginPath();
+    ctx.moveTo(-w/2,d/2);
+    ctx.lineTo(w/2,d/2);
+    ctx.stroke();
+    ctx.restore();
+
+    const id=`${item.type}_${String(item.id).padStart(2,'0')}`;
+    ctx.font='800 10px system-ui, -apple-system, sans-serif';
+    ctx.textAlign='center';
+    ctx.textBaseline='bottom';
+    ctx.fillStyle='#ffffff';
+    ctx.fillText(id,center.x,center.y-d/2-9);
+  });
+
+  // Camera position and direction from the saved screenshot pose.
+  const cam=savedScreenshotPose?.camera;
+  if(cam?.position){
+    const cp=worldToPlanCanvas(cam.position);
+    let angle=-Math.PI/2;
+    if(cam.forward && Number.isFinite(cam.forward.x) && Number.isFinite(cam.forward.z)){
+      angle=Math.atan2(Number(cam.forward.z),Number(cam.forward.x));
+    }
+
+    ctx.save();
+    ctx.translate(cp.x,cp.y);
+    ctx.rotate(angle);
+    ctx.fillStyle='#ff9a4d';
+    ctx.strokeStyle='#ff9a4d';
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.arc(0,0,7,0,Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(8,0);
+    ctx.lineTo(34,0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(34,0);
+    ctx.lineTo(25,-6);
+    ctx.lineTo(25,6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle='#ffb27b';
+    ctx.font='800 10px system-ui, -apple-system, sans-serif';
+    ctx.textAlign='left';
+    ctx.textBaseline='bottom';
+    ctx.fillText('CAMERA',cp.x+10,cp.y-10);
+  }
+
+  // Compact legend. This is intentionally semantic, not decorative.
+  const legendY=baseH-18;
+  ctx.font='800 9px system-ui, -apple-system, sans-serif';
+  ctx.textBaseline='middle';
+  ctx.textAlign='left';
+
+  ctx.strokeStyle='#63efb0';
+  ctx.lineWidth=5;
+  ctx.beginPath(); ctx.moveTo(18,legendY); ctx.lineTo(43,legendY); ctx.stroke();
+  ctx.fillStyle='#ffffff'; ctx.fillText('FRONT',49,legendY);
+
+  ctx.strokeStyle='#d9d5ff';
+  ctx.beginPath(); ctx.moveTo(100,legendY); ctx.lineTo(125,legendY); ctx.stroke();
+  ctx.fillStyle='#ffffff'; ctx.fillText('BACKREST',131,legendY);
+
+  ctx.fillStyle='#ff9a4d';
+  ctx.beginPath(); ctx.arc(216,legendY,5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#ffffff'; ctx.fillText('CAMERA',227,legendY);
+
+  return canvas;
+}
+
+async function exportGenerationPlanPNG(){
+  let canvas;
+  try{
+    canvas=buildGenerationPlanCanvas();
+  }catch(err){
+    console.warn('Generation plan export unavailable',err);
+    alert('Finish a room scan before exporting the 2D generation plan.');
+    return;
+  }
+
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png',1));
+  if(!blob){
+    alert('Could not create the 2D generation plan.');
+    return;
+  }
+
+  const filename=`eventvision-generation-plan-${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
+  const file=new File([blob],filename,{type:'image/png'});
+
+  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+    try{
+      await navigator.share({files:[file],title:'EventVision 2D generation plan'});
+      return;
+    }catch(err){
+      if(err?.name==='AbortError') return;
+      console.warn('Plan share failed, falling back',err);
+    }
+  }
+
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
 }
 
 async function exportSceneJSON(){
@@ -2781,6 +3020,7 @@ async function exportSceneJSON(){
 }
 
 el.exportData?.addEventListener('click',exportSceneJSON);
+el.exportPlan?.addEventListener('click',exportGenerationPlanPNG);
 
 el.cameraView?.addEventListener('click',enterPhotoMode);
 el.backToPlan?.addEventListener('click',exitPhotoMode);
