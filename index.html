@@ -538,25 +538,62 @@ body.xr-active.layout-mode canvas{
   border:1px solid transparent !important;
 }
 
-.debugCaptureLink{
-  width:100%;
-  margin-top:8px;
-  min-height:38px;
-  border:0;
-  background:transparent;
-  color:var(--muted);
-  font-size:11px;
-  font-weight:750;
-}
-
 .debugActionRow{
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:8px;
-  margin-top:8px;
+  gap:10px;
+  margin-top:12px;
 }
-.debugActionRow .debugCaptureLink{margin-top:0;}
-.debugActionRow .exportPlanBtn{grid-column:1 / -1;}
+
+.exportActionBtn{
+  width:100%;
+  min-height:58px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:15px;
+  background:linear-gradient(180deg,#24242c,#19191f);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:10px;
+  padding:0 14px;
+  font-size:13px;
+  font-weight:850;
+  text-align:left;
+  box-shadow:0 8px 24px rgba(0,0,0,.18);
+  -webkit-tap-highlight-color:transparent;
+}
+.exportActionBtn:active{transform:translateY(1px);}
+.exportActionBtn .exportIcon{
+  width:32px;
+  height:32px;
+  border-radius:10px;
+  display:grid;
+  place-items:center;
+  background:rgba(107,92,255,.18);
+  color:#c9c2ff;
+  font-size:17px;
+  flex:0 0 auto;
+}
+.exportActionBtn .exportCopy{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.exportActionBtn .exportTitle{font-size:13px;font-weight:900;color:#fff;}
+.exportActionBtn .exportSub{font-size:10px;font-weight:650;color:var(--muted);line-height:1.2;}
+.exportActionBtn.exportPlanBtn .exportIcon{background:rgba(67,212,124,.16);color:#7be7a4;}
+.exportStatus{
+  grid-column:1 / -1;
+  min-height:18px;
+  padding:2px 2px 0;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.35;
+}
+.exportStatus.good{color:#71e69e;}
+.exportStatus.warn{color:#ffbf74;}
+.exportStatus.error{color:#ff7f8d;}
+@media(max-width:520px){
+  .debugActionRow{grid-template-columns:1fr;}
+  .exportStatus{grid-column:1;}
+}
 
 .planWallLabel{
   fill:#9fa1ad;
@@ -718,7 +755,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.0.1 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -787,13 +824,22 @@ body.xr-active.screenshot-mode .screenshotHud{
       </button>
     </div>
 
-    <div class="debugActionRow">
-      <button id="exportData" class="debugCaptureLink" type="button">
-        Export scene JSON
+    <div class="debugActionRow" aria-label="Generation exports">
+      <button id="exportData" class="exportActionBtn" type="button">
+        <span class="exportIcon">{ }</span>
+        <span class="exportCopy">
+          <span class="exportTitle">Export scene JSON</span>
+          <span class="exportSub">Locked camera + exact chair targets</span>
+        </span>
       </button>
-      <button id="exportPlan" class="debugCaptureLink exportPlanBtn" type="button">
-        Export 2D generation plan
+      <button id="exportPlan" class="exportActionBtn exportPlanBtn" type="button">
+        <span class="exportIcon">▱</span>
+        <span class="exportCopy">
+          <span class="exportTitle">Export 2D plan PNG</span>
+          <span class="exportSub">Clean orientation cross-check image</span>
+        </span>
       </button>
+      <div id="exportStatus" class="exportStatus" role="status" aria-live="polite">Lock a generation frame before exporting.</div>
     </div>
 
     <details id="detailsPanel">
@@ -893,6 +939,7 @@ const el = {
   addFurniture: document.getElementById('addFurniture'),
   exportData: document.getElementById('exportData'),
   exportPlan: document.getElementById('exportPlan'),
+  exportStatus: document.getElementById('exportStatus'),
   screenshotMode: document.getElementById('screenshotMode'),
   screenshotHud: document.getElementById('screenshotHud'),
   projectionDebug: document.getElementById('projectionDebug'),
@@ -1684,7 +1731,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_0_clean',
+    protocol_version:'EventVision_v9_0_1_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -1971,6 +2018,7 @@ function invalidateGenerationFrame(reason='Furniture layout changed'){
     el.screenshotPoseStatus.textContent='Frame invalidated · lock again';
   }
   renderGenerationFrameDetails(reason);
+  setExportStatus('Frame changed. Lock a new generation frame before exporting.','warn');
   if(screenshotModeActive) updateProjectionDebugOverlay();
 }
 
@@ -1987,6 +2035,7 @@ function lockGenerationFrame(){
       el.lockGenerationFrame.classList.remove('locked');
     }
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready to lock';
+    setExportStatus('Frame unlocked. Lock again before exporting.','warn');
     renderGenerationFrameDetails();
     updateProjectionDebugOverlay();
     return;
@@ -2018,6 +2067,7 @@ function lockGenerationFrame(){
     el.lockGenerationFrame.classList.add('locked');
   }
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Frame locked ✓';
+  setExportStatus('Frame locked. JSON and 2D plan are ready to export.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
 }
@@ -2104,7 +2154,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_0_clean',
+    protocol_version:'EventVision_v9_0_1_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_clean_generation_v1',
@@ -2313,103 +2363,122 @@ function buildGenerationPlanCanvas(){
   return canvas;
 }
 
-async function exportGenerationPlanPNG(){
-  if(!lockedGenerationFrame){
-    alert('Lock the generation frame first so the exported plan uses the same camera reference as the JSON and screenshot.');
-    return;
-  }
-  let canvas;
+function setExportStatus(message,type=''){
+  if(!el.exportStatus) return;
+  el.exportStatus.textContent=message;
+  el.exportStatus.classList.remove('good','warn','error');
+  if(type) el.exportStatus.classList.add(type);
+}
+
+function timestampForFilename(){
+  return new Date().toISOString().replace(/[:.]/g,'-');
+}
+
+async function tryNativeShare(blob,filename,title){
   try{
-    canvas=buildGenerationPlanCanvas();
+    if(typeof File==='undefined' || !navigator.share) return false;
+    const file=new File([blob],filename,{type:blob.type || 'application/octet-stream'});
+    if(navigator.canShare && !navigator.canShare({files:[file]})) return false;
+    await navigator.share({files:[file],title});
+    return 'shared';
   }catch(err){
-    console.warn('Generation plan export unavailable',err);
-    alert('Finish a room scan before exporting the 2D generation plan.');
-    return;
-  }
-
-  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png',1));
-  if(!blob){
-    alert('Could not create the 2D generation plan.');
-    return;
-  }
-
-  const filename=`eventvision-generation-plan-${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
-  const file=new File([blob],filename,{type:'image/png'});
-
-  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-    try{
-      await navigator.share({files:[file],title:'EventVision 2D generation plan'});
-      return;
-    }catch(err){
-      if(err?.name==='AbortError') return;
-      console.warn('Plan share failed, falling back',err);
+    if(err?.name==='AbortError'){
+      setExportStatus('Export cancelled. Tap the button to try again.','warn');
+      return 'cancelled';
     }
+    console.warn('Native share failed',err);
+    return false;
   }
+}
 
+function triggerBlobDownload(blob,filename){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
   a.download=filename;
+  a.rel='noopener';
   a.style.display='none';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),5000);
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
+async function exportBlobRobust(blob,filename,title,{textFallback=null}={}){
+  // HelloXR/iOS usually handles file export best through the native share sheet.
+  const shareResult=await tryNativeShare(blob,filename,title);
+  if(shareResult==='shared') return 'shared';
+  if(shareResult==='cancelled') return 'cancelled';
+
+  // Standard browser download fallback.
+  try{
+    triggerBlobDownload(blob,filename);
+    return 'downloaded';
+  }catch(err){
+    console.warn('Blob download fallback failed',err);
+  }
+
+  // JSON has one more escape hatch if the webview blocks both sharing and downloads.
+  if(textFallback && navigator.clipboard?.writeText){
+    try{
+      await navigator.clipboard.writeText(textFallback);
+      return 'clipboard';
+    }catch(err){
+      console.warn('Clipboard fallback failed',err);
+    }
+  }
+
+  throw new Error('This browser blocked both file sharing and download.');
+}
+
+function ensureLockedFrameForExport(){
+  if(lockedGenerationFrame) return true;
+  setExportStatus('Lock a generation frame first. Opening Screenshot mode…','warn');
+  try{ enterScreenshotMode(); }catch(err){ console.warn(err); }
+  return false;
+}
+
+async function exportGenerationPlanPNG(){
+  if(!ensureLockedFrameForExport()) return;
+  setExportStatus('Preparing 2D plan…');
+
+  try{
+    const canvas=buildGenerationPlanCanvas();
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png',1));
+    if(!blob) throw new Error('Could not create PNG data.');
+
+    const filename=`eventvision-generation-plan-${timestampForFilename()}.png`;
+    const result=await exportBlobRobust(blob,filename,'EventVision 2D generation plan');
+    if(result==='shared') setExportStatus('2D plan sent to the share sheet.','good');
+    else if(result==='downloaded') setExportStatus('2D plan export started.','good');
+    else if(result==='cancelled') setExportStatus('2D plan export cancelled.','warn');
+    else setExportStatus('2D plan exported.','good');
+  }catch(err){
+    console.error('2D plan export failed',err);
+    setExportStatus(`2D plan export failed: ${err?.message || err}`,'error');
+    alert(`Could not export the 2D plan.\n\n${err?.message || err}`);
+  }
 }
 
 async function exportSceneJSON(){
-  if(!lockedGenerationFrame){
-    alert('Open Screenshot mode, position the phone, and tap Lock frame before exporting JSON.');
-    return;
-  }
-  const data=buildSceneExportData();
-  const json=JSON.stringify(data,null,2);
-  const filename=`eventvision-scene-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
-  const file=new File([json],filename,{type:'application/json'});
+  if(!ensureLockedFrameForExport()) return;
+  setExportStatus('Preparing scene JSON…');
 
-  // iOS/HelloXR runs inside a WebKit webview where programmatic <a download>
-  // can be ignored. Prefer the native share sheet, which can save the JSON
-  // to Files, AirDrop it, or send it to another app.
-  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-    try{
-      await navigator.share({
-        files:[file],
-        title:'EventVision scene JSON'
-      });
-      return;
-    }catch(err){
-      if(err?.name==='AbortError') return;
-      console.warn('JSON share failed, falling back',err);
-    }
-  }
-
-  // Normal browser fallback.
   try{
+    const data=buildSceneExportData();
+    const json=JSON.stringify(data,null,2);
     const blob=new Blob([json],{type:'application/json'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=filename;
-    a.style.display='none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    const filename=`eventvision-scene-${timestampForFilename()}.json`;
+    const result=await exportBlobRobust(blob,filename,'EventVision scene JSON',{textFallback:json});
 
-    // On browsers that support downloads this is enough. On embedded iOS
-    // webviews it may still be ignored, so also keep a clipboard escape hatch.
-    if(!navigator.share && navigator.clipboard?.writeText){
-      await navigator.clipboard.writeText(json);
-      alert('Scene JSON copied to clipboard. This browser may block file downloads.');
-    }
+    if(result==='shared') setExportStatus('Scene JSON sent to the share sheet.','good');
+    else if(result==='downloaded') setExportStatus('Scene JSON export started.','good');
+    else if(result==='cancelled') setExportStatus('Scene JSON export cancelled.','warn');
+    else if(result==='clipboard') setExportStatus('File export was blocked, so the JSON was copied to clipboard.','warn');
   }catch(err){
-    console.warn('JSON download failed',err);
-    try{
-      await navigator.clipboard.writeText(json);
-      alert('Scene JSON copied to clipboard.');
-    }catch(copyErr){
-      alert('Could not export JSON in this browser. Try the native share sheet or open the page in Safari.');
-    }
+    console.error('Scene JSON export failed',err);
+    setExportStatus(`Scene JSON export failed: ${err?.message || err}`,'error');
+    alert(`Could not export the scene JSON.\n\n${err?.message || err}`);
   }
 }
 
