@@ -817,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.1 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.1.1 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -974,10 +974,37 @@ setTimeout(()=>{
   if(status && status.textContent.includes('Checking WebXR')){
     status.innerHTML='<span class="warn">App module did not start. Check the network/Three.js load, then reopen this page in HelloXR.</span>';
   }
-},5000);
+},8000);
 </script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+const threeModuleUrls=[
+  'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js',
+  'https://unpkg.com/three@0.180.0/build/three.module.js',
+  'https://esm.sh/three@0.180.0'
+];
+
+async function loadThreeWithFallback(){
+  let lastError=null;
+  for(const url of threeModuleUrls){
+    try{
+      const mod=await import(url);
+      if(mod && mod.Scene && mod.WebGLRenderer) return mod;
+      lastError=new Error(`Invalid THREE module from ${url}`);
+    }catch(err){
+      console.warn('THREE import failed:', url, err);
+      lastError=err;
+    }
+  }
+  throw lastError || new Error('Unable to load Three.js');
+}
+
+const THREE=await loadThreeWithFallback().catch(err=>{
+  const status=document.getElementById('support');
+  if(status){
+    status.innerHTML=`<span class="warn">Could not load Three.js in this webview. Check internet access in HelloXR and reopen the page.<br><small>${String(err && err.message ? err.message : err)}</small></span>`;
+  }
+  throw err;
+});
 window.__eventVisionModuleReady=true;
 
 const el = {
@@ -1373,7 +1400,7 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   };
 }
 
-function clamp01(v){
+function clampUv01(v){
   return Math.max(0,Math.min(1,Number(v)));
 }
 
@@ -1395,10 +1422,10 @@ function computeFocusRegionUv(projected,padding=0.035){
   const pts=getProjectedUvPoints(projected);
   if(!pts.length) return null;
   const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
-  const min_x=clamp01(Math.min(...xs)-padding);
-  const max_x=clamp01(Math.max(...xs)+padding);
-  const min_y=clamp01(Math.min(...ys)-padding);
-  const max_y=clamp01(Math.max(...ys)+padding);
+  const min_x=clampUv01(Math.min(...xs)-padding);
+  const max_x=clampUv01(Math.max(...xs)+padding);
+  const min_y=clampUv01(Math.min(...ys)-padding);
+  const max_y=clampUv01(Math.max(...ys)+padding);
   return {min_x,max_x,min_y,max_y};
 }
 
@@ -1905,7 +1932,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_1_clean',
+    protocol_version:'EventVision_v9_1_2_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2361,7 +2388,7 @@ function buildSceneExportData(){
   const exactIds=orderedByDepth.map(item=>item.id);
 
   return {
-    protocol_version:'EventVision_v9_1_clean',
+    protocol_version:'EventVision_v9_1_2_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v2',
