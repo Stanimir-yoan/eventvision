@@ -1143,6 +1143,13 @@ const WALL_OCCLUDER_THICKNESS_M = 0.10;
 const WALL_OCCLUDER_OUTWARD_OFFSET_M = 0.05;
 const WALL_OCCLUDER_RENDER_ORDER = -1000;
 
+// v9.7.3 soft visual wall fade. The hard invisible wall depth mask still performs the
+// true occlusion, while chair proxies additionally fade over a short band near the wall
+// crossing so the disappearance is less abrupt in Screenshot mode.
+const WALL_SOFT_FADE_ENABLED = true;
+const WALL_SOFT_FADE_BAND_M = 0.05;
+const WALL_SOFT_FADE_MIN_OPACITY = 0.18;
+
 const SAVED_SPACE_STORAGE_KEY='eventvision_saved_space_v1';
 let calibrationMode=false;
 let calibrationSavedSpace=null;
@@ -1232,7 +1239,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_2_clean',
+    source_protocol:'EventVision_v9_7_3_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1247,6 +1254,9 @@ function makeSavedSpaceSnapshot(){
       wall_height_m:WALL_OCCLUDER_HEIGHT_M,
       wall_thickness_m:WALL_OCCLUDER_THICKNESS_M,
       outward_offset_m:WALL_OCCLUDER_OUTWARD_OFFSET_M,
+      soft_fade_enabled:WALL_SOFT_FADE_ENABLED,
+      soft_fade_band_m:WALL_SOFT_FADE_BAND_M,
+      soft_fade_min_opacity:WALL_SOFT_FADE_MIN_OPACITY,
       mode:'depth_only'
     },
     calibration_anchor:{
@@ -2005,11 +2015,25 @@ function firstBlockingWall(cameraPoint,targetPoint){
   if(pts.length<3) return null;
   const a={x:Number(cameraPoint.x),z:Number(cameraPoint.z)};
   const b={x:Number(targetPoint.x),z:Number(targetPoint.z)};
+  const dx=b.x-a.x;
+  const dz=b.z-a.z;
+  const fullLength=Math.hypot(dx,dz);
   let best=null;
   for(let i=0;i<pts.length;i++){
     const p=pts[i],q=pts[(i+1)%pts.length];
     const t=segmentIntersectionParam2D(a,b,{x:Number(p.x),z:Number(p.z)},{x:Number(q.x),z:Number(q.z)});
-    if(t!=null && (!best || t<best.t)) best={t,wall_id:`wall_${String(i+1).padStart(2,'0')}`};
+    if(t!=null && (!best || t<best.t)){
+      const hitX=a.x+dx*t;
+      const hitZ=a.z+dz*t;
+      best={
+        t,
+        wall_index:i,
+        wall_id:`wall_${String(i+1).padStart(2,'0')}`,
+        hit_point:{x:hitX,z:hitZ},
+        ray_length_m:fullLength,
+        behind_distance_m:Math.max(0,fullLength*(1-t))
+      };
+    }
   }
   return best;
 }
@@ -2043,6 +2067,73 @@ function classifyFurnitureWallOcclusion(item,cameraPoint){
     blocking_wall_ids:unique,
     method:'camera_to_proxy_sample_rays_against_vertical_scanned_walls'
   };
+}
+
+function getFurnitureWallFadeOpacity(item,cameraPoint){
+  if(!WALL_SOFT_FADE_ENABLED || !WALL_OCCLUSION_ENABLED || !cameraPoint) return 1;
+  const band=Math.max(0.001,Number(WALL_SOFT_FADE_BAND_M || 0.05));
+  const minOpacity=Math.max(0,Math.min(1,Number(WALL_SOFT_FADE_MIN_OPACITY || 0.18)));
+  const footprint=getFurnitureFootprintWorld(item);
+  const orientation=getFurnitureOrientationWorldPoints(item);
+  const samples=[];
+  if(footprint?.center) samples.push(footprint.center);
+  if(Array.isArray(footprint?.corners)) samples.push(...footprint.corners);
+  if(orientation?.front_center) samples.push(orientation.front_center);
+  if(orientation?.back_center) samples.push(orientation.back_center);
+  if(!samples.length) return 1;
+
+  let blockedCount=0;
+  let fadePenaltySum=0;
+  const wallIds=[];
+
+  samples.forEach(sample=>{
+    const hit=firstBlockingWall(cameraPoint,sample);
+    if(!hit) return;
+    blockedCount++;
+    wallIds.push(hit.wall_id);
+    const penetration=Math.max(0,Number(hit.behind_distance_m || 0));
+    const localOpacity=minOpacity + (1-minOpacity)*Math.max(0,1-Math.min(1,penetration/band));
+    fadePenaltySum += (1-localOpacity);
+  });
+
+  if(!blockedCount) return 1;
+  const blockedRatio=blockedCount/samples.length;
+  const avgPenalty=fadePenaltySum/blockedCount;
+  const overallOpacity=Math.max(minOpacity, 1 - blockedRatio*avgPenalty);
+  return Number(overallOpacity.toFixed(4));
+}
+
+function setProxyOpacity(root,opacity=1){
+  if(!root) return;
+  const a=Math.max(0,Math.min(1,Number(opacity)));
+  root.userData.visualOpacity=a;
+  root.traverse?.(obj=>{
+    if(!obj?.material) return;
+    const materials=Array.isArray(obj.material) ? obj.material : [obj.material];
+    materials.forEach(mat=>{
+      if(!mat) return;
+      mat.opacity=a;
+      mat.transparent=a<0.999;
+      mat.depthWrite=a>=0.999;
+      mat.needsUpdate=true;
+    });
+  });
+}
+
+function updateFurnitureProxyWallFade(){
+  if(!furnitureProxyGroup) return;
+  if(!screenshotModeActive || !latestViewerPosition || !completed){
+    furnitureProxyGroup.children.forEach(proxy=>setProxyOpacity(proxy,1));
+    return;
+  }
+  const cameraPoint={x:Number(latestViewerPosition.x),y:Number(latestViewerPosition.y),z:Number(latestViewerPosition.z)};
+  furnitureProxyGroup.children.forEach(proxy=>{
+    const id=proxy?.userData?.furnitureId;
+    const item=furnitureItems.find(entry=>String(entry.id)===String(id));
+    if(!item){ setProxyOpacity(proxy,1); return; }
+    const opacity=getFurnitureWallFadeOpacity(item,cameraPoint);
+    setProxyOpacity(proxy,opacity);
+  });
 }
 
 function proxyMaterial(color,opacity=1){
@@ -2281,6 +2372,7 @@ function rebuildFurnitureProxyGuide(){
 
   furnitureProxyGroup.visible=!!screenshotModeActive;
   scene.add(furnitureProxyGroup);
+  updateFurnitureProxyWallFade();
 }
 
 function setFurnitureProxyGuideVisible(visible){
@@ -2637,6 +2729,7 @@ function render(_time,frame){
     }
   }
 
+  updateFurnitureProxyWallFade();
   renderer.render(scene,camera);
 }
 
@@ -2939,7 +3032,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_2_clean',
+    protocol_version:'EventVision_v9_7_3_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3675,7 +3768,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_2_clean',
+    protocol_version:'EventVision_v9_7_3_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
