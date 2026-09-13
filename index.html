@@ -814,7 +814,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 }
 
 
-/* v9.6 — persistent-space relocalization */
+/* v9.6.1 — persistent-space relocalization + GLB chair proxy */
 .savedSpacePanel{
   display:none;
   margin-top:12px;
@@ -859,7 +859,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.6 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.6.1 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1148,12 +1148,24 @@ const PROXY_BACKREST_HEIGHT_M = 0.36;
 const PROXY_BACKREST_THICKNESS_M = 0.055;
 const PROXY_LEG_THICKNESS_M = 0.05;
 
+// v9.6.1: external GLB chair proxy asset stored beside this HTML file.
+// The supplied model was verified as Y-up with its backrest on local -Z,
+// therefore EventVision's existing local +Z = FRONT convention needs no yaw correction.
+const CHAIR_PROXY_GLB_URL = './test-chair.glb';
+const CHAIR_PROXY_GLB_YAW_CORRECTION_DEG = 0;
+let chairProxyGlbTemplate = null;
+let chairProxyGlbLoadState = 'idle';
+let chairProxyGlbPromise = null;
+
 const CORNER_LABEL_BASE_SCALE = 0.18;
 const CORNER_LABEL_SCALE_PER_METER = 0.05;
 const CORNER_LABEL_MIN_SCALE = 0.18;
 const CORNER_LABEL_MAX_SCALE = 0.52;
 
 const distanceXZ = (a,b) => Math.hypot(b.x-a.x,b.z-a.z);
+
+// Preload the project proxy asset in the background; procedural geometry remains a safe fallback.
+loadChairProxyGlb();
 
 // Ground-plane rule: WebXR uses Y as the vertical axis.
 // X/Z remain free so the room can have any floor-plan shape; every saved corner shares one Y.
@@ -1211,7 +1223,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_6_clean',
+    source_protocol:'EventVision_v9_6_1_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1859,11 +1871,136 @@ function addProxyBox(group,size,position,material,renderOrder=850){
   return mesh;
 }
 
-function createFurnitureProxy(item){
-  const center=getFurnitureWorldPosition(item);
-  const dims=getFurnitureDimensions(item);
-  if(!center || item?.type!=='chair') return null;
+function proxyShadeMultiplierFromNormal(nx,ny,nz){
+  const ax=Math.abs(nx), ay=Math.abs(ny), az=Math.abs(nz);
+  if(ay>=ax && ay>=az) return ny>=0 ? 1.10 : 0.66; // top / bottom
+  if(az>=ax) return nz>=0 ? 1.02 : 0.74;            // FRONT +Z / BACK -Z
+  return nx>=0 ? 0.96 : 0.82;                       // right +X / left -X
+}
 
+function applyProxyDirectionalVertexShading(root){
+  root.traverse(obj=>{
+    if(!obj?.isMesh || !obj.geometry) return;
+    const g=obj.geometry.clone();
+    if(!g.attributes?.normal) g.computeVertexNormals();
+    const normals=g.attributes.normal;
+    const colors=new Float32Array(normals.count*3);
+    for(let i=0;i<normals.count;i++){
+      const m=proxyShadeMultiplierFromNormal(normals.getX(i),normals.getY(i),normals.getZ(i));
+      colors[i*3]=m;
+      colors[i*3+1]=m;
+      colors[i*3+2]=m;
+    }
+    g.setAttribute('color',new THREE.BufferAttribute(colors,3));
+    obj.geometry=g;
+
+    // Keep the same EventVision proxy palette as before:
+    // lavender body + lighter seat/upholstery, with deterministic face shading.
+    const materialCount=Array.isArray(obj.material) ? obj.material.length : 1;
+    const mats=[];
+    for(let i=0;i<materialCount;i++){
+      const baseHex=(i===1) ? 0xd5d1e2 : 0xb7b3c8;
+      mats.push(new THREE.MeshBasicMaterial({
+        color:baseHex,
+        vertexColors:true,
+        transparent:false,
+        opacity:1,
+        depthTest:true,
+        depthWrite:true,
+        side:THREE.DoubleSide
+      }));
+    }
+    obj.material=Array.isArray(obj.material) ? mats : mats[0];
+    obj.castShadow=false;
+    obj.receiveShadow=false;
+    obj.renderOrder=850;
+  });
+}
+
+async function loadChairProxyGlb(){
+  if(chairProxyGlbTemplate) return chairProxyGlbTemplate;
+  if(chairProxyGlbPromise) return chairProxyGlbPromise;
+  chairProxyGlbLoadState='loading';
+
+  chairProxyGlbPromise=(async()=>{
+    const loaderUrls=[
+      'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js/+esm',
+      'https://esm.sh/three@0.180.0/examples/jsm/loaders/GLTFLoader.js'
+    ];
+    let GLTFLoaderClass=null;
+    let lastErr=null;
+    for(const url of loaderUrls){
+      try{
+        const mod=await import(url);
+        if(mod?.GLTFLoader){ GLTFLoaderClass=mod.GLTFLoader; break; }
+      }catch(err){ lastErr=err; console.warn('GLTFLoader import failed:',url,err); }
+    }
+    if(!GLTFLoaderClass) throw lastErr || new Error('Unable to load GLTFLoader');
+
+    const loader=new GLTFLoaderClass();
+    const gltf=await new Promise((resolve,reject)=>loader.load(
+      CHAIR_PROXY_GLB_URL,
+      resolve,
+      undefined,
+      reject
+    ));
+    if(!gltf?.scene) throw new Error('GLB did not contain a scene');
+    chairProxyGlbTemplate=gltf.scene;
+    chairProxyGlbLoadState='ready';
+    console.info('EventVision GLB proxy loaded:',CHAIR_PROXY_GLB_URL);
+    // If proxies were already built before the asset finished loading, rebuild them now.
+    if(scene && completed && furnitureItems?.length) rebuildFurnitureProxyGuide();
+    return chairProxyGlbTemplate;
+  })().catch(err=>{
+    chairProxyGlbLoadState='failed';
+    console.warn('EventVision GLB proxy load failed; using procedural fallback.',err);
+    return null;
+  });
+  return chairProxyGlbPromise;
+}
+
+function createGlbFurnitureProxy(item,center,dims){
+  if(!chairProxyGlbTemplate) return null;
+  const width=Number(dims.footprint_width ?? dims.width ?? 0.6);
+  const depth=Number(dims.footprint_depth ?? dims.depth ?? 0.6);
+  const height=Number(dims.overall_height ?? dims.height ?? 0.85);
+  if(!Number.isFinite(width)||!Number.isFinite(depth)||!Number.isFinite(height)) return null;
+
+  const proxy=new THREE.Group();
+  proxy.userData.kind='furnitureProxy';
+  proxy.userData.furnitureId=item.id;
+  proxy.userData.proxyAsset='test-chair.glb';
+  proxy.position.set(center.x,center.y,center.z);
+  proxy.rotation.y=(-Number(item.rotation || 0)+CHAIR_PROXY_GLB_YAW_CORRECTION_DEG)*Math.PI/180;
+
+  const model=chairProxyGlbTemplate.clone(true);
+  model.name='EventVisionGLBChairProxy';
+  applyProxyDirectionalVertexShading(model);
+
+  // Normalize the uploaded GLB into EventVision's authoritative real-world envelope.
+  // Non-uniform XYZ normalization is intentional: proxy footprint/height must match JSON exactly.
+  model.updateMatrixWorld(true);
+  let box=new THREE.Box3().setFromObject(model);
+  const size=new THREE.Vector3();
+  box.getSize(size);
+  if(size.x<1e-6 || size.y<1e-6 || size.z<1e-6) return null;
+  model.scale.multiply(new THREE.Vector3(width/size.x,height/size.y,depth/size.z));
+  model.updateMatrixWorld(true);
+
+  // Put model origin at floor-center: feet on Y=0, centered in X/Z.
+  box=new THREE.Box3().setFromObject(model);
+  const cx=(box.min.x+box.max.x)/2;
+  const cz=(box.min.z+box.max.z)/2;
+  model.position.x-=cx;
+  model.position.y-=box.min.y;
+  model.position.z-=cz;
+  model.updateMatrixWorld(true);
+
+  proxy.add(model);
+  return proxy;
+}
+
+function createProceduralFurnitureProxy(item,center,dims){
   const width=Number(dims.footprint_width ?? dims.width ?? 0.6);
   const depth=Number(dims.footprint_depth ?? dims.depth ?? 0.6);
   const height=Number(dims.overall_height ?? dims.height ?? 0.85);
@@ -1872,59 +2009,45 @@ function createFurnitureProxy(item){
   const proxy=new THREE.Group();
   proxy.userData.kind='furnitureProxy';
   proxy.userData.furnitureId=item.id;
+  proxy.userData.proxyAsset='procedural_fallback';
   proxy.position.set(center.x,center.y,center.z);
-
-  // IMPORTANT: local +Z is FRONT and local -Z is BACK.
-  // This exactly matches getFurnitureOrientationWorld(): forward = (-sinθ, 0, cosθ).
   proxy.rotation.y=-Number(item.rotation || 0)*Math.PI/180;
 
   const bodyMat=createProxyFaceMaterials(0xb7b3c8);
   const bodyStrongMat=createProxyFaceMaterials(0xd5d1e2);
   const legMat=createProxyFaceMaterials(0x9c98aa);
 
-  // v9.5.3 proxy profile: simple block-chair silhouette matching the supplied guide image.
-  // A rectangular seat slab, one clean full back panel and four straight square legs.
   const seatW=Math.max(.12,width*.86);
   const seatD=Math.max(.12,depth*.78);
   const seatY=Math.min(PROXY_SEAT_HEIGHT_M,Math.max(.30,height*.53));
   const seatThickness=Math.min(PROXY_SEAT_THICKNESS_M,Math.max(.045,height*.075));
   const seatCenterZ=0;
   const seatTopY=seatY + seatThickness/2;
-
   const maxBackrestFromSeat=Math.max(.20,height-seatTopY);
   const backrestH=Math.min(PROXY_BACKREST_HEIGHT_M,maxBackrestFromSeat);
   const backrestW=seatW*.90;
-  const backZ=seatCenterZ - seatD/2 + PROXY_BACKREST_THICKNESS_M/2;
+  const backZ=seatCenterZ-seatD/2+PROXY_BACKREST_THICKNESS_M/2;
 
-  // Thick rectangular seat slab.
-  addProxyBox(proxy,
-    {x:seatW,y:seatThickness,z:seatD},
-    {x:0,y:seatY,z:seatCenterZ},
-    bodyStrongMat
-  );
+  addProxyBox(proxy,{x:seatW,y:seatThickness,z:seatD},{x:0,y:seatY,z:seatCenterZ},bodyStrongMat);
+  addProxyBox(proxy,{x:backrestW,y:backrestH,z:PROXY_BACKREST_THICKNESS_M},{x:0,y:seatTopY+backrestH/2,z:backZ},bodyMat,852);
 
-  // One uninterrupted rectangular back panel rising directly from the rear seat edge.
-  addProxyBox(proxy,
-    {x:backrestW,y:backrestH,z:PROXY_BACKREST_THICKNESS_M},
-    {x:0,y:seatTopY + backrestH/2,z:backZ},
-    bodyMat,
-    852
-  );
-
-  // Four straight square legs, tucked near the seat corners like the supplied proxy reference.
   const legH=Math.max(.18,seatY-seatThickness/2);
-  const legX=seatW/2 - PROXY_LEG_THICKNESS_M*.72;
-  const legZ=seatD/2 - PROXY_LEG_THICKNESS_M*.72;
+  const legX=seatW/2-PROXY_LEG_THICKNESS_M*.72;
+  const legZ=seatD/2-PROXY_LEG_THICKNESS_M*.72;
   [[-legX,-legZ],[legX,-legZ],[-legX,legZ],[legX,legZ]].forEach(([x,z])=>{
-    addProxyBox(proxy,
-      {x:PROXY_LEG_THICKNESS_M,y:legH,z:PROXY_LEG_THICKNESS_M},
-      {x,y:legH/2,z:seatCenterZ+z},
-      legMat,
-      848
-    );
+    addProxyBox(proxy,{x:PROXY_LEG_THICKNESS_M,y:legH,z:PROXY_LEG_THICKNESS_M},{x,y:legH/2,z:seatCenterZ+z},legMat,848);
   });
-
   return proxy;
+}
+
+function createFurnitureProxy(item){
+  const center=getFurnitureWorldPosition(item);
+  const dims=getFurnitureDimensions(item);
+  if(!center || item?.type!=='chair') return null;
+
+  // Prefer the external GLB. Start loading lazily if it has not been requested yet.
+  if(!chairProxyGlbTemplate && chairProxyGlbLoadState==='idle') loadChairProxyGlb();
+  return createGlbFurnitureProxy(item,center,dims) || createProceduralFurnitureProxy(item,center,dims);
 }
 
 function rebuildFurnitureProxyGuide(){
@@ -1953,9 +2076,12 @@ function serializeProxyGuide(dims){
   const seatY=Math.min(PROXY_SEAT_HEIGHT_M,Math.max(.30,height*.53));
   const backrestH=Math.min(PROXY_BACKREST_HEIGHT_M,Math.max(.20,height-seatY-.06));
   return {
-    type:'deterministic_3d_chair_proxy',
+    type:'deterministic_glb_chair_proxy',
+    format:'glb',
+    asset:'test-chair.glb',
+    geometry_source:'external_project_asset',
     authoritative_pose_guide:true,
-    local_axis_rule:'local +Z = FRONT; local -Z = BACK. Orientation is conveyed by the vertical backrest placement and face-shading differences, not by extra line markers.',
+    local_axis_rule:'GLB local +Z = FRONT; local -Z = BACK; local +Y = UP. The supplied test-chair.glb was verified to follow this convention. Orientation is conveyed by model geometry and deterministic face shading.',
     screenshot_role:'Replace this proxy with the reference chair while preserving the proxy position, scale and facing direction.',
     footprint_m:{
       width:Number(dims.footprint_width ?? dims.width),
@@ -2597,7 +2723,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_6_clean',
+    protocol_version:'EventVision_v9_6_1_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3319,7 +3445,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_6_clean',
+    protocol_version:'EventVision_v9_6_1_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v5_sequential_proxy_edit',
