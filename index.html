@@ -279,7 +279,7 @@ body.xr-active canvas{background:transparent!important}
 
 #furnitureToolbar{
   display:none;
-  grid-template-columns:1fr auto auto auto;
+  grid-template-columns:minmax(0,1fr) auto auto auto auto;
   gap:7px;
   align-items:center;
   margin-top:10px;
@@ -288,6 +288,15 @@ body.xr-active canvas{background:transparent!important}
   border-radius:14px;
   background:var(--panel);
 }
+
+.visibilityField{display:flex;flex-direction:column;gap:4px;min-width:118px;}
+.visibilityField .visLabel{font-size:10px;font-weight:800;color:var(--muted);line-height:1;}
+.visibilityField select{height:44px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);color:#fff;font-size:12px;font-weight:800;padding:0 10px;outline:none;}
+.visibilityField select:focus{border-color:#8e83ff;box-shadow:0 0 0 2px rgba(142,131,255,.18);} 
+.furnitureItem[data-visibility="partial"] .furnitureVisual{box-shadow:0 0 0 2px rgba(255,196,96,.55), inset 0 0 0 999px rgba(255,196,96,.07);} 
+.furnitureItem[data-visibility="hidden"] .furnitureVisual{opacity:.28;filter:saturate(.65);} 
+.furnitureItem[data-visibility="hidden"] .planBackEdge,.furnitureItem[data-visibility="hidden"] .planFrontEdge{opacity:.55;}
+
 
 #furnitureToolbar.visible{
   display:grid;
@@ -813,6 +822,15 @@ body.xr-active.screenshot-mode .screenshotHud{
   background:rgba(107,92,255,.18);
 }
 
+.furnitureItem[data-type="occluder"] .furnitureVisual{
+  border-color:#ffb45f;
+  border-style:dashed;
+  background:rgba(255,180,95,.18);
+}
+.furnitureItem[data-type="occluder"] .planBackEdge,
+.furnitureItem[data-type="occluder"] .planFrontEdge,
+.furnitureItem[data-type="occluder"] .arrayHandle{display:none !important;}
+
 
 /* v9.6.1 — persistent-space relocalization + GLB chair proxy */
 .savedSpacePanel{
@@ -919,10 +937,19 @@ body.xr-active.screenshot-mode .screenshotHud{
       <button type="button" class="toolBtn" id="rotateLeft" aria-label="Rotate left">↺</button>
       <button type="button" class="toolBtn" id="rotateRight" aria-label="Rotate right">↻</button>
       <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
+      <label class="visibilityField" for="furnitureVisibility">
+        <span class="visLabel">Generation visibility</span>
+        <select id="furnitureVisibility" aria-label="Generation visibility">
+          <option value="auto">Auto</option>
+          <option value="visible">Visible</option>
+          <option value="partial">Partial</option>
+          <option value="hidden">Hidden</option>
+        </select>
+      </label>
     </div>
     <div id="furnitureCount"></div>
-    <div class="furnitureHint">Drag chairs on the plan. Select a chair, then drag any purple corner handle outward to create an evenly spaced chair array. Any edit invalidates the locked generation frame.</div>
-    <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap.</div>
+    <div class="furnitureHint">Drag chairs on the plan. Select a chair, then drag any purple corner handle outward to create an evenly spaced chair array. Add obstacle blocks where columns, counters, cabinets or other view-blocking objects exist. Any edit invalidates the locked generation frame.</div>
+    <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap. Obstacle block: 0.90 × 0.45 m footprint · 1.00 m height. Chairs can use Auto visibility based on locked camera pose + obstacle blocks.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
       <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
@@ -933,6 +960,11 @@ body.xr-active.screenshot-mode .screenshotHud{
       <button id="addFurniture" class="addFurnitureBtn">
         <span class="addFurnitureIcon">＋</span>
         <span>Add chair</span>
+      </button>
+
+      <button id="addObstacle" class="addFurnitureBtn" type="button">
+        <span class="addFurnitureIcon">▧</span>
+        <span>Add obstacle</span>
       </button>
 
       <button id="saveSpace" class="addFurnitureBtn saveSpaceBtn" type="button">
@@ -1086,6 +1118,7 @@ const el = {
   introCard: document.getElementById('introCard'),
   scanAgain: document.getElementById('scanAgain'),
   addFurniture: document.getElementById('addFurniture'),
+  addObstacle: document.getElementById('addObstacle'),
   exportData: document.getElementById('exportData'),
   exportPlan: document.getElementById('exportPlan'),
   exportStatus: document.getElementById('exportStatus'),
@@ -2041,9 +2074,11 @@ function createProceduralFurnitureProxy(item,center,dims){
 }
 
 function createFurnitureProxy(item){
+  if(item?.type!=='chair') return null;
+  if(!furnitureShouldRender(item)) return null;
   const center=getFurnitureWorldPosition(item);
   const dims=getFurnitureDimensions(item);
-  if(!center || item?.type!=='chair') return null;
+  if(!center) return null;
 
   // Prefer the external GLB. Start loading lazily if it has not been requested yet.
   if(!chairProxyGlbTemplate && chairProxyGlbLoadState==='idle') loadChairProxyGlb();
@@ -2207,6 +2242,112 @@ function computeOrientationSemantics(projected){
 function buildChairGenerationInstruction(chairId, semantics){
   const dirText=semantics?.visible_view_hint || 'chair front orientation must follow the FRONT/BACK anchors';
   return `SEQUENTIAL EDIT PASS FOR ${chairId}: replace ONLY this visible 3D proxy with the provided reference chair. Do not modify any other proxy, already-rendered chair, room architecture, camera, lighting, or background pixels outside this chair's focus region. Keep this proxy's exact floor position, footprint, scale and yaw. The proxy's vertical backrest marks the BACK side, and the differently shaded faces reinforce FRONT vs BACK orientation; never reverse them. Insert ${chairId} exactly inside its floor polygon. Put the real chair backrest on the BACK side and open seat/front on the FRONT side, facing from BACK toward FRONT. ${dirText}. If this chair belongs to a true multi-chair layout group, preserve that group's exact spacing/alignment. Do not rotate 180 degrees. Do not mirror front and back. After this replacement, preserve the result unchanged and use it as the base image for the next chair pass.`;
+}
+
+function transformWorldPointToOccluderLocal(point,item){
+  const center=getFurnitureWorldPosition(item);
+  if(!center || !point) return null;
+  const theta=Number(item.rotation || 0)*Math.PI/180;
+  const dx=Number(point.x)-center.x;
+  const dz=Number(point.z)-center.z;
+  return {x:dx*Math.cos(theta)+dz*Math.sin(theta),y:Number(point.y)-center.y,z:-dx*Math.sin(theta)+dz*Math.cos(theta)};
+}
+
+function segmentIntersectsOccluder(fromPoint,toPoint,item){
+  const dims=getFurnitureDimensions(item);
+  const a=transformWorldPointToOccluderLocal(fromPoint,item);
+  const b=transformWorldPointToOccluderLocal(toPoint,item);
+  if(!a || !b) return null;
+  const min={x:-dims.width/2,y:0,z:-dims.depth/2};
+  const max={x:dims.width/2,y:Number(dims.overall_height ?? dims.height),z:dims.depth/2};
+  let tmin=0, tmax=1;
+  for(const axis of ['x','y','z']){
+    const start=a[axis], end=b[axis], d=end-start;
+    if(Math.abs(d)<1e-8){ if(start<min[axis] || start>max[axis]) return null; continue; }
+    let t1=(min[axis]-start)/d;
+    let t2=(max[axis]-start)/d;
+    if(t1>t2){ const tmp=t1; t1=t2; t2=tmp; }
+    tmin=Math.max(tmin,t1);
+    tmax=Math.min(tmax,t2);
+    if(tmax<tmin) return null;
+  }
+  if(tmax<0 || tmin>1) return null;
+  const tHit=Math.max(0,tmin);
+  if(tHit>=0.995) return null;
+  return {t:tHit};
+}
+
+function getChairVisibilitySamplePoints(item){
+  const center=getFurnitureWorldPosition(item);
+  const dims=getFurnitureDimensions(item);
+  const basis=getFurnitureOrientationWorld(item);
+  if(!center || !basis) return [];
+  const halfW=Number(dims.footprint_width ?? dims.width)/2;
+  const halfD=Number(dims.footprint_depth ?? dims.depth)/2;
+  const totalH=Number(dims.overall_height ?? dims.height);
+  const seatY=center.y+Math.min(0.46,Math.max(0.33,totalH*0.53));
+  const topY=center.y+Math.max(0.58,totalH*0.92);
+  const F=basis.forward, R=basis.right;
+  const pt=(forward,right,y)=>({x:center.x+F.x*forward+R.x*right,y,z:center.z+F.z*forward+R.z*right});
+  return [
+    pt(0,0,seatY),
+    pt(halfD*0.72,-halfW*0.72,seatY),
+    pt(halfD*0.72,halfW*0.72,seatY),
+    pt(-halfD*0.45,-halfW*0.72,seatY),
+    pt(-halfD*0.45,halfW*0.72,seatY),
+    pt(-halfD*0.82,-halfW*0.72,topY),
+    pt(-halfD*0.82,0,topY),
+    pt(-halfD*0.82,halfW*0.72,topY)
+  ];
+}
+
+function analyzeChairVisibilityForFrame(item,viewData,imageGeometry,occluders){
+  const samples=getChairVisibilitySamplePoints(item);
+  const cameraPosition=latestXRViewData?.position || lockedGenerationFrame?.xr_view?.position || lockedGenerationFrame?.camera?.position;
+  if(!samples.length || !cameraPosition || !viewData?.view_matrix || !viewData?.projection_matrix){
+    return {state:'visible',source:'fallback_no_analysis',render_in_generation:true,occluded_by:[]};
+  }
+  let inFrameCount=0, visibleCount=0, occludedCount=0, outOfFrameCount=0;
+  const occluderHits=new Set();
+  samples.forEach(point=>{
+    const projected=projectWorldPoint(point,viewData,imageGeometry);
+    if(!projected?.inside_view || !uvInsidePhoto(projected?.uv)){ outOfFrameCount++; return; }
+    inFrameCount++;
+    let blockedBy=null;
+    for(const occluder of occluders){
+      if(segmentIntersectsOccluder(cameraPosition,point,occluder)){ blockedBy=occluder; break; }
+    }
+    if(blockedBy){ occludedCount++; occluderHits.add(`occluder_${String(blockedBy.id)}`); }
+    else visibleCount++;
+  });
+  let state='visible';
+  if(inFrameCount===0) state='out_of_frame';
+  else if(visibleCount===0) state='hidden';
+  else if(occludedCount>0 || outOfFrameCount>0 || visibleCount<inFrameCount) state='partial';
+  return {
+    state,
+    source:'automatic_camera_plus_occluder_test',
+    render_in_generation:state!=='hidden' && state!=='out_of_frame',
+    visible_fraction_estimate:inFrameCount>0 ? Number((visibleCount/inFrameCount).toFixed(3)) : 0,
+    sample_count:samples.length,
+    in_frame_sample_count:inFrameCount,
+    visible_sample_count:visibleCount,
+    occluded_sample_count:occludedCount,
+    out_of_frame_sample_count:outOfFrameCount,
+    occluded_by:[...occluderHits],
+    generation_rule:state==='hidden' || state==='out_of_frame'
+      ? 'Do not render this chair in the final image.'
+      : (state==='partial' ? 'Render only the visible portion of this chair. Preserve real-photo obstacle pixels in front of it.' : 'Render this chair normally on its exact projected target.')
+  };
+}
+
+function computeVisibilityAnalysisForFrame(viewData,imageGeometry){
+  const occluders=getOccluderItems();
+  const chair_map={};
+  getChairItems().forEach(item=>{
+    chair_map[`chair_${String(item.id).padStart(2,'0')}`]=analyzeChairVisibilityForFrame(item,viewData,imageGeometry,occluders);
+  });
+  return {mode:'automatic_occluder_visibility_v1',chair_map};
 }
 
 function serializeGenerationTarget(projected,dims){
@@ -3046,7 +3187,8 @@ function captureCurrentGenerationFrame(){
   const xrView=cloneData(latestXRViewData);
   const image=getCaptureImageGeometry();
   const cameraMeta=getCurrentCameraMetadata();
-  const projections=furnitureItems.map(item=>projectFurnitureForFrame(item,xrView,image));
+  const chairItems=getChairItems();
+  const projections=chairItems.map(item=>projectFurnitureForFrame(item,xrView,image));
   const validation=validateLockedProjection(projections);
 
   if(!validation.valid){
@@ -3062,6 +3204,7 @@ function captureCurrentGenerationFrame(){
     image,
     projections,
     validation,
+    visibility_analysis:computeVisibilityAnalysisForFrame(xrView,image),
     capture_method:'automatic_pose_stability_lock',
     stability_requirement:{
       window_ms:CAPTURE_STABILITY_WINDOW_MS,
@@ -3085,6 +3228,7 @@ function captureCurrentGenerationFrame(){
   setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
+  rebuildFurnitureProxyGuide();
   return true;
 }
 
@@ -3150,6 +3294,7 @@ function lockGenerationFrame(){
     setExportStatus('Frame unlocked. Prepare capture again before exporting.','warn');
     renderGenerationFrameDetails();
     updateProjectionDebugOverlay();
+    rebuildFurnitureProxyGuide();
     return;
   }
 
@@ -3377,7 +3522,11 @@ function buildStrictLayoutGroups(rawFurniture){
 function buildSceneExportData(){
   if(!lockedGenerationFrame) throw new Error('No locked generation frame.');
 
-  const rawFurniture=furnitureItems.map((item,index)=>{
+  const chairItems=getChairItems();
+  const occluderItems=getOccluderItems();
+  const chairVisibilityMap=lockedGenerationFrame.visibility_analysis?.chair_map || null;
+
+  const rawFurniture=chairItems.map((item,index)=>{
     const dims=getFurnitureDimensions(item);
     const world=getFurnitureWorldPosition(item);
     const plan=world ? getPlanPositionFromWorld(world) : null;
@@ -3385,13 +3534,28 @@ function buildSceneExportData(){
     const generationTarget=serializeGenerationTarget(projected,dims);
     const semantics=computeOrientationSemantics(projected);
     const id=`chair_${String(item.id).padStart(2,'0')}`;
+    const visibilityMode=getFurnitureVisibilityMode(item);
+    const autoRecord=getAutoVisibilityRecord(item, chairVisibilityMap);
+    const resolvedState=getFurnitureGenerationVisibility(item, chairVisibilityMap);
+    const renderInGeneration=resolvedState!=='hidden' && resolvedState!=='out_of_frame';
+    const visibilityContract={
+      state:resolvedState,
+      mode:visibilityMode,
+      source:visibilityMode==='auto' ? 'automatic_camera_plus_occluder_test' : 'manual_visibility_override',
+      render_in_generation:renderInGeneration,
+      visible_fraction_estimate:Number(getFurnitureVisibleFraction(item, chairVisibilityMap)),
+      occluded_by:autoRecord?.occluded_by || [],
+      sample_count:autoRecord?.sample_count ?? null,
+      in_frame_sample_count:autoRecord?.in_frame_sample_count ?? null,
+      visible_sample_count:autoRecord?.visible_sample_count ?? null,
+      occluded_sample_count:autoRecord?.occluded_sample_count ?? null,
+      out_of_frame_sample_count:autoRecord?.out_of_frame_sample_count ?? null,
+      generation_rule:autoRecord?.generation_rule || (renderInGeneration ? 'Render this chair normally on its exact projected target.' : 'Do not render this chair in the final image.')
+    };
     return {
       id,
       type:'chair',
-      plan:{
-        position_m:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,
-        rotation_deg_clockwise:Number(item.rotation)
-      },
+      plan:{position_m:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,rotation_deg_clockwise:Number(item.rotation)},
       world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
       dimensions_m:serializeFurnitureDimensions(dims),
       layout_membership:{
@@ -3405,6 +3569,7 @@ function buildSceneExportData(){
       generation_target:generationTarget,
       proxy_guide:serializeProxyGuide(dims),
       semantics,
+      visibility_contract:visibilityContract,
       orientation_contract:{
         authoritative:true,
         front_edge_role:'seat_front_side',
@@ -3415,40 +3580,54 @@ function buildSceneExportData(){
         must_render_backrest_on_back_side:true,
         must_render_open_seat_toward_front_side:true
       },
-      generation_instruction:buildChairGenerationInstruction(id,semantics)
+      generation_instruction:buildChairGenerationInstruction(id, semantics) + ' ' + visibilityContract.generation_rule
     };
   });
 
-  const orderedByDepth=[...rawFurniture].sort((a,b)=>{
+  const rawOccluders=occluderItems.map(item=>{
+    const dims=getFurnitureDimensions(item);
+    const world=getFurnitureWorldPosition(item);
+    const plan=world ? getPlanPositionFromWorld(world) : null;
+    return {
+      id:`occluder_${String(item.id).replace(/[^a-zA-Z0-9]+/g,'_')}`,
+      type:'occluder',
+      kind:item.occluder_kind || 'block',
+      plan:{position_m:plan ? {x:Number(plan.x),z:Number(plan.z)} : null,rotation_deg_clockwise:Number(item.rotation)},
+      world_position_m:world ? {x:Number(world.x),y:Number(world.y),z:Number(world.z)} : null,
+      dimensions_m:serializeFurnitureDimensions(dims),
+      generation_role:'Real-photo obstacle that can hide chairs from the current camera view.'
+    };
+  });
+
+  const renderableFurniture=rawFurniture.filter(item=>item.visibility_contract?.render_in_generation);
+  const hiddenFurniture=rawFurniture.filter(item=>!item.visibility_contract?.render_in_generation);
+  const partiallyVisibleFurniture=rawFurniture.filter(item=>item.visibility_contract?.state==='partial');
+
+  const orderedByDepth=[...renderableFurniture].sort((a,b)=>{
     const ay=a?.generation_target?.placement?.center_uv?.y ?? 0;
     const by=b?.generation_target?.placement?.center_uv?.y ?? 0;
     return ay-by;
   });
-
   orderedByDepth.forEach((item,index)=>{ item.depth_rank_far_to_near=index+1; });
-  const idToIndex=new Map(orderedByDepth.map((item,index)=>[item.id,index]));
-  rawFurniture.sort((a,b)=>(idToIndex.get(a.id) ?? 0)-(idToIndex.get(b.id) ?? 0));
 
   const exactIds=orderedByDepth.map(item=>item.id);
-  const layoutGroups=buildStrictLayoutGroups(rawFurniture);
+  const layoutGroups=buildStrictLayoutGroups(chairItems.filter(item=>furnitureShouldRender(item, chairVisibilityMap)).map(item=>({
+    id:`chair_${String(item.id).padStart(2,'0')}`,
+    layout_group_id:item.layout_group_id,
+    layout_source:item.layout_source,
+    layout_row_index:item.layout_row_index,
+    layout_column_index:item.layout_column_index,
+    layout_step_side_m:item.layout_step_side_m,
+    layout_step_forward_m:item.layout_step_forward_m,
+    rotation:item.rotation
+  })));
   const multiLayoutGroups=layoutGroups.filter(group=>group.item_count>1 && group.strict_alignment);
 
-  layoutGroups.forEach(group=>{
-    group.member_ids.forEach((id,index)=>{
-      const chair=rawFurniture.find(item=>item.id===id);
-      if(!chair) return;
-      if(!chair.layout_membership.group_id) chair.layout_membership.group_id=group.id;
-      chair.layout_membership.strict_group_alignment=group.strict_alignment;
-      chair.layout_membership.shared_plan_rotation_deg=group.shared_plan_rotation_deg;
-      chair.layout_membership.group_member_index=index;
-    });
-  });
-
   return {
-    protocol_version:'EventVision_v9_6_1_clean',
+    protocol_version:'EventVision_v9_8_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
-      schema:'eventvision_generation_first_v5_sequential_proxy_edit',
+      schema:'eventvision_generation_first_v7_auto_visibility_occluder_aware',
       exact_inventory:true,
       allow_extra_furniture:false,
       allow_missing_furniture:false,
@@ -3456,43 +3635,45 @@ function buildSceneExportData(){
       placement_source:'furniture[].generation_target.placement.floor_polygon_uv',
       size_source:'furniture[].generation_target.size',
       orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
-      plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
+      visibility_source:'furniture[].visibility_contract and occluders[]',
+      plan_image_role:'orientation + obstacle cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain. The proxy no longer uses extra colored floor-edge lines; orientation is conveyed by the backrest location and shading.',
-      proxy_orientation_source:'Solid 3D proxy geometry + backrest placement + differently shaded faces; this is authoritative and must not be reversed.',
-      recommended_render_strategy:'SEQUENTIAL MASKED EDITING: replace exactly one proxy per pass in render_order_far_to_near. Preserve every pixel outside that chair focus region and preserve all other proxies/chairs unchanged.',
+      screenshot_proxy_role:'Replace each visible or partial solid 3D proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. Chairs marked hidden or out_of_frame must not be rendered.',
+      occluder_role:'Objects in occluders[] are real-photo foreground blockers. They have higher priority than chairs. Never paint a chair over them; let the real photographed obstacle occlude the chair.',
+      recommended_render_strategy:'SEQUENTIAL MASKED EDITING: replace exactly one visible or partial proxy per pass in render_order_far_to_near.',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
-        'Insert exactly the listed number of chairs and no extra chairs.',
+        'Insert exactly the listed number of renderable chairs and no extra chairs.',
         'Use the reference image only for chair appearance and materials.',
-        'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
         'Never mirror front and back.',
-        'Treat the visible solid 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, and the differently shaded faces reinforce FRONT vs BACK orientation.',
-        'Replace the proxy with the reference chair without changing its position, scale, yaw, front/back direction or footprint.',
-        'Process exactly ONE chair proxy per edit pass; never redraw the whole room or all chairs together.',
-        'Preserve all pixels outside the active chair focus region and keep all other proxies/already-rendered chairs unchanged.',
-        'Apply rigid alignment rules only to true multi-chair layout groups with more than one member.'
+        'Process exactly one visible or partial chair proxy per edit pass; never redraw the whole room or all chairs together.',
+        'Chairs with visibility_contract.state = hidden or out_of_frame must not appear in the final rendering.',
+        'When a chair conflicts with an occluder, prioritize the occluder pixels from the real photo and render the chair only in the remaining visible region behind it.'
       ]
     },
     generation_summary:{
-      global_instruction:`Perform ${rawFurniture.length} sequential image-edit passes, one chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
+      global_instruction:`Perform ${orderedByDepth.length} sequential image-edit passes, one chair at a time, in render_order_far_to_near. In each pass replace only the active visible or partial solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene.`,
       generation_mode:'sequential_masked_proxy_replacement',
-      render_order_far_to_near:exactIds
+      render_order_far_to_near:exactIds,
+      renderable_count:orderedByDepth.length,
+      hidden_count:hiddenFurniture.length,
+      partial_count:partiallyVisibleFurniture.length,
+      occluder_count:rawOccluders.length
     },
     layout_contract:{
       enforcement:'HARD_CONSTRAINT',
-      enforce_ordered_seating:true,
       allow_chaotic_placement:false,
-      allow_random_position_jitter:false,
-      allow_random_rotation_jitter:false,
-      applies_only_to_groups_with_more_than_one_member:true,
       multi_chair_groups_must_be_parallel:true,
       multi_chair_groups_must_face_same_direction:true,
       uniform_floor_space_offsets_required:true,
-      perspective_note:'Equal spacing is defined in world/floor space, not equal pixel spacing in the photo.',
-      projected_target_priority:'Individual floor_polygon_uv and center_uv remain authoritative image-space targets. Group alignment reinforces them and must not move chairs away from those targets.',
       groups:multiLayoutGroups
+    },
+    occlusion_workflow:{
+      mode:'automatic_occluder_visibility_v1',
+      hidden_items:hiddenFurniture.map(item=>item.id),
+      partial_items:partiallyVisibleFurniture.map(item=>item.id),
+      occluders:rawOccluders.map(item=>item.id)
     },
     room:scanSceneData,
     session_calibration:cloneData(sessionCalibration),
@@ -3509,64 +3690,24 @@ function buildSceneExportData(){
       }
     },
     inventory:{
-      exact_count:rawFurniture.length,
+      total_plan_count:rawFurniture.length,
+      exact_count:orderedByDepth.length,
+      hidden_count:hiddenFurniture.length,
+      occluder_count:rawOccluders.length,
       allow_extra_objects:false,
       allow_missing_objects:false,
       item_ids:exactIds
     },
+    occluders:rawOccluders,
     furniture:rawFurniture,
     generation_payload:{
-      inventory:{
-        exact_count:rawFurniture.length,
-        allow_extra_objects:false,
-        allow_missing_objects:false,
-        item_ids:exactIds
-      },
-      scene_instruction:`Do not regenerate the whole scene. Run sequential edit passes in render_order_far_to_near. In each pass replace exactly one visible solid 3D proxy with the reference chair, using that chair's focus_region_uv as the edit region. Preserve every pixel outside the active region, preserve all other proxies/already-rendered chairs, and preserve architecture/camera exactly. Keep the active proxy's exact position, footprint, scale and BACK→FRONT orientation.`,
-      sequential_edit_contract:{
-        mode:'one_proxy_per_pass',
-        order:exactIds,
-        use_previous_pass_as_next_base:true,
-        global_rerender_forbidden:true,
-        preserve_pixels_outside_active_region:true,
-        preserve_other_proxies:true,
-        preserve_already_rendered_chairs:true,
-        passes:rawFurniture.map(item=>({
-          chair_id:item.id,
-          depth_rank_far_to_near:item.depth_rank_far_to_near,
-          edit_region_uv:item.generation_target?.placement?.focus_region_uv || null,
-          exact_floor_polygon_uv:item.generation_target?.placement?.floor_polygon_uv || null,
-          back_center_uv:item.generation_target?.orientation?.back_center_uv || null,
-          front_center_uv:item.generation_target?.orientation?.front_center_uv || null,
-          instruction:item.generation_instruction
-        }))
-      },
-      layout_contract:{
-        enforcement:'HARD_CONSTRAINT',
-        allow_chaotic_placement:false,
-        allow_random_position_jitter:false,
-        allow_random_rotation_jitter:false,
-        groups:multiLayoutGroups
-      },
-      chairs:rawFurniture.map(item=>({
-        id:item.id,
-        type:item.type,
-        depth_rank_far_to_near:item.depth_rank_far_to_near,
-        layout_membership:item.layout_membership,
-        generation_target:item.generation_target,
-        proxy_guide:item.proxy_guide,
-        semantics:item.semantics,
-        orientation_contract:item.orientation_contract,
-        edit_contract:{
-          mode:'replace_only_this_proxy',
-          edit_region_uv:item.generation_target?.placement?.focus_region_uv || null,
-          preserve_pixels_outside_region:true,
-          preserve_other_proxies:true,
-          preserve_already_rendered_chairs:true,
-          global_scene_regeneration_forbidden:true
-        },
-        generation_instruction:item.generation_instruction
-      }))
+      inventory:{exact_count:orderedByDepth.length,allow_extra_objects:false,allow_missing_objects:false,item_ids:exactIds},
+      hidden_chair_ids:hiddenFurniture.map(item=>item.id),
+      partial_chair_ids:partiallyVisibleFurniture.map(item=>item.id),
+      occluders:rawOccluders,
+      scene_instruction:`Do not regenerate the whole scene. Run sequential edit passes in render_order_far_to_near. In each pass replace exactly one visible or partial solid 3D proxy with the reference chair, using that chair's focus region as the edit region. Preserve every pixel outside the active region, preserve all other proxies/already-rendered chairs, and preserve architecture/camera exactly. Never render chairs marked hidden or out_of_frame. When an occluder stands between the camera and a chair, preserve the occluder from the real photo and generate only the visible portion of the chair behind it.`,
+      sequential_edit_contract:{mode:'one_proxy_per_pass',order:exactIds,use_previous_pass_as_next_base:true,global_rerender_forbidden:true,preserve_pixels_outside_active_region:true,preserve_other_proxies:true,preserve_already_rendered_chairs:true},
+      chairs:orderedByDepth.map(item=>({id:item.id,type:item.type,depth_rank_far_to_near:item.depth_rank_far_to_near,layout_membership:item.layout_membership,generation_target:item.generation_target,proxy_guide:item.proxy_guide,semantics:item.semantics,visibility_contract:item.visibility_contract,orientation_contract:item.orientation_contract,generation_instruction:item.generation_instruction}))
     }
   };
 }
@@ -3635,6 +3776,9 @@ function buildGenerationPlanCanvas(){
 
   // Furniture: footprint only, with explicit semantic front/back edges.
   furnitureItems.forEach(item=>{
+    const visState=getFurnitureGenerationVisibility(item);
+    const isHidden=visState==='hidden';
+    const isPartial=visState==='partial';
     const dims=getFurnitureDimensions(item);
     const fw=Number(dims.footprint_width ?? dims.width);
     const fd=Number(dims.footprint_depth ?? dims.depth);
@@ -3648,9 +3792,9 @@ function buildGenerationPlanCanvas(){
     ctx.save();
     ctx.translate(center.x,center.y);
     ctx.rotate(theta);
-
-    ctx.fillStyle='rgba(107,92,255,.16)';
-    ctx.strokeStyle='#8e83ff';
+    ctx.globalAlpha=isHidden ? 0.26 : (isPartial ? 0.72 : 1);
+    ctx.fillStyle=isPartial ? 'rgba(255,196,96,.14)' : 'rgba(107,92,255,.16)';
+    ctx.strokeStyle=isPartial ? '#ffc460' : '#8e83ff';
     ctx.lineWidth=2;
     ctx.fillRect(-w/2,-d/2,w,d);
     ctx.strokeRect(-w/2,-d/2,w,d);
@@ -3676,8 +3820,9 @@ function buildGenerationPlanCanvas(){
     ctx.font='800 10px system-ui, -apple-system, sans-serif';
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
-    ctx.fillStyle='#ffffff';
-    ctx.fillText(id,center.x,center.y-d/2-9);
+    ctx.fillStyle=isHidden ? '#b7b8c3' : (isPartial ? '#ffd27d' : '#ffffff');
+    ctx.fillText(isHidden ? id+' · HIDDEN' : (isPartial ? id+' · PARTIAL' : id),center.x,center.y-d/2-9);
+    ctx.restore();
   });
 
   // Camera position and direction from the saved screenshot pose.
@@ -3907,6 +4052,7 @@ function endAR(){
 
 
 el.addFurniture?.addEventListener('click',addFurniture);
+el.addObstacle?.addEventListener('click',addObstacle);
 
 el.scanAgain.addEventListener('click',()=>{
   completed=false;
@@ -3993,6 +4139,8 @@ const selectedFurnitureLabel = document.getElementById('selectedFurnitureLabel')
 const rotateLeftBtn = document.getElementById('rotateLeft');
 const rotateRightBtn = document.getElementById('rotateRight');
 const deleteFurnitureBtn = document.getElementById('deleteFurniture');
+const furnitureVisibilitySelect = document.getElementById('furnitureVisibility');
+const furnitureVisibilityField = furnitureVisibilitySelect?.closest?.('.visibilityField') || null;
 const furnitureCountEl = document.getElementById('furnitureCount');
 
 let furnitureItems = [];
@@ -4063,6 +4211,61 @@ function getFurnitureItem(id){
   return furnitureItems.find(item => item.id === id) || null;
 }
 
+function getChairItems(){
+  return furnitureItems.filter(item => item?.type==='chair');
+}
+
+function getOccluderItems(){
+  return furnitureItems.filter(item => item?.type==='occluder');
+}
+
+function getFurnitureVisibilityMode(item){
+  if(item?.type!=='chair') return 'visible';
+  const value=String(item?.generation_visibility || 'auto').toLowerCase();
+  return ['auto','visible','partial','hidden'].includes(value) ? value : 'auto';
+}
+
+function getAutoVisibilityRecord(item, visibilityMap=null){
+  if(item?.type!=='chair') return null;
+  const key=`chair_${String(item.id).padStart(2,'0')}`;
+  const sourceMap=visibilityMap || lockedGenerationFrame?.visibility_analysis?.chair_map || null;
+  return sourceMap?.[key] || null;
+}
+
+function getFurnitureGenerationVisibility(item, visibilityMap=null){
+  if(item?.type!=='chair') return 'visible';
+  const mode=getFurnitureVisibilityMode(item);
+  if(mode!=='auto') return mode;
+  const state=String(getAutoVisibilityRecord(item, visibilityMap)?.state || 'visible').toLowerCase();
+  return ['visible','partial','hidden','out_of_frame'].includes(state) ? state : 'visible';
+}
+
+function getFurnitureVisibilityLabel(state, mode='manual'){
+  if(mode==='auto'){
+    if(state==='partial') return 'Auto · partial';
+    if(state==='hidden') return 'Auto · hidden';
+    if(state==='out_of_frame') return 'Auto · out of frame';
+    return 'Auto · visible';
+  }
+  if(state==='partial') return 'Partially hidden';
+  if(state==='hidden') return 'Hidden';
+  if(state==='out_of_frame') return 'Out of frame';
+  return 'Visible';
+}
+
+function getFurnitureVisibleFraction(item, visibilityMap=null){
+  const state=getFurnitureGenerationVisibility(item, visibilityMap);
+  if(state==='hidden' || state==='out_of_frame') return 0;
+  if(state==='partial') return 0.5;
+  return 1;
+}
+
+function furnitureShouldRender(item, visibilityMap=null){
+  if(item?.type!=='chair') return false;
+  const state=getFurnitureGenerationVisibility(item, visibilityMap);
+  return state!=='hidden' && state!=='out_of_frame';
+}
+
 function setSelectedFurniture(id){
   selectedFurnitureId = id;
 
@@ -4076,18 +4279,33 @@ function setSelectedFurniture(id){
 
   if(item && furnitureToolbar){
     furnitureToolbar.classList.add('visible');
-    selectedFurnitureLabel.textContent='Chair · 60 × 60 × 85 cm';
+    const dims=getFurnitureDimensions(item);
+    if(item.type==='chair'){
+      const mode=getFurnitureVisibilityMode(item);
+      const vis=getFurnitureGenerationVisibility(item);
+      selectedFurnitureLabel.textContent=`Chair · ${dims.width.toFixed(2)} × ${dims.depth.toFixed(2)} × ${dims.overall_height.toFixed(2)} m · ${getFurnitureVisibilityLabel(vis, mode==='auto' ? 'auto' : 'manual')}`;
+      if(furnitureVisibilityField) furnitureVisibilityField.style.display='flex';
+      if(furnitureVisibilitySelect) furnitureVisibilitySelect.value=mode;
+    }else{
+      selectedFurnitureLabel.textContent=`Obstacle · ${dims.width.toFixed(2)} × ${dims.depth.toFixed(2)} × ${dims.overall_height.toFixed(2)} m`;
+      if(furnitureVisibilityField) furnitureVisibilityField.style.display='none';
+      if(furnitureVisibilitySelect) furnitureVisibilitySelect.value='auto';
+    }
   } else if(furnitureToolbar){
     furnitureToolbar.classList.remove('visible');
+    if(furnitureVisibilityField) furnitureVisibilityField.style.display='flex';
+    if(furnitureVisibilitySelect) furnitureVisibilitySelect.value='auto';
   }
 }
 
 function updateFurnitureCount(){
   if(!furnitureCountEl) return;
 
-  const count = furnitureItems.length;
-  furnitureCountEl.textContent = count
-    ? `${count} furniture item${count === 1 ? '' : 's'} on plan`
+  const chairCount=getChairItems().length;
+  const obstacleCount=getOccluderItems().length;
+  const renderable=getChairItems().filter(item=>furnitureShouldRender(item)).length;
+  furnitureCountEl.textContent = (chairCount+obstacleCount)
+    ? `${chairCount} chair${chairCount===1?'':'s'} · ${obstacleCount} obstacle${obstacleCount===1?'':'s'} · ${renderable} renderable in generation`
     : '';
 }
 
@@ -4104,6 +4322,14 @@ const FURNITURE_DIMENSIONS_M={
     footprint_width:0.60,
     footprint_depth:0.60,
     overall_height:0.85
+  },
+  occluder:{
+    width:0.90,
+    depth:0.45,
+    height:1.00,
+    footprint_width:0.90,
+    footprint_depth:0.45,
+    overall_height:1.00
   }
 };
 
@@ -4374,7 +4600,7 @@ function makeFurnitureNode(item){
   node.dataset.id = String(item.id);
   node.dataset.type = item.type;
   node.setAttribute('role','button');
-  node.setAttribute('aria-label',`${item.type} furniture item`);
+  node.setAttribute('aria-label',item.type==='occluder' ? 'Obstacle block' : `${item.type} furniture item`);
   node.tabIndex = 0;
 
   const hitArea=document.createElement('div');
@@ -4392,7 +4618,7 @@ function makeFurnitureNode(item){
   node.appendChild(visual);
 
   // Figma-style repeat-grid handles: dragging any corner previews and commits more chairs.
-  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz])=>{
+  if(item.type==='chair'){ [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz])=>{
     const handle=document.createElement('div');
     handle.className='arrayHandle';
     handle.dataset.sx=String(sx);
@@ -4442,7 +4668,7 @@ function makeFurnitureNode(item){
     });
     handle.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();});
     node.appendChild(handle);
-  });
+  }); }
 
   function paint(){
     const size=getFurnitureScreenSize(item);
@@ -4454,6 +4680,10 @@ function makeFurnitureNode(item){
     node.style.transform = `translate(-50%,-50%) rotate(${item.rotation}deg)`;
 
     node.dataset.scaleMode=size.physical?'physical':'icon';
+    const vis=getFurnitureGenerationVisibility(item);
+    const mode=getFurnitureVisibilityMode(item);
+    node.dataset.visibility=vis;
+    node.title=item.type==='chair' ? `Generation visibility: ${getFurnitureVisibilityLabel(vis, mode==='auto' ? 'auto' : 'manual')}` : 'Obstacle block · used for automatic occlusion tests';
   }
 
   let dragging = false;
@@ -4555,7 +4785,8 @@ function addFurniture(){
     height_m:preset.height,
     footprint_width_m:preset.footprint_width,
     footprint_depth_m:preset.footprint_depth,
-    overall_height_m:preset.overall_height
+    overall_height_m:preset.overall_height,
+    generation_visibility:'auto'
   };
 
   if(furnitureItems.length){
@@ -4564,6 +4795,34 @@ function addFurniture(){
     item.y=clamp01(0.5+offset);
   }
 
+  furnitureItems.push(item);
+  invalidateGenerationFrame();
+  selectedFurnitureId=item.id;
+  renderFurniture();
+}
+
+function addObstacle(){
+  if(!furnitureLayer) return;
+  const preset=FURNITURE_DIMENSIONS_M.occluder;
+  const item={
+    id:`obs_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+    type:'occluder',
+    x:0.5,
+    y:0.5,
+    rotation:0,
+    width_m:preset.width,
+    depth_m:preset.depth,
+    height_m:preset.height,
+    footprint_width_m:preset.footprint_width,
+    footprint_depth_m:preset.footprint_depth,
+    overall_height_m:preset.overall_height,
+    occluder_kind:'block'
+  };
+  if(furnitureItems.length){
+    const offset=Math.min(0.18,furnitureItems.length*0.03);
+    item.x=clamp01(0.46+offset);
+    item.y=clamp01(0.46+offset);
+  }
   furnitureItems.push(item);
   invalidateGenerationFrame();
   selectedFurnitureId=item.id;
@@ -4601,6 +4860,14 @@ function deleteSelectedFurniture(){
 rotateLeftBtn?.addEventListener('click', () => rotateSelected(-15));
 rotateRightBtn?.addEventListener('click', () => rotateSelected(15));
 deleteFurnitureBtn?.addEventListener('click', deleteSelectedFurniture);
+furnitureVisibilitySelect?.addEventListener('change',e=>{
+  const item=getFurnitureItem(selectedFurnitureId);
+  if(!item || item.type!=='chair') return;
+  item.generation_visibility=String(e.target?.value || 'auto');
+  invalidateGenerationFrame();
+  renderFurniture();
+  rebuildFurnitureProxyGuide();
+});
 
 planZoomOutBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom-.15));
 planZoomInBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom+.15));
