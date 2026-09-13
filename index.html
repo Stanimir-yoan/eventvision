@@ -817,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5.1 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5.3 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1067,10 +1067,10 @@ let latestXRViewData = null;
 let furnitureProxyGroup = null;
 
 const PROXY_SEAT_HEIGHT_M = 0.45;
-const PROXY_SEAT_THICKNESS_M = 0.055;
-const PROXY_BACKREST_HEIGHT_M = 0.34;
-const PROXY_BACKREST_THICKNESS_M = 0.045;
-const PROXY_LEG_THICKNESS_M = 0.035;
+const PROXY_SEAT_THICKNESS_M = 0.065;
+const PROXY_BACKREST_HEIGHT_M = 0.36;
+const PROXY_BACKREST_THICKNESS_M = 0.055;
+const PROXY_LEG_THICKNESS_M = 0.05;
 
 const CORNER_LABEL_BASE_SCALE = 0.18;
 const CORNER_LABEL_SCALE_PER_METER = 0.05;
@@ -1455,51 +1455,45 @@ function createFurnitureProxy(item){
 
   const bodyMat=createProxyFaceMaterials(0xb7b3c8);
   const bodyStrongMat=createProxyFaceMaterials(0xd5d1e2);
-  const supportMat=createProxyFaceMaterials(0xe8e6ef);
   const legMat=createProxyFaceMaterials(0x9c98aa);
 
-  const seatW=Math.max(.12,width*.88);
-  const seatD=Math.max(.12,depth*.76);
+  // v9.5.3 proxy profile: simple block-chair silhouette matching the supplied guide image.
+  // A rectangular seat slab, one clean full back panel and four straight square legs.
+  const seatW=Math.max(.12,width*.86);
+  const seatD=Math.max(.12,depth*.78);
   const seatY=Math.min(PROXY_SEAT_HEIGHT_M,Math.max(.30,height*.53));
-  const seatThickness=Math.min(PROXY_SEAT_THICKNESS_M,Math.max(.035,height*.065));
-  const backrestH=Math.min(PROXY_BACKREST_HEIGHT_M,Math.max(.20,height-seatY-.06));
-  const backZ=-depth/2 + PROXY_BACKREST_THICKNESS_M/2;
+  const seatThickness=Math.min(PROXY_SEAT_THICKNESS_M,Math.max(.045,height*.075));
+  const seatCenterZ=0;
+  const seatTopY=seatY + seatThickness/2;
 
-  // Seat slab: makes the footprint read as an actual 3D chair rather than a flat rectangle.
+  const maxBackrestFromSeat=Math.max(.20,height-seatTopY);
+  const backrestH=Math.min(PROXY_BACKREST_HEIGHT_M,maxBackrestFromSeat);
+  const backrestW=seatW*.90;
+  const backZ=seatCenterZ - seatD/2 + PROXY_BACKREST_THICKNESS_M/2;
+
+  // Thick rectangular seat slab.
   addProxyBox(proxy,
     {x:seatW,y:seatThickness,z:seatD},
-    {x:0,y:seatY,z:depth*.035},
+    {x:0,y:seatY,z:seatCenterZ},
     bodyStrongMat
   );
 
-  // Vertical BACKREST on the authoritative BACK side.
+  // One uninterrupted rectangular back panel rising directly from the rear seat edge.
   addProxyBox(proxy,
-    {x:seatW,y:backrestH,z:PROXY_BACKREST_THICKNESS_M},
-    {x:0,y:seatY + backrestH/2 - .01,z:backZ},
+    {x:backrestW,y:backrestH,z:PROXY_BACKREST_THICKNESS_M},
+    {x:0,y:seatTopY + backrestH/2,z:backZ},
     bodyMat,
     852
   );
 
-  // Two visible back supports reinforce which side is the back.
-  const supportX=seatW*.36;
-  const supportH=Math.max(.16,backrestH*.72);
-  [-supportX,supportX].forEach(x=>{
-    addProxyBox(proxy,
-      {x:PROXY_LEG_THICKNESS_M,y:supportH,z:PROXY_LEG_THICKNESS_M},
-      {x,y:seatY + supportH/2 - .05,z:backZ+.01},
-      supportMat,
-      854
-    );
-  });
-
-  // Four simplified legs give the guide unambiguous 3D volume and scale.
+  // Four straight square legs, tucked near the seat corners like the supplied proxy reference.
   const legH=Math.max(.18,seatY-seatThickness/2);
-  const legX=seatW*.38;
-  const legZ=seatD*.32;
+  const legX=seatW/2 - PROXY_LEG_THICKNESS_M*.72;
+  const legZ=seatD/2 - PROXY_LEG_THICKNESS_M*.72;
   [[-legX,-legZ],[legX,-legZ],[-legX,legZ],[legX,legZ]].forEach(([x,z])=>{
     addProxyBox(proxy,
       {x:PROXY_LEG_THICKNESS_M,y:legH,z:PROXY_LEG_THICKNESS_M},
-      {x,y:legH/2,z:z+depth*.035},
+      {x,y:legH/2,z:seatCenterZ+z},
       legMat,
       848
     );
@@ -1661,7 +1655,7 @@ function computeOrientationSemantics(projected){
 
 function buildChairGenerationInstruction(chairId, semantics){
   const dirText=semantics?.visible_view_hint || 'chair front orientation must follow the FRONT/BACK anchors';
-  return `Replace the visible 3D proxy for ${chairId} with the provided reference chair. Keep the proxy's exact floor position, footprint, scale and yaw. The proxy's vertical backrest marks the BACK side, and the differently shaded faces reinforce FRONT vs BACK orientation; never reverse them. Insert ${chairId} exactly inside its floor polygon. Put the real chair backrest on the BACK side and open seat/front on the FRONT side, facing from BACK toward FRONT. ${dirText}. If this chair belongs to a layout group, keep it parallel to all group members and preserve the group's exact even floor-space offsets. Do not stagger, scatter, randomly rotate, or jitter grouped chairs. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
+  return `SEQUENTIAL EDIT PASS FOR ${chairId}: replace ONLY this visible 3D proxy with the provided reference chair. Do not modify any other proxy, already-rendered chair, room architecture, camera, lighting, or background pixels outside this chair's focus region. Keep this proxy's exact floor position, footprint, scale and yaw. The proxy's vertical backrest marks the BACK side, and the differently shaded faces reinforce FRONT vs BACK orientation; never reverse them. Insert ${chairId} exactly inside its floor polygon. Put the real chair backrest on the BACK side and open seat/front on the FRONT side, facing from BACK toward FRONT. ${dirText}. If this chair belongs to a true multi-chair layout group, preserve that group's exact spacing/alignment. Do not rotate 180 degrees. Do not mirror front and back. After this replacement, preserve the result unchanged and use it as the base image for the next chair pass.`;
 }
 
 function serializeGenerationTarget(projected,dims){
@@ -2147,7 +2141,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_5_1_clean',
+    protocol_version:'EventVision_v9_5_3_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2851,6 +2845,7 @@ function buildSceneExportData(){
 
   const exactIds=orderedByDepth.map(item=>item.id);
   const layoutGroups=buildStrictLayoutGroups(rawFurniture);
+  const multiLayoutGroups=layoutGroups.filter(group=>group.item_count>1 && group.strict_alignment);
 
   layoutGroups.forEach(group=>{
     group.member_ids.forEach((id,index)=>{
@@ -2864,10 +2859,10 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_5_1_clean',
+    protocol_version:'EventVision_v9_5_3_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
-      schema:'eventvision_generation_first_v4_proxy_guided',
+      schema:'eventvision_generation_first_v5_sequential_proxy_edit',
       exact_inventory:true,
       allow_extra_furniture:false,
       allow_missing_furniture:false,
@@ -2879,7 +2874,7 @@ function buildSceneExportData(){
       reference_image_role:'appearance/material/design only; never inherit reference pose',
       screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain. The proxy no longer uses extra colored floor-edge lines; orientation is conveyed by the backrest location and shading.',
       proxy_orientation_source:'Solid 3D proxy geometry + backrest placement + differently shaded faces; this is authoritative and must not be reversed.',
-      recommended_render_strategy:'replace one 3D chair proxy at a time in far-to-near order while respecting rigid layout groups',
+      recommended_render_strategy:'SEQUENTIAL MASKED EDITING: replace exactly one proxy per pass in render_order_far_to_near. Preserve every pixel outside that chair focus region and preserve all other proxies/chairs unchanged.',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
         'Insert exactly the listed number of chairs and no extra chairs.',
@@ -2889,12 +2884,14 @@ function buildSceneExportData(){
         'Never mirror front and back.',
         'Treat the visible solid 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, and the differently shaded faces reinforce FRONT vs BACK orientation.',
         'Replace the proxy with the reference chair without changing its position, scale, yaw, front/back direction or footprint.',
-        'Render multi-chair seating as rigid aligned groups: same facing direction, parallel chairs, uniform floor-space spacing, and no random placement jitter.'
+        'Process exactly ONE chair proxy per edit pass; never redraw the whole room or all chairs together.',
+        'Preserve all pixels outside the active chair focus region and keep all other proxies/already-rendered chairs unchanged.',
+        'Apply rigid alignment rules only to true multi-chair layout groups with more than one member.'
       ]
     },
     generation_summary:{
-      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. The screenshot contains only clean solid 3D chair proxies (no scan/debug overlays): replace each proxy with the reference chair without changing its pose, front/back direction, scale or footprint. Follow each chair's floor polygon, size anchors and orientation contract exactly. Multi-chair layout groups are rigid organized arrangements: chairs must remain parallel, face the same direction, and keep even floor-space offsets. Do not create chaotic, staggered, scattered, or randomly rotated placement. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
-      generation_mode:'one_chair_at_a_time_with_rigid_group_constraints',
+      global_instruction:`Perform ${rawFurniture.length} sequential image-edit passes, one chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
+      generation_mode:'sequential_masked_proxy_replacement',
       render_order_far_to_near:exactIds
     },
     layout_contract:{
@@ -2903,12 +2900,13 @@ function buildSceneExportData(){
       allow_chaotic_placement:false,
       allow_random_position_jitter:false,
       allow_random_rotation_jitter:false,
+      applies_only_to_groups_with_more_than_one_member:true,
       multi_chair_groups_must_be_parallel:true,
       multi_chair_groups_must_face_same_direction:true,
       uniform_floor_space_offsets_required:true,
       perspective_note:'Equal spacing is defined in world/floor space, not equal pixel spacing in the photo.',
       projected_target_priority:'Individual floor_polygon_uv and center_uv remain authoritative image-space targets. Group alignment reinforces them and must not move chairs away from those targets.',
-      groups:layoutGroups
+      groups:multiLayoutGroups
     },
     room:scanSceneData,
     capture_frame:{
@@ -2937,13 +2935,31 @@ function buildSceneExportData(){
         allow_missing_objects:false,
         item_ids:exactIds
       },
-      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. Replace each visible solid 3D proxy with the reference chair while preserving the proxy's exact position, scale and BACK→FRONT orientation. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly. Treat each multi-chair layout group as a rigid organized seating block: same facing direction, parallel chairs, uniform floor-space offsets, no random jitter or chaotic placement.`,
+      scene_instruction:`Do not regenerate the whole scene. Run sequential edit passes in render_order_far_to_near. In each pass replace exactly one visible solid 3D proxy with the reference chair, using that chair's focus_region_uv as the edit region. Preserve every pixel outside the active region, preserve all other proxies/already-rendered chairs, and preserve architecture/camera exactly. Keep the active proxy's exact position, footprint, scale and BACK→FRONT orientation.`,
+      sequential_edit_contract:{
+        mode:'one_proxy_per_pass',
+        order:exactIds,
+        use_previous_pass_as_next_base:true,
+        global_rerender_forbidden:true,
+        preserve_pixels_outside_active_region:true,
+        preserve_other_proxies:true,
+        preserve_already_rendered_chairs:true,
+        passes:rawFurniture.map(item=>({
+          chair_id:item.id,
+          depth_rank_far_to_near:item.depth_rank_far_to_near,
+          edit_region_uv:item.generation_target?.placement?.focus_region_uv || null,
+          exact_floor_polygon_uv:item.generation_target?.placement?.floor_polygon_uv || null,
+          back_center_uv:item.generation_target?.orientation?.back_center_uv || null,
+          front_center_uv:item.generation_target?.orientation?.front_center_uv || null,
+          instruction:item.generation_instruction
+        }))
+      },
       layout_contract:{
         enforcement:'HARD_CONSTRAINT',
         allow_chaotic_placement:false,
         allow_random_position_jitter:false,
         allow_random_rotation_jitter:false,
-        groups:layoutGroups
+        groups:multiLayoutGroups
       },
       chairs:rawFurniture.map(item=>({
         id:item.id,
@@ -2954,6 +2970,14 @@ function buildSceneExportData(){
         proxy_guide:item.proxy_guide,
         semantics:item.semantics,
         orientation_contract:item.orientation_contract,
+        edit_contract:{
+          mode:'replace_only_this_proxy',
+          edit_region_uv:item.generation_target?.placement?.focus_region_uv || null,
+          preserve_pixels_outside_region:true,
+          preserve_other_proxies:true,
+          preserve_already_rendered_chairs:true,
+          global_scene_regeneration_forbidden:true
+        },
         generation_instruction:item.generation_instruction
       }))
     }
