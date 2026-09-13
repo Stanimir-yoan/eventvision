@@ -817,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.4 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -956,7 +956,7 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Aim the phone using the 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
+      Aim the phone using the clean solid 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
     </div>
   </div>
 
@@ -1393,12 +1393,13 @@ function clearFurnitureProxyGuide(){
 }
 
 function proxyMaterial(color,opacity=1){
+  const solid=opacity>=0.999;
   return new THREE.MeshBasicMaterial({
     color,
-    transparent:opacity<1,
+    transparent:!solid,
     opacity,
     depthTest:true,
-    depthWrite:false,
+    depthWrite:solid,
     side:THREE.DoubleSide
   });
 }
@@ -1433,11 +1434,11 @@ function createFurnitureProxy(item){
   // This exactly matches getFurnitureOrientationWorld(): forward = (-sinθ, 0, cosθ).
   proxy.rotation.y=-Number(item.rotation || 0)*Math.PI/180;
 
-  const bodyMat=proxyMaterial(0x7d72ff,.22);
-  const bodyStrongMat=proxyMaterial(0x7d72ff,.34);
-  const greenMat=proxyMaterial(0x63efb0,.96);
-  const whiteMat=proxyMaterial(0xffffff,.96);
-  const legMat=proxyMaterial(0x7d72ff,.28);
+  const bodyMat=proxyMaterial(0xb7b3c8,1);
+  const bodyStrongMat=proxyMaterial(0xd5d1e2,1);
+  const greenMat=proxyMaterial(0x63efb0,1);
+  const whiteMat=proxyMaterial(0xffffff,1);
+  const legMat=proxyMaterial(0x9c98aa,1);
 
   const seatW=Math.max(.12,width*.88);
   const seatD=Math.max(.12,depth*.76);
@@ -1486,16 +1487,16 @@ function createFurnitureProxy(item){
     );
   });
 
-  // Semantic floor bars: green is FRONT, white is BACK.
+  // Compact semantic seat-edge cues: green is FRONT, white is BACK.
   addProxyBox(proxy,
-    {x:width,y:.022,z:.026},
-    {x:0,y:.018,z:depth/2},
+    {x:seatW,y:.016,z:.024},
+    {x:0,y:seatY + seatThickness/2 + .008,z:depth*.035 + seatD/2 - .012},
     greenMat,
     860
   );
   addProxyBox(proxy,
-    {x:width,y:.022,z:.026},
-    {x:0,y:.018,z:-depth/2},
+    {x:seatW,y:.016,z:.024},
+    {x:0,y:seatY + seatThickness/2 + .008,z:depth*.035 - seatD/2 + .012},
     whiteMat,
     860
   );
@@ -1716,7 +1717,11 @@ function getProjectionSnapshotForOverlay(){
 
 function updateProjectionDebugOverlay(){
   const svg=el.projectionDebug;
-  if(!svg || !screenshotModeActive) return;
+  if(!svg) return;
+  svg.innerHTML='';
+  // v9.5 generation screenshots are intentionally clean: only the solid 3D proxies remain visible.
+  // The old projected rectangles/front-back bars are hidden to avoid duplicate guides.
+  return;
 
   const width=Math.max(1,window.innerWidth);
   const height=Math.max(1,window.innerHeight);
@@ -1982,6 +1987,10 @@ function clearObjects(){
   objects=[];
 }
 
+function setScanGuidesVisible(visible){
+  objects.forEach(o=>{ o.visible=!!visible; });
+}
+
 function rebuildObjects(){
   clearObjects();
   corners.forEach(marker);
@@ -2128,7 +2137,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_4_clean',
+    protocol_version:'EventVision_v9_5_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2550,7 +2559,7 @@ function lockGenerationFrame(){
     }
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
     }
     setExportStatus('Frame unlocked. Prepare capture again before exporting.','warn');
     renderGenerationFrameDetails();
@@ -2561,7 +2570,7 @@ function lockGenerationFrame(){
   if(capturePreparationActive){
     stopCapturePreparation('Capture cancelled');
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
     }
     return;
   }
@@ -2580,7 +2589,7 @@ function lockGenerationFrame(){
   }
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Hold roughly steady…';
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='Keep the framing you want and check that every 3D proxy backrest is on the intended white/BACK side. You do <b>not</b> need to be perfectly motionless; the app will lock after a short stable moment.';
+    el.screenshotGuideText.innerHTML='Keep the framing you want and check that every solid 3D proxy backrest is on the intended white/BACK side. Only the solid proxies stay visible in the screenshot. You do <b>not</b> need to be perfectly motionless; the app will lock after a short stable moment.';
   }
 }
 
@@ -2629,10 +2638,11 @@ function enterScreenshotMode(){
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
       ? '<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After it is saved, you can move freely.'
-      : 'Aim the phone using the 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      : 'Aim the phone using the clean solid 3D chair proxies as pose guides, tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
   }
   rebuildFurnitureProxyGuide();
   setFurnitureProxyGuideVisible(true);
+  setScanGuidesVisible(false);
   if(renderer?.domElement) renderer.domElement.style.display='block';
   updateProjectionDebugOverlay();
 }
@@ -2641,6 +2651,7 @@ function exitScreenshotMode(){
   if(capturePreparationActive) stopCapturePreparation();
   screenshotModeActive=false;
   clearFurnitureProxyGuide();
+  setScanGuidesVisible(true);
   if(el.projectionDebug) el.projectionDebug.innerHTML='';
   document.body.classList.remove('screenshot-mode');
   document.body.classList.add('layout-mode');
@@ -2843,7 +2854,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_4_clean',
+    protocol_version:'EventVision_v9_5_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v4_proxy_guided',
@@ -2856,8 +2867,8 @@ function buildSceneExportData(){
       orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      screenshot_proxy_role:'deterministic 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation.',
-      proxy_orientation_source:'3D proxy geometry + green FRONT edge + white BACK edge/backrest; this is authoritative and must not be reversed.',
+      screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain.',
+      proxy_orientation_source:'Solid 3D proxy geometry + green FRONT cue + white BACK cue/backrest; this is authoritative and must not be reversed.',
       recommended_render_strategy:'replace one 3D chair proxy at a time in far-to-near order while respecting rigid layout groups',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
@@ -2866,13 +2877,13 @@ function buildSceneExportData(){
         'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
         'Never mirror front and back.',
-        'Treat the visible 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, green edge is FRONT, white edge is BACK.',
+        'Treat the visible solid 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, green cue is FRONT, white cue is BACK.',
         'Replace the proxy with the reference chair without changing its position, scale, yaw, front/back direction or footprint.',
         'Render multi-chair seating as rigid aligned groups: same facing direction, parallel chairs, uniform floor-space spacing, and no random placement jitter.'
       ]
     },
     generation_summary:{
-      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. The screenshot contains deterministic 3D chair proxies: replace each proxy with the reference chair without changing its pose, front/back direction, scale or footprint. Follow each chair's floor polygon, size anchors and orientation contract exactly. Multi-chair layout groups are rigid organized arrangements: chairs must remain parallel, face the same direction, and keep even floor-space offsets. Do not create chaotic, staggered, scattered, or randomly rotated placement. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
+      global_instruction:`Insert exactly ${rawFurniture.length} chairs into the original room photo. Preserve the room architecture, camera, lighting and perspective exactly. Use the chair reference only for appearance. The screenshot contains only clean solid 3D chair proxies (no scan/debug overlays): replace each proxy with the reference chair without changing its pose, front/back direction, scale or footprint. Follow each chair's floor polygon, size anchors and orientation contract exactly. Multi-chair layout groups are rigid organized arrangements: chairs must remain parallel, face the same direction, and keep even floor-space offsets. Do not create chaotic, staggered, scattered, or randomly rotated placement. Generate one chair at a time in far-to-near order and do not add extra chairs.`,
       generation_mode:'one_chair_at_a_time_with_rigid_group_constraints',
       render_order_far_to_near:exactIds
     },
@@ -2916,7 +2927,7 @@ function buildSceneExportData(){
         allow_missing_objects:false,
         item_ids:exactIds
       },
-      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. Replace each visible 3D proxy with the reference chair while preserving the proxy's exact position, scale and BACK→FRONT orientation. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly. Treat each multi-chair layout group as a rigid organized seating block: same facing direction, parallel chairs, uniform floor-space offsets, no random jitter or chaotic placement.`,
+      scene_instruction:`Insert exactly ${rawFurniture.length} chairs into the room photo. Preserve the room architecture and camera exactly. Use the chair reference only for appearance. Replace each visible solid 3D proxy with the reference chair while preserving the proxy's exact position, scale and BACK→FRONT orientation. For each chair, follow its floor polygon, focus region, height anchors and orientation contract exactly. Treat each multi-chair layout group as a rigid organized seating block: same facing direction, parallel chairs, uniform floor-space offsets, no random jitter or chaotic placement.`,
       layout_contract:{
         enforcement:'HARD_CONSTRAINT',
         allow_chaotic_placement:false,
