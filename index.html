@@ -817,7 +817,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5.1 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1404,6 +1404,25 @@ function proxyMaterial(color,opacity=1){
   });
 }
 
+function tintHex(hex,multiplier=1){
+  const c=new THREE.Color(hex);
+  c.r=Math.max(0,Math.min(1,c.r*multiplier));
+  c.g=Math.max(0,Math.min(1,c.g*multiplier));
+  c.b=Math.max(0,Math.min(1,c.b*multiplier));
+  return c.getHex();
+}
+
+function createProxyFaceMaterials(baseHex){
+  return [
+    proxyMaterial(tintHex(baseHex,0.96),1), // +X right
+    proxyMaterial(tintHex(baseHex,0.82),1), // -X left
+    proxyMaterial(tintHex(baseHex,1.10),1), // +Y top
+    proxyMaterial(tintHex(baseHex,0.66),1), // -Y bottom
+    proxyMaterial(tintHex(baseHex,1.02),1), // +Z front
+    proxyMaterial(tintHex(baseHex,0.74),1)  // -Z back
+  ];
+}
+
 function addProxyBox(group,size,position,material,renderOrder=850){
   const mesh=new THREE.Mesh(
     new THREE.BoxGeometry(size.x,size.y,size.z),
@@ -1434,11 +1453,10 @@ function createFurnitureProxy(item){
   // This exactly matches getFurnitureOrientationWorld(): forward = (-sinθ, 0, cosθ).
   proxy.rotation.y=-Number(item.rotation || 0)*Math.PI/180;
 
-  const bodyMat=proxyMaterial(0xb7b3c8,1);
-  const bodyStrongMat=proxyMaterial(0xd5d1e2,1);
-  const greenMat=proxyMaterial(0x63efb0,1);
-  const whiteMat=proxyMaterial(0xffffff,1);
-  const legMat=proxyMaterial(0x9c98aa,1);
+  const bodyMat=createProxyFaceMaterials(0xb7b3c8);
+  const bodyStrongMat=createProxyFaceMaterials(0xd5d1e2);
+  const supportMat=createProxyFaceMaterials(0xe8e6ef);
+  const legMat=createProxyFaceMaterials(0x9c98aa);
 
   const seatW=Math.max(.12,width*.88);
   const seatD=Math.max(.12,depth*.76);
@@ -1454,7 +1472,7 @@ function createFurnitureProxy(item){
     bodyStrongMat
   );
 
-  // Vertical BACKREST on the authoritative BACK / white side.
+  // Vertical BACKREST on the authoritative BACK side.
   addProxyBox(proxy,
     {x:seatW,y:backrestH,z:PROXY_BACKREST_THICKNESS_M},
     {x:0,y:seatY + backrestH/2 - .01,z:backZ},
@@ -1469,7 +1487,7 @@ function createFurnitureProxy(item){
     addProxyBox(proxy,
       {x:PROXY_LEG_THICKNESS_M,y:supportH,z:PROXY_LEG_THICKNESS_M},
       {x,y:seatY + supportH/2 - .05,z:backZ+.01},
-      whiteMat,
+      supportMat,
       854
     );
   });
@@ -1486,20 +1504,6 @@ function createFurnitureProxy(item){
       848
     );
   });
-
-  // Compact semantic seat-edge cues: green is FRONT, white is BACK.
-  addProxyBox(proxy,
-    {x:seatW,y:.016,z:.024},
-    {x:0,y:seatY + seatThickness/2 + .008,z:depth*.035 + seatD/2 - .012},
-    greenMat,
-    860
-  );
-  addProxyBox(proxy,
-    {x:seatW,y:.016,z:.024},
-    {x:0,y:seatY + seatThickness/2 + .008,z:depth*.035 - seatD/2 + .012},
-    whiteMat,
-    860
-  );
 
   return proxy;
 }
@@ -1532,7 +1536,7 @@ function serializeProxyGuide(dims){
   return {
     type:'deterministic_3d_chair_proxy',
     authoritative_pose_guide:true,
-    local_axis_rule:'local +Z = FRONT (green edge); local -Z = BACK (white edge and vertical backrest)',
+    local_axis_rule:'local +Z = FRONT; local -Z = BACK. Orientation is conveyed by the vertical backrest placement and face-shading differences, not by extra line markers.',
     screenshot_role:'Replace this proxy with the reference chair while preserving the proxy position, scale and facing direction.',
     footprint_m:{
       width:Number(dims.footprint_width ?? dims.width),
@@ -1543,8 +1547,14 @@ function serializeProxyGuide(dims){
       overall_height:height,
       backrest_height:backrestH
     },
-    front_marker_color:'green',
-    back_marker_color:'white',
+    orientation_shading_tones:{
+      top:'lightest',
+      front:'+Z slightly lighter',
+      back:'-Z darker',
+      right:'+X medium',
+      left:'-X darker',
+      bottom:'darkest'
+    },
     backrest_is_on_back_side:true,
     do_not_flip_proxy_orientation:true
   };
@@ -1651,7 +1661,7 @@ function computeOrientationSemantics(projected){
 
 function buildChairGenerationInstruction(chairId, semantics){
   const dirText=semantics?.visible_view_hint || 'chair front orientation must follow the FRONT/BACK anchors';
-  return `Replace the visible 3D proxy for ${chairId} with the provided reference chair. Keep the proxy's exact floor position, footprint, scale and yaw. The proxy's vertical backrest/white side is BACK and the green side is FRONT; never reverse them. Insert ${chairId} exactly inside its floor polygon. Put the real chair backrest on the BACK side and open seat/front on the FRONT side, facing from BACK toward FRONT. ${dirText}. If this chair belongs to a layout group, keep it parallel to all group members and preserve the group's exact even floor-space offsets. Do not stagger, scatter, randomly rotate, or jitter grouped chairs. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
+  return `Replace the visible 3D proxy for ${chairId} with the provided reference chair. Keep the proxy's exact floor position, footprint, scale and yaw. The proxy's vertical backrest marks the BACK side, and the differently shaded faces reinforce FRONT vs BACK orientation; never reverse them. Insert ${chairId} exactly inside its floor polygon. Put the real chair backrest on the BACK side and open seat/front on the FRONT side, facing from BACK toward FRONT. ${dirText}. If this chair belongs to a layout group, keep it parallel to all group members and preserve the group's exact even floor-space offsets. Do not stagger, scatter, randomly rotate, or jitter grouped chairs. Do not rotate 180 degrees. Do not mirror front and back. Preserve the room architecture and camera exactly.`;
 }
 
 function serializeGenerationTarget(projected,dims){
@@ -2137,7 +2147,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_5_clean',
+    protocol_version:'EventVision_v9_5_1_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2854,7 +2864,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_5_clean',
+    protocol_version:'EventVision_v9_5_1_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v4_proxy_guided',
@@ -2867,8 +2877,8 @@ function buildSceneExportData(){
       orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
-      screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain.',
-      proxy_orientation_source:'Solid 3D proxy geometry + green FRONT cue + white BACK cue/backrest; this is authoritative and must not be reversed.',
+      screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain. The proxy no longer uses extra colored floor-edge lines; orientation is conveyed by the backrest location and shading.',
+      proxy_orientation_source:'Solid 3D proxy geometry + backrest placement + differently shaded faces; this is authoritative and must not be reversed.',
       recommended_render_strategy:'replace one 3D chair proxy at a time in far-to-near order while respecting rigid layout groups',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
@@ -2877,7 +2887,7 @@ function buildSceneExportData(){
         'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
         'Never mirror front and back.',
-        'Treat the visible solid 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, green cue is FRONT, white cue is BACK.',
+        'Treat the visible solid 3D chair proxy in the screenshot as the authoritative pose guide: the vertical backrest is on BACK, and the differently shaded faces reinforce FRONT vs BACK orientation.',
         'Replace the proxy with the reference chair without changing its position, scale, yaw, front/back direction or footprint.',
         'Render multi-chair seating as rigid aligned groups: same facing direction, parallel chairs, uniform floor-space spacing, and no random placement jitter.'
       ]
