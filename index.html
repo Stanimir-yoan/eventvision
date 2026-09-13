@@ -1140,6 +1140,7 @@ let wallOccluderGroup = null;
 const WALL_OCCLUSION_ENABLED = true;
 const WALL_OCCLUDER_HEIGHT_M = 2.70;
 const WALL_OCCLUDER_THICKNESS_M = 0.10;
+const WALL_OCCLUDER_OUTWARD_OFFSET_M = 0.10;
 const WALL_OCCLUDER_RENDER_ORDER = -1000;
 
 const SAVED_SPACE_STORAGE_KEY='eventvision_saved_space_v1';
@@ -1231,7 +1232,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_clean',
+    source_protocol:'EventVision_v9_7_1_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1245,6 +1246,7 @@ function makeSavedSpaceSnapshot(){
       enabled:WALL_OCCLUSION_ENABLED,
       wall_height_m:WALL_OCCLUDER_HEIGHT_M,
       wall_thickness_m:WALL_OCCLUDER_THICKNESS_M,
+      outward_offset_m:WALL_OCCLUDER_OUTWARD_OFFSET_M,
       mode:'depth_only'
     },
     calibration_anchor:{
@@ -1865,7 +1867,30 @@ function makeDepthOnlyOccluderMaterial(){
   return material;
 }
 
-function buildWallOccluderMesh(a,b,index){
+function getPolygonSignedAreaXZ(points){
+  if(!Array.isArray(points) || points.length<3) return 0;
+  let area=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i], b=points[(i+1)%points.length];
+    area += Number(a.x)*Number(b.z) - Number(b.x)*Number(a.z);
+  }
+  return area/2;
+}
+
+function getWallOutwardNormalXZ(a,b,polygonSignedArea){
+  const dx=Number(b.x)-Number(a.x);
+  const dz=Number(b.z)-Number(a.z);
+  const length=Math.hypot(dx,dz);
+  if(!Number.isFinite(length) || length<1e-6) return {x:0,z:0};
+  const ccw = polygonSignedArea>0;
+  // For a CCW polygon the room interior lies to the LEFT of each edge, so the
+  // outward normal is the RIGHT normal. For CW polygons the opposite is true.
+  return ccw
+    ? {x:dz/length, z:-dx/length}
+    : {x:-dz/length, z:dx/length};
+}
+
+function buildWallOccluderMesh(a,b,index,polygonSignedArea=0){
   if(!a || !b) return null;
   const dx=Number(b.x)-Number(a.x);
   const dz=Number(b.z)-Number(a.z);
@@ -1876,6 +1901,10 @@ function buildWallOccluderMesh(a,b,index){
     ? Number(floorY)
     : Number(scanSceneData?.coordinate_system?.ground_y_m || a.y || 0);
 
+  const outward=getWallOutwardNormalXZ(a,b,polygonSignedArea);
+  const offsetX=outward.x*WALL_OCCLUDER_OUTWARD_OFFSET_M;
+  const offsetZ=outward.z*WALL_OCCLUDER_OUTWARD_OFFSET_M;
+
   // Length runs along local X, thickness along local Z, height along Y.
   const geometry=new THREE.BoxGeometry(length,WALL_OCCLUDER_HEIGHT_M,WALL_OCCLUDER_THICKNESS_M);
   const mesh=new THREE.Mesh(geometry,makeDepthOnlyOccluderMaterial());
@@ -1883,10 +1912,11 @@ function buildWallOccluderMesh(a,b,index){
   mesh.userData.kind='wallOccluder';
   mesh.userData.wallIndex=index;
   mesh.userData.depthOnly=true;
+  mesh.userData.outwardOffsetM=WALL_OCCLUDER_OUTWARD_OFFSET_M;
   mesh.position.set(
-    (Number(a.x)+Number(b.x))/2,
+    (Number(a.x)+Number(b.x))/2 + offsetX,
     groundY+WALL_OCCLUDER_HEIGHT_M/2,
-    (Number(a.z)+Number(b.z))/2
+    (Number(a.z)+Number(b.z))/2 + offsetZ
   );
   mesh.rotation.y=-Math.atan2(dz,dx);
   mesh.renderOrder=WALL_OCCLUDER_RENDER_ORDER;
@@ -1916,8 +1946,10 @@ function rebuildWallOccluders(){
   wallOccluderGroup.userData.height_m=WALL_OCCLUDER_HEIGHT_M;
   wallOccluderGroup.userData.thickness_m=WALL_OCCLUDER_THICKNESS_M;
 
+  const polygonSignedArea=getPolygonSignedAreaXZ(pts);
+
   for(let i=0;i<pts.length;i++){
-    const mesh=buildWallOccluderMesh(pts[i],pts[(i+1)%pts.length],i);
+    const mesh=buildWallOccluderMesh(pts[i],pts[(i+1)%pts.length],i,polygonSignedArea);
     if(mesh) wallOccluderGroup.add(mesh);
   }
   // The group itself can stay visible; its children write depth only and are visually invisible.
@@ -1932,8 +1964,10 @@ function setWallOccludersActive(active){
 function wallOccluderExportData(){
   const pts=getWallOccluderSourcePoints();
   if(pts.length<3) return [];
+  const polygonSignedArea=getPolygonSignedAreaXZ(pts);
   return pts.map((a,i)=>{
     const b=pts[(i+1)%pts.length];
+    const outward=getWallOutwardNormalXZ(a,b,polygonSignedArea);
     return {
       id:`wall_${String(i+1).padStart(2,'0')}`,
       type:'vertical_wall_depth_occluder',
@@ -1943,6 +1977,8 @@ function wallOccluderExportData(){
       end_world_m:{x:Number(b.x),y:Number(b.y),z:Number(b.z)},
       height_m:WALL_OCCLUDER_HEIGHT_M,
       thickness_m:WALL_OCCLUDER_THICKNESS_M,
+      outward_offset_m:WALL_OCCLUDER_OUTWARD_OFFSET_M,
+      outward_normal_xz:{x:Number(outward.x),z:Number(outward.z)},
       visible_to_user:false,
       writes_color:false,
       writes_depth:true
@@ -2903,7 +2939,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_clean',
+    protocol_version:'EventVision_v9_7_1_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3639,7 +3675,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_clean',
+    protocol_version:'EventVision_v9_7_1_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
