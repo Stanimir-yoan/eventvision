@@ -1140,7 +1140,7 @@ let wallOccluderGroup = null;
 const WALL_OCCLUSION_ENABLED = true;
 const WALL_OCCLUDER_HEIGHT_M = 2.70;
 const WALL_OCCLUDER_THICKNESS_M = 0.10;
-const WALL_OCCLUDER_OUTWARD_OFFSET_M = 0.10;
+const WALL_OCCLUDER_OUTWARD_OFFSET_M = 0.05;
 const WALL_OCCLUDER_RENDER_ORDER = -1000;
 
 const SAVED_SPACE_STORAGE_KEY='eventvision_saved_space_v1';
@@ -1232,7 +1232,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_1_clean',
+    source_protocol:'EventVision_v9_7_2_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -2939,7 +2939,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_1_clean',
+    protocol_version:'EventVision_v9_7_2_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3675,7 +3675,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_1_clean',
+    protocol_version:'EventVision_v9_7_2_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
