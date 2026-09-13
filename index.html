@@ -813,11 +813,53 @@ body.xr-active.screenshot-mode .screenshotHud{
   background:rgba(107,92,255,.18);
 }
 
+
+/* v9.6 — persistent-space relocalization */
+.savedSpacePanel{
+  display:none;
+  margin-top:12px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#101014;
+}
+.savedSpacePanel.show{display:block;}
+.savedSpaceTitle{font-size:12px;font-weight:900;}
+.savedSpaceMeta{margin-top:4px;color:var(--muted);font-size:10px;line-height:1.4;}
+.savedSpaceActions{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px;}
+.savedSpaceActions button{min-height:42px;border-radius:12px;border:1px solid var(--line);font-weight:850;}
+#reopenSavedSpace{background:var(--accent);color:#fff;border-color:transparent;}
+#forgetSavedSpace{background:#17171c;color:#fff;padding:0 12px;}
+.saveSpaceBtn{grid-column:1 / -1;background:#17171c !important;border:1px solid var(--line) !important;}
+.calibrationAccuracyGood{color:#63efb0;}
+.calibrationAccuracyWarn{color:#ffd166;}
+
+.calibrationMiniMap{
+  display:none;
+  position:fixed;
+  top:calc(62px + env(safe-area-inset-top));
+  left:12px;
+  width:128px;
+  padding:8px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:14px;
+  background:rgba(12,12,16,.82);
+  backdrop-filter:blur(10px);
+  pointer-events:none;
+}
+.calibrationMiniMap.show{display:block;}
+.calibrationMiniMap svg{display:block;width:112px;height:96px;}
+.calibrationMiniCaption{margin-top:4px;color:#fff;font-size:9px;font-weight:850;text-align:center;line-height:1.25;}
+.calibrationMiniMap .roomPoly{fill:rgba(255,255,255,.06);stroke:rgba(255,255,255,.55);stroke-width:2;}
+.calibrationMiniMap .cornerDot{fill:#8c8c98;}
+.calibrationMiniMap .cornerDot.target{fill:#63efb0;stroke:#fff;stroke-width:2;}
+.calibrationMiniMap .cornerText{fill:#fff;font-size:8px;font-weight:900;text-anchor:middle;dominant-baseline:central;}
+
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.5.3 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.6 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -830,6 +872,14 @@ body.xr-active.screenshot-mode .screenshotHud{
     </div>
     <button id="start" class="primary" disabled>Enter AR scan</button>
     <div id="support">Checking WebXR…</div>
+    <div id="savedSpacePanel" class="savedSpacePanel">
+      <div class="savedSpaceTitle">Saved space available</div>
+      <div id="savedSpaceMeta" class="savedSpaceMeta"></div>
+      <div class="savedSpaceActions">
+        <button id="reopenSavedSpace" type="button">Reopen + calibrate</button>
+        <button id="forgetSavedSpace" type="button">Forget</button>
+      </div>
+    </div>
   </section>
 
   <section id="result">
@@ -884,6 +934,11 @@ body.xr-active.screenshot-mode .screenshotHud{
         <span class="addFurnitureIcon">＋</span>
         <span>Add chair</span>
       </button>
+
+      <button id="saveSpace" class="addFurnitureBtn saveSpaceBtn" type="button">
+        <span class="addFurnitureIcon">⌂</span>
+        <span>Save this space for later calibration</span>
+      </button>
     </div>
 
     <div class="debugActionRow" aria-label="Generation exports">
@@ -935,6 +990,11 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="hudTop">
     <div class="pill" id="hint">Finding floor…</div>
     <div class="pill" id="count">0 corners</div>
+  </div>
+
+  <div id="calibrationMiniMap" class="calibrationMiniMap">
+    <svg id="calibrationPlanSvg" viewBox="0 0 112 96" aria-label="Saved room calibration plan"></svg>
+    <div id="calibrationMiniCaption" class="calibrationMiniCaption">Saved room</div>
   </div>
 
   <div class="cross"><div class="crossDot"></div></div>
@@ -1037,7 +1097,15 @@ const el = {
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
-  cornerDetails: document.getElementById('cornerDetails')
+  cornerDetails: document.getElementById('cornerDetails'),
+  savedSpacePanel: document.getElementById('savedSpacePanel'),
+  savedSpaceMeta: document.getElementById('savedSpaceMeta'),
+  reopenSavedSpace: document.getElementById('reopenSavedSpace'),
+  forgetSavedSpace: document.getElementById('forgetSavedSpace'),
+  saveSpace: document.getElementById('saveSpace'),
+  calibrationMiniMap: document.getElementById('calibrationMiniMap'),
+  calibrationPlanSvg: document.getElementById('calibrationPlanSvg'),
+  calibrationMiniCaption: document.getElementById('calibrationMiniCaption')
 };
 
 let renderer, scene, camera, session, refSpace, hitSource, reticle;
@@ -1065,6 +1133,14 @@ const CAPTURE_MAX_POSITION_SPREAD_M = 0.025;
 const CAPTURE_MAX_ROTATION_SPREAD_DEG = 2.2;
 let latestXRViewData = null;
 let furnitureProxyGroup = null;
+
+const SAVED_SPACE_STORAGE_KEY='eventvision_saved_space_v1';
+let calibrationMode=false;
+let calibrationSavedSpace=null;
+let calibrationObserved=[];
+let calibrationPhase='collect';
+let calibrationCandidate=null;
+let sessionCalibration=null;
 
 const PROXY_SEAT_HEIGHT_M = 0.45;
 const PROXY_SEAT_THICKNESS_M = 0.065;
@@ -1100,6 +1176,334 @@ function normalizeCornerGroundPlane(){
   if(!Number.isFinite(floorY)) return;
   corners.forEach(point=>{ point.y=Number(floorY); });
   finishedCorners.forEach(point=>{ point.y=Number(floorY); });
+}
+
+function loadSavedSpace(){
+  try{
+    const raw=localStorage.getItem(SAVED_SPACE_STORAGE_KEY);
+    if(!raw) return null;
+    const data=JSON.parse(raw);
+    if(data?.schema!=='eventvision_saved_space_v1' || !Array.isArray(data?.room?.corners) || data.room.corners.length<3) return null;
+    return data;
+  }catch(err){
+    console.warn('Could not load saved EventVision space',err);
+    return null;
+  }
+}
+
+function chooseVerificationCorner(roomCorners){
+  if(!Array.isArray(roomCorners) || roomCorners.length<3) return null;
+  // Corner 1→2 defines the saved room X axis, therefore |plan.z| is the
+  // perpendicular distance from that baseline. The farthest corner gives
+  // the strongest third-point verification for yaw/translation errors.
+  let best=roomCorners[2];
+  let bestDistance=Math.abs(Number(best?.plan?.z || 0));
+  roomCorners.slice(2).forEach(c=>{
+    const d=Math.abs(Number(c?.plan?.z || 0));
+    if(d>bestDistance){ best=c; bestDistance=d; }
+  });
+  return best;
+}
+
+function makeSavedSpaceSnapshot(){
+  if(!scanSceneData?.corners?.length) return null;
+  const verify=chooseVerificationCorner(scanSceneData.corners);
+  return {
+    schema:'eventvision_saved_space_v1',
+    saved_at:new Date().toISOString(),
+    source_protocol:'EventVision_v9_6_clean',
+    room:{
+      area_m2:Number(scanSceneData.area_m2),
+      corners:scanSceneData.corners.map(c=>({
+        id:c.id,
+        number:c.number,
+        plan:{x:Number(c.plan.x),z:Number(c.plan.z)}
+      })),
+      walls:cloneData(scanSceneData.walls || [])
+    },
+    calibration_anchor:{
+      method:'three_fixed_floor_corners_rigid_fit',
+      origin_corner_id:'corner_01',
+      direction_corner_id:'corner_02',
+      verification_corner_id:verify?.id || 'corner_03',
+      scale_locked_to_one:true,
+      recommended_rms_error_m:0.06,
+      maximum_rms_error_m:0.10
+    }
+  };
+}
+
+function updateSavedSpacePanel(){
+  const saved=loadSavedSpace();
+  if(!el.savedSpacePanel) return;
+  if(!saved){
+    el.savedSpacePanel.classList.remove('show');
+    return;
+  }
+  el.savedSpacePanel.classList.add('show');
+  const savedAt=saved.saved_at ? new Date(saved.saved_at) : null;
+  const verifyId=saved.calibration_anchor?.verification_corner_id || 'corner_03';
+  const verifyCorner=saved.room?.corners?.find(c=>c.id===verifyId);
+  if(el.savedSpaceMeta){
+    el.savedSpaceMeta.textContent=`${saved.room.corners.length} corners · ${Number(saved.room.area_m2||0).toFixed(2)} m² · calibration uses Corners 1, 2 and ${verifyCorner?.number || 3}${savedAt ? ` · saved ${savedAt.toLocaleDateString()}` : ''}`;
+  }
+}
+
+function saveCurrentSpaceForLater(){
+  const snapshot=makeSavedSpaceSnapshot();
+  if(!snapshot){
+    alert('Finish a room scan before saving the space.');
+    return;
+  }
+  try{
+    localStorage.setItem(SAVED_SPACE_STORAGE_KEY,JSON.stringify(snapshot));
+    updateSavedSpacePanel();
+    if(el.saveSpace) el.saveSpace.innerHTML='<span class="addFurnitureIcon">✓</span><span>Space saved for later calibration</span>';
+  }catch(err){
+    alert('Could not save this space on the device: '+(err?.message || err));
+  }
+}
+
+function getCalibrationAnchorCorners(){
+  if(!calibrationSavedSpace) return [];
+  const ids=[
+    calibrationSavedSpace.calibration_anchor?.origin_corner_id || 'corner_01',
+    calibrationSavedSpace.calibration_anchor?.direction_corner_id || 'corner_02',
+    calibrationSavedSpace.calibration_anchor?.verification_corner_id || 'corner_03'
+  ];
+  return ids.map(id=>calibrationSavedSpace.room.corners.find(c=>c.id===id)).filter(Boolean);
+}
+
+function calibrationPrompt(){
+  const refs=getCalibrationAnchorCorners();
+  const current=refs[calibrationObserved.length];
+  if(calibrationPhase==='verify'){
+    const rms=Number(calibrationCandidate?.rms_error_m || 0);
+    const cls=rms<=0.06?'good':'warn';
+    return `Alignment preview · ${cls==='good'?'good':'check'} accuracy ${(rms*100).toFixed(1)} cm RMS · compare the white room outline with the real walls`;
+  }
+  if(!current) return 'Calibration ready';
+  return `Aim at the exact physical wall/floor point for saved Corner ${current.number}, then tap the button`;
+}
+
+function renderCalibrationMiniPlan(){
+  if(!el.calibrationMiniMap || !el.calibrationPlanSvg) return;
+  if(!calibrationMode || !calibrationSavedSpace?.room?.corners?.length){
+    el.calibrationMiniMap.classList.remove('show');
+    el.calibrationPlanSvg.innerHTML='';
+    return;
+  }
+  const pts=calibrationSavedSpace.room.corners;
+  const xs=pts.map(c=>Number(c.plan.x)), zs=pts.map(c=>Number(c.plan.z));
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+  const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
+  const k=Math.min(90/w,72/h), cx=56,cy=48;
+  const wx=(minX+maxX)/2,wz=(minZ+maxZ)/2;
+  const mapped=pts.map(c=>({
+    x:(Number(c.plan.x)-wx)*k+cx,
+    y:(Number(c.plan.z)-wz)*k+cy,
+    number:c.number,
+    id:c.id
+  }));
+  const target=getCalibrationAnchorCorners()[calibrationObserved.length];
+  const ns='http://www.w3.org/2000/svg';
+  el.calibrationPlanSvg.innerHTML='';
+  const poly=document.createElementNS(ns,'polygon');
+  poly.setAttribute('class','roomPoly');
+  poly.setAttribute('points',mapped.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+  el.calibrationPlanSvg.appendChild(poly);
+  mapped.forEach(p=>{
+    const circle=document.createElementNS(ns,'circle');
+    circle.setAttribute('cx',p.x);circle.setAttribute('cy',p.y);circle.setAttribute('r',p.id===target?.id?6:4);
+    circle.setAttribute('class',`cornerDot${p.id===target?.id?' target':''}`);
+    el.calibrationPlanSvg.appendChild(circle);
+    const text=document.createElementNS(ns,'text');
+    text.setAttribute('x',p.x);text.setAttribute('y',p.y+.5);text.setAttribute('class','cornerText');text.textContent=String(p.number);
+    el.calibrationPlanSvg.appendChild(text);
+  });
+  el.calibrationMiniMap.classList.add('show');
+  if(el.calibrationMiniCaption){
+    el.calibrationMiniCaption.textContent=calibrationPhase==='verify' ? 'Check white outline' : `Tap saved Corner ${target?.number || ''}`;
+  }
+}
+
+function updateCalibrationHud(){
+  if(!calibrationMode){ renderCalibrationMiniPlan(); return; }
+  renderCalibrationMiniPlan();
+  const refs=getCalibrationAnchorCorners();
+  if(el.finish){ el.finish.style.display='none'; el.finish.disabled=true; }
+  if(calibrationPhase==='verify'){
+    if(el.count) el.count.textContent='Verify alignment';
+    if(el.hint) el.hint.textContent=calibrationPrompt();
+    if(el.addCorner){ el.addCorner.textContent='Accept calibration'; el.addCorner.disabled=false; }
+    if(el.undo){ el.undo.textContent='Retry'; el.undo.disabled=false; }
+    return;
+  }
+  const step=Math.min(calibrationObserved.length+1,refs.length);
+  const target=refs[calibrationObserved.length];
+  if(el.count) el.count.textContent=`Calibration ${step}/${refs.length}`;
+  if(el.hint) el.hint.textContent=calibrationPrompt();
+  if(el.addCorner){
+    el.addCorner.textContent=target ? `Set Corner ${target.number}` : 'Calibrate';
+    el.addCorner.disabled=!hitValid;
+  }
+  if(el.undo){
+    el.undo.textContent=calibrationObserved.length ? 'Back' : 'Restart';
+    el.undo.disabled=calibrationObserved.length===0;
+  }
+}
+
+function resetCalibrationCollection(){
+  calibrationObserved=[];
+  calibrationCandidate=null;
+  calibrationPhase='collect';
+  corners=[];
+  finishedCorners=[];
+  floorY=null;
+  clearObjects();
+  updateCalibrationHud();
+}
+
+function rigidFitPlanToObserved(planPoints,observedPoints){
+  if(planPoints.length!==observedPoints.length || planPoints.length<2) return null;
+  const n=planPoints.length;
+  const pc=planPoints.reduce((a,p)=>({x:a.x+p.x,z:a.z+p.z}),{x:0,z:0});
+  const qc=observedPoints.reduce((a,p)=>({x:a.x+p.x,z:a.z+p.z}),{x:0,z:0});
+  pc.x/=n; pc.z/=n; qc.x/=n; qc.z/=n;
+  let A=0,B=0;
+  for(let i=0;i<n;i++){
+    const px=planPoints[i].x-pc.x, pz=planPoints[i].z-pc.z;
+    const qx=observedPoints[i].x-qc.x, qz=observedPoints[i].z-qc.z;
+    A+=px*qx+pz*qz;
+    B+=px*qz-pz*qx;
+  }
+  const theta=Math.atan2(B,A);
+  const c=Math.cos(theta),si=Math.sin(theta);
+  const rpc={x:c*pc.x-si*pc.z,z:si*pc.x+c*pc.z};
+  const translation={x:qc.x-rpc.x,z:qc.z-rpc.z};
+  const transformPoint=p=>({
+    x:c*p.x-si*p.z+translation.x,
+    z:si*p.x+c*p.z+translation.z
+  });
+  const residuals=planPoints.map((p,i)=>{
+    const pred=transformPoint(p),obs=observedPoints[i];
+    return Math.hypot(pred.x-obs.x,pred.z-obs.z);
+  });
+  const rms=Math.sqrt(residuals.reduce((sum,v)=>sum+v*v,0)/residuals.length);
+  return {theta_rad:theta,rotation_deg:theta*180/Math.PI,translation,transformPoint,residuals,rms_error_m:rms};
+}
+
+function buildCalibrationCandidate(){
+  const refs=getCalibrationAnchorCorners();
+  if(refs.length<3 || calibrationObserved.length<3) return null;
+  const planPoints=refs.map(c=>({x:Number(c.plan.x),z:Number(c.plan.z)}));
+  const observed=calibrationObserved.map(p=>({x:Number(p.x),z:Number(p.z)}));
+  const fit=rigidFitPlanToObserved(planPoints,observed);
+  if(!fit) return null;
+
+  const savedBaseline=Math.hypot(planPoints[1].x-planPoints[0].x,planPoints[1].z-planPoints[0].z);
+  const observedBaseline=Math.hypot(observed[1].x-observed[0].x,observed[1].z-observed[0].z);
+  const scaleRatio=savedBaseline>1e-6 ? observedBaseline/savedBaseline : 1;
+  const y=calibrationObserved.reduce((sum,p)=>sum+Number(p.y),0)/calibrationObserved.length;
+  const predictedCorners=calibrationSavedSpace.room.corners.map(c=>{
+    const xz=fit.transformPoint({x:Number(c.plan.x),z:Number(c.plan.z)});
+    return new THREE.Vector3(xz.x,y,xz.z);
+  });
+  return {
+    ...fit,
+    scale_ratio:scaleRatio,
+    scale_error_percent:Math.abs(scaleRatio-1)*100,
+    ground_y_m:y,
+    predictedCorners
+  };
+}
+
+function enterCalibrationPreview(){
+  calibrationCandidate=buildCalibrationCandidate();
+  if(!calibrationCandidate) return;
+  const maxError=Number(calibrationSavedSpace?.calibration_anchor?.maximum_rms_error_m || 0.10);
+  if(calibrationCandidate.rms_error_m>maxError || calibrationCandidate.scale_error_percent>6){
+    const message=`Calibration mismatch: ${(calibrationCandidate.rms_error_m*100).toFixed(1)} cm RMS, scale check ${calibrationCandidate.scale_error_percent.toFixed(1)}%. Re-tap the three fixed corners carefully.`;
+    resetCalibrationCollection();
+    if(el.hint) el.hint.textContent=message;
+    return;
+  }
+  calibrationPhase='verify';
+  floorY=calibrationCandidate.ground_y_m;
+  corners=calibrationCandidate.predictedCorners.map(p=>p.clone());
+  clearObjects();
+  rebuildObjects();
+  reticle.visible=false;
+  updateCalibrationHud();
+}
+
+function handleCalibrationHit(){
+  if(calibrationPhase!=='collect' || !hitValid || !latestHit) return;
+  const p=latestHit.clone();
+  if(!Number.isFinite(floorY)) floorY=Number(p.y);
+  p.y=Number(floorY);
+  calibrationObserved.push(p);
+  corners=calibrationObserved.map(v=>v.clone());
+  rebuildObjects();
+  if(calibrationObserved.length>=3) enterCalibrationPreview();
+  else updateCalibrationHud();
+}
+
+function acceptCalibration(){
+  if(!calibrationCandidate || !calibrationSavedSpace) return;
+  const refs=getCalibrationAnchorCorners();
+  floorY=Number(calibrationCandidate.ground_y_m);
+  corners=calibrationCandidate.predictedCorners.map(p=>p.clone());
+  finishedCorners=corners.map(p=>p.clone());
+  completed=true;
+  calibrationMode=false;
+  calibrationPhase='collect';
+  renderCalibrationMiniPlan();
+  sessionCalibration={
+    mode:'relocalized_saved_space',
+    method:'three_fixed_floor_corners_rigid_fit',
+    anchor_corner_ids:refs.map(c=>c.id),
+    rms_error_m:Number(calibrationCandidate.rms_error_m),
+    residuals_m:calibrationCandidate.residuals.map(Number),
+    scale_applied:1,
+    measured_scale_ratio:Number(calibrationCandidate.scale_ratio),
+    rotation_deg:Number(calibrationCandidate.rotation_deg),
+    translation_xz_m:{x:Number(calibrationCandidate.translation.x),z:Number(calibrationCandidate.translation.z)},
+    ground_y_m:Number(floorY),
+    calibrated_at:new Date().toISOString()
+  };
+  calibrationSavedSpace=null;
+  calibrationObserved=[];
+  calibrationCandidate=null;
+
+  // A reopened room starts with a fresh furniture plan.
+  furnitureItems=[];
+  selectedFurnitureId=null;
+  furnitureIdCounter=1;
+  layoutGroupCounter=1;
+  lockedGenerationFrame=null;
+
+  if(el.finish) el.finish.style.display='';
+  if(el.undo) el.undo.textContent='Undo';
+  if(el.addCorner) el.addCorner.textContent='Add corner';
+  rebuildObjects();
+  drawResult(finishedCorners);
+  document.body.classList.add('layout-mode');
+  el.hud.classList.remove('active');
+  if(el.trackingText) el.trackingText.textContent='Calibrated live phone';
+  requestAnimationFrame(()=>el.result.scrollIntoView({behavior:'smooth',block:'start'}));
+}
+
+async function startSavedSpaceCalibration(){
+  const saved=loadSavedSpace();
+  if(!saved){
+    alert('No saved space was found on this device.');
+    updateSavedSpacePanel();
+    return;
+  }
+  calibrationSavedSpace=saved;
+  calibrationMode=true;
+  await enterAR('calibrate');
 }
 
 function createRenderer(){
@@ -1152,7 +1556,7 @@ async function check(){
 
 check();
 
-async function enterAR(){
+async function enterAR(mode='scan'){
   if(!renderer) createRenderer();
 
   try{
@@ -1166,6 +1570,7 @@ async function enterAR(){
     return;
   }
 
+  const wantsCalibration=mode==='calibrate' && !!calibrationSavedSpace;
   completed=false;
   corners=[];
   finishedCorners=[];
@@ -1182,6 +1587,19 @@ async function enterAR(){
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('screenshot-mode');
   floorY=null;
+  sessionCalibration=null;
+  if(!wantsCalibration){
+    calibrationMode=false;
+    calibrationSavedSpace=null;
+    calibrationObserved=[];
+    calibrationCandidate=null;
+    calibrationPhase='collect';
+  }else{
+    calibrationMode=true;
+    calibrationObserved=[];
+    calibrationCandidate=null;
+    calibrationPhase='collect';
+  }
   if(el.introCard) el.introCard.style.display='block';
   clearObjects();
   el.result.classList.remove('show');
@@ -1196,7 +1614,14 @@ async function enterAR(){
 
   document.body.classList.add('xr-active');
   el.hud.classList.add('active');
-  updateControls();
+  if(calibrationMode){
+    updateCalibrationHud();
+  }else{
+    if(el.finish) el.finish.style.display='';
+    if(el.undo) el.undo.textContent='Undo';
+    if(el.addCorner) el.addCorner.textContent='Add corner';
+    updateControls();
+  }
 
   session.addEventListener('end',endAR);
 
@@ -1819,7 +2244,7 @@ function render(_time,frame){
   }
 
   // Hit testing is only needed while tracing the room.
-  if(!completed && frame && hitSource && refSpace){
+  if(!completed && !(calibrationMode && calibrationPhase==='verify') && frame && hitSource && refSpace){
     const hits=frame.getHitTestResults(hitSource);
 
     if(hits.length){
@@ -1841,7 +2266,10 @@ function render(_time,frame){
         el.addCorner.disabled=false;
         latestHit=groundPoint.clone();
 
-        if(corners.length>=3 && distanceXZ(groundPoint,corners[0])<.25){
+        if(calibrationMode){
+          reticle.material.color.set(0x63efb0);
+          updateCalibrationHud();
+        }else if(corners.length>=3 && distanceXZ(groundPoint,corners[0])<.25){
           reticle.material.color.set(0x43d47c);
           el.hint.textContent='Near first corner — tap to close · ground locked';
         }else{
@@ -1856,18 +2284,25 @@ function render(_time,frame){
       hitValid=false;
       latestHit=null;
       el.addCorner.disabled=true;
-      el.hint.textContent='Finding floor — first corner will lock ground height';
+      if(calibrationMode) updateCalibrationHud();
+      else el.hint.textContent='Finding floor — first corner will lock ground height';
     }
-  }else if(completed){
+  }else if(completed || (calibrationMode && calibrationPhase==='verify')){
     reticle.visible=false;
-    hitValid=false;
-    latestHit=null;
+    if(completed){
+      hitValid=false;
+      latestHit=null;
+    }
   }
 
   renderer.render(scene,camera);
 }
 
 function placeCurrentHit(){
+  if(calibrationMode){
+    handleCalibrationHit();
+    return;
+  }
   if(!hitValid || !latestHit || completed) {
     el.hint.textContent='No floor point yet — move phone slowly';
     return;
@@ -1999,10 +2434,14 @@ function rebuildObjects(){
   clearObjects();
   corners.forEach(marker);
   for(let i=0;i<corners.length-1;i++) line(corners[i],corners[i+1]);
-  if(completed && corners.length>=3) line(corners[corners.length-1],corners[0]);
+  if((completed || (calibrationMode && calibrationPhase==='verify')) && corners.length>=3) line(corners[corners.length-1],corners[0]);
 }
 
 function updateControls(){
+  if(calibrationMode){
+    updateCalibrationHud();
+    return;
+  }
   el.count.textContent=`${corners.length} corner${corners.length===1?'':'s'}`;
   el.undo.disabled=completed || corners.length===0;
   el.addCorner.disabled=completed || !hitValid;
@@ -2012,6 +2451,8 @@ function updateControls(){
 function closeRoom(){
   if(corners.length<3) return;
 
+  sessionCalibration={mode:'fresh_scan',method:'direct_room_scan',calibrated_at:new Date().toISOString()};
+  if(el.saveSpace) el.saveSpace.innerHTML='<span class="addFurnitureIcon">⌂</span><span>Save this space for later calibration</span>';
   normalizeCornerGroundPlane();
   completed=true;
   finishedCorners=corners.map(p=>{
@@ -2048,12 +2489,27 @@ function closeRoom(){
 el.addCorner.addEventListener('click',e=>{
   e.preventDefault();
   e.stopPropagation();
+  if(calibrationMode && calibrationPhase==='verify'){
+    acceptCalibration();
+    return;
+  }
   placeCurrentHit();
 });
 
 el.undo.addEventListener('click',e=>{
   e.preventDefault();
   e.stopPropagation();
+  if(calibrationMode){
+    if(calibrationPhase==='verify'){ resetCalibrationCollection(); return; }
+    if(calibrationObserved.length){
+      calibrationObserved.pop();
+      corners=calibrationObserved.map(v=>v.clone());
+      if(!calibrationObserved.length) floorY=null;
+      rebuildObjects();
+      updateCalibrationHud();
+    }
+    return;
+  }
   if(completed || !corners.length) return;
   corners.pop();
   if(!corners.length){
@@ -2141,7 +2597,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_5_3_clean',
+    protocol_version:'EventVision_v9_6_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -2607,6 +3063,9 @@ function renderGenerationFrameDetails(message=''){
   const p=lockedGenerationFrame.camera?.position;
   const yaw=lockedGenerationFrame.camera?.yaw_deg;
   const img=lockedGenerationFrame.image;
+  const calibrationLine=sessionCalibration?.mode==='relocalized_saved_space'
+    ? `<br>Room calibration ${(Number(sessionCalibration.rms_error_m||0)*100).toFixed(1)} cm RMS`
+    : '';
   el.screenshotPoseDetails.innerHTML=`
     <div class="captureDetailCard">
       <strong>Locked generation frame ✓</strong>
@@ -2614,6 +3073,7 @@ function renderGenerationFrameDetails(message=''){
         ${p ? `Camera X ${p.x.toFixed(3)} · Y ${p.y.toFixed(3)} · Z ${p.z.toFixed(3)} m` : 'Camera position unavailable'}
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
         ${img ? `<br>Viewport ${img.viewport_css_width} × ${img.viewport_css_height} CSS px` : ''}
+        ${calibrationLine}
         <br>${lockedGenerationFrame.projections.length} furniture target${lockedGenerationFrame.projections.length===1?'':'s'} validated
       </span>
     </div>`;
@@ -2859,7 +3319,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_5_3_clean',
+    protocol_version:'EventVision_v9_6_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v5_sequential_proxy_edit',
@@ -2909,6 +3369,7 @@ function buildSceneExportData(){
       groups:multiLayoutGroups
     },
     room:scanSceneData,
+    session_calibration:cloneData(sessionCalibration),
     capture_frame:{
       locked_at:lockedGenerationFrame.locked_at,
       camera:cloneData(lockedGenerationFrame.camera),
@@ -3289,6 +3750,7 @@ function endAR(){
   document.body.classList.remove('screenshot-mode');
   screenshotModeActive=false;
   el.screenshotHud?.classList.remove('active');
+  el.calibrationMiniMap?.classList.remove('show');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
 
@@ -3322,6 +3784,13 @@ el.addFurniture?.addEventListener('click',addFurniture);
 
 el.scanAgain.addEventListener('click',()=>{
   completed=false;
+  calibrationMode=false;
+  calibrationSavedSpace=null;
+  calibrationObserved=[];
+  renderCalibrationMiniPlan();
+  calibrationCandidate=null;
+  calibrationPhase='collect';
+  sessionCalibration=null;
   corners=[];
   finishedCorners=[];
   floorY=null;
@@ -3344,6 +3813,9 @@ el.scanAgain.addEventListener('click',()=>{
     el.screenshotHud?.classList.remove('active');
     el.hud.classList.add('active');
     reticle.visible=false;
+    if(el.finish) el.finish.style.display='';
+    if(el.undo) el.undo.textContent='Undo';
+    if(el.addCorner) el.addCorner.textContent='Add corner';
     updateControls();
     el.hint.textContent='Finding floor — move slowly';
   }else{
@@ -3354,8 +3826,20 @@ el.scanAgain.addEventListener('click',()=>{
 
 el.start.addEventListener('click',()=>{
   if(renderer?.domElement) renderer.domElement.style.display='block';
-  enterAR();
+  enterAR('scan');
 });
+
+el.saveSpace?.addEventListener('click',saveCurrentSpaceForLater);
+el.reopenSavedSpace?.addEventListener('click',()=>{
+  if(renderer?.domElement) renderer.domElement.style.display='block';
+  startSavedSpaceCalibration();
+});
+el.forgetSavedSpace?.addEventListener('click',()=>{
+  if(!confirm('Forget the saved room calibration data on this device?')) return;
+  localStorage.removeItem(SAVED_SPACE_STORAGE_KEY);
+  updateSavedSpacePanel();
+});
+updateSavedSpacePanel();
 
 window.addEventListener('resize',()=>{
   if(renderer){
