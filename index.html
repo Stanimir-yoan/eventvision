@@ -1232,7 +1232,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_4_clean',
+    source_protocol:'EventVision_v9_7_5_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -2340,12 +2340,13 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   const dy=frontCenter?.uv?.y-backCenter?.uv?.y;
   const directionLength=Math.hypot(Number(dx),Number(dy));
 
-  // v9.7.4: orientation math does NOT require both FRONT/BACK anchors to be inside
-  // the photo. A chair may be clipped by the frame and still have a valid world pose.
-  const orientationMathValid=Number.isFinite(dx) && Number.isFinite(dy) && Number.isFinite(directionLength) && directionLength>1e-6;
+  // v9.7.5: orientation remains mathematically valid even if one anchor is
+  // outside the photo. Being outside the camera frame is not an error.
+  const orientationValid=Number.isFinite(dx) && Number.isFinite(dy) &&
+    Number.isFinite(directionLength) && directionLength>1e-6;
   const sizeValid=!!heightFloor && !!heightTop && Number.isFinite(heightWorld.height_m);
 
-  const visibilityPoints=[
+  const samplePoints=[
     center,
     ...floor,
     frontCenter,
@@ -2356,16 +2357,11 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
     heightTop
   ].filter(Boolean);
 
-  const insideCount=visibilityPoints.filter(p=>p.inside_view || uvInsidePhoto(p?.uv)).length;
-  const visiblePointCount=visibilityPoints.length;
+  const insideCount=samplePoints.filter(p=>p.inside_view || uvInsidePhoto(p?.uv)).length;
   let frameVisibility='out_of_frame';
   if(insideCount>0){
-    frameVisibility = insideCount===visiblePointCount ? 'visible' : 'partially_visible';
+    frameVisibility=insideCount===samplePoints.length ? 'visible' : 'partially_visible';
   }
-
-  // A visible/partially-visible chair is generation-eligible as long as its projection
-  // math exists. Out-of-frame chairs remain in the world inventory but do not block lock.
-  const generationEligible=frameVisibility!=='out_of_frame' && orientationMathValid && sizeValid;
 
   return {
     id:`${item.type}_${String(item.id).padStart(2,'0')}`,
@@ -2378,17 +2374,11 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
     heightFloor,
     heightTop,
     height_m:heightWorld.height_m,
-    orientation_vector:orientationMathValid ? {x:dx/directionLength,y:dy/directionLength} : null,
+    orientation_vector:orientationValid ? {x:dx/directionLength,y:dy/directionLength} : null,
     frame_visibility:frameVisibility,
-    visibility_debug:{
-      inside_points:insideCount,
-      sampled_points:visiblePointCount
-    },
     validation:{
-      valid:generationEligible,
-      generation_eligible:generationEligible,
-      frame_visibility:frameVisibility,
-      orientation:orientationMathValid,
+      valid:frameVisibility==='out_of_frame' ? true : (orientationValid && sizeValid),
+      orientation:orientationValid,
       placement:frameVisibility!=='out_of_frame',
       size:sizeValid
     }
@@ -2482,49 +2472,52 @@ function serializeGenerationTarget(projected,dims){
         top:projected.heightTop?.uv || null
       }
     },
+    frame_visibility:projected.frame_visibility || 'out_of_frame',
     validation:projected.validation
   };
 }
 
 function validateLockedProjection(items){
   const issues=[];
+  const warnings=[];
   let visibleCount=0;
-  let partialCount=0;
+  let partiallyVisibleCount=0;
   let outOfFrameCount=0;
 
   for(const projected of items){
     if(!projected){
-      // A failed projection should not make every other furniture item block capture.
-      // It is treated as unavailable/out of frame for this particular photo.
       outOfFrameCount++;
+      warnings.push('One furniture item has no current photo projection and was ignored for this frame.');
       continue;
     }
 
-    const visibility=projected.frame_visibility || projected.validation?.frame_visibility || 'out_of_frame';
+    const visibility=projected.frame_visibility || 'out_of_frame';
+
     if(visibility==='out_of_frame'){
       outOfFrameCount++;
       continue;
     }
 
-    if(visibility==='partially_visible') partialCount++;
+    if(visibility==='partially_visible') partiallyVisibleCount++;
     else visibleCount++;
 
-    // Validate only furniture that actually intersects the captured frame.
-    if(!projected.validation?.orientation) issues.push(`${projected.id}: visible proxy has no usable FRONT/BACK projection.`);
-    if(!projected.validation?.size) issues.push(`${projected.id}: visible proxy height projection is unavailable.`);
+    // Only furniture that actually intersects this camera frame can block locking.
+    if(!projected.validation.orientation){
+      issues.push(`${projected.id}: visible chair orientation projection is unavailable.`);
+    }
+    if(!projected.validation.size){
+      issues.push(`${projected.id}: visible chair height projection is unavailable.`);
+    }
   }
 
-  const eligibleCount=visibleCount+partialCount;
   return {
     valid:issues.length===0,
     issues,
+    warnings,
     visible_count:visibleCount,
-    partially_visible_count:partialCount,
+    partially_visible_count:partiallyVisibleCount,
     out_of_frame_count:outOfFrameCount,
-    generation_eligible_count:eligibleCount,
-    note:eligibleCount
-      ? 'Only furniture intersecting this camera frame is validated for this capture.'
-      : 'No furniture intersects this camera frame; frame lock is still allowed.'
+    generation_eligible_count:visibleCount+partiallyVisibleCount
   };
 }
 
@@ -2997,7 +2990,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_4_clean',
+    protocol_version:'EventVision_v9_7_5_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3359,7 +3352,7 @@ function captureCurrentGenerationFrame(){
     el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent=`FRAME LOCKED ✓ · ${validation.generation_eligible_count} furniture in/at frame · TAKE SCREENSHOT NOW`;
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
   }
@@ -3482,7 +3475,7 @@ function renderGenerationFrameDetails(message=''){
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
         ${img ? `<br>Viewport ${img.viewport_css_width} × ${img.viewport_css_height} CSS px` : ''}
         ${calibrationLine}
-        <br>${lockedGenerationFrame.validation?.generation_eligible_count ?? 0} furniture target${(lockedGenerationFrame.validation?.generation_eligible_count ?? 0)===1?'':'s'} in this frame · ${lockedGenerationFrame.validation?.out_of_frame_count ?? 0} outside frame
+        <br>${lockedGenerationFrame.projections.length} furniture target${lockedGenerationFrame.projections.length===1?'':'s'} validated
       </span>
     </div>`;
 }
@@ -3659,14 +3652,10 @@ function buildStrictLayoutGroups(rawFurniture){
   return groups;
 }
 
-function isProjectionGenerationEligible(projected){
-  return !!projected && projected.frame_visibility!=='out_of_frame' && projected.validation?.generation_eligible!==false;
-}
-
 function buildSceneExportData(){
   if(!lockedGenerationFrame) throw new Error('No locked generation frame.');
 
-  const allWorldFurniture=furnitureItems.map((item,index)=>{
+  const rawFurniture=furnitureItems.map((item,index)=>{
     const dims=getFurnitureDimensions(item);
     const world=getFurnitureWorldPosition(item);
     const plan=world ? getPlanPositionFromWorld(world) : null;
@@ -3693,7 +3682,6 @@ function buildSceneExportData(){
         step_side_m:Number.isFinite(item.layout_step_side_m) ? Number(item.layout_step_side_m) : null,
         step_forward_m:Number.isFinite(item.layout_step_forward_m) ? Number(item.layout_step_forward_m) : null
       },
-      capture_visibility:projected?.frame_visibility || 'out_of_frame',
       generation_target:generationTarget,
       proxy_guide:serializeProxyGuide(dims),
       wall_occlusion:wallOcclusion,
@@ -3711,10 +3699,6 @@ function buildSceneExportData(){
       generation_instruction:buildChairGenerationInstruction(id,semantics)
     };
   });
-
-  // Current photo generation inventory contains ONLY furniture that intersects this frame.
-  // The complete room inventory is preserved separately in world_furniture.
-  const rawFurniture=allWorldFurniture.filter(item=>item.capture_visibility!=='out_of_frame');
 
   const orderedByDepth=[...rawFurniture].sort((a,b)=>{
     const ay=a?.generation_target?.placement?.center_uv?.y ?? 0;
@@ -3742,13 +3726,11 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_4_clean',
+    protocol_version:'EventVision_v9_7_5_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
       exact_inventory:true,
-      inventory_scope:'current_locked_camera_frame_only',
-      world_inventory_preserved_separately:true,
       allow_extra_furniture:false,
       allow_missing_furniture:false,
       architecture_source:'original_room_photo',
@@ -3762,7 +3744,7 @@ function buildSceneExportData(){
       recommended_render_strategy:'SEQUENTIAL MASKED EDITING: replace exactly one proxy per pass in render_order_far_to_near. Preserve every pixel outside that chair focus region and preserve all other proxies/chairs unchanged.',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
-        'Insert exactly the chairs listed in the current-frame furniture inventory. World furniture marked out_of_frame must NOT be forced into this image.',
+        'Insert exactly the listed number of chairs and no extra chairs.',
         'Use the reference image only for chair appearance and materials.',
         'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
@@ -3777,7 +3759,7 @@ function buildSceneExportData(){
       ]
     },
     generation_summary:{
-      global_instruction:`Perform ${rawFurniture.length} sequential image-edit passes for the furniture that actually intersects this locked camera frame, one chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. The AR screenshot already applies scanned-wall occlusion; preserve that visibility exactly and never reconstruct chair geometry through a real wall. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
+      global_instruction:`Perform ${rawFurniture.length} sequential image-edit passes, one chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. The AR screenshot already applies scanned-wall occlusion; preserve that visibility exactly and never reconstruct chair geometry through a real wall. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
       generation_mode:'sequential_masked_proxy_replacement',
       render_order_far_to_near:exactIds
     },
@@ -3809,7 +3791,6 @@ function buildSceneExportData(){
     session_calibration:cloneData(sessionCalibration),
     capture_frame:{
       locked_at:lockedGenerationFrame.locked_at,
-      visibility_summary:cloneData(lockedGenerationFrame.validation),
       camera:cloneData(lockedGenerationFrame.camera),
       image:cloneData(lockedGenerationFrame.image),
       xr_view:{
@@ -3820,19 +3801,12 @@ function buildSceneExportData(){
         viewport:cloneData(lockedGenerationFrame.xr_view?.viewport || null)
       }
     },
-    world_inventory:{
-      exact_count:allWorldFurniture.length,
-      item_ids:allWorldFurniture.map(item=>item.id),
-      note:'Complete furniture inventory for the room. Items outside the locked camera frame are intentionally excluded from current-frame generation.'
-    },
     inventory:{
       exact_count:rawFurniture.length,
       allow_extra_objects:false,
       allow_missing_objects:false,
-      item_ids:exactIds,
-      scope:'current_locked_camera_frame_only'
+      item_ids:exactIds
     },
-    world_furniture:allWorldFurniture,
     furniture:rawFurniture,
     generation_payload:{
       inventory:{
