@@ -1016,7 +1016,7 @@ body.xr-active.screenshot-mode .screenshotHud{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
+      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
     </div>
   </div>
 
@@ -1134,6 +1134,7 @@ const CAPTURE_MAX_ROTATION_SPREAD_DEG = 2.2;
 let latestXRViewData = null;
 let furnitureProxyGroup = null;
 let wallOccluderGroup = null;
+let currentIgnoredCameraSideWallId = null;
 
 // v9.7 invisible wall occlusion. These meshes never draw color, but they write
 // depth before the chair proxies so virtual furniture is hidden by scanned walls.
@@ -1232,7 +1233,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_5_clean',
+    source_protocol:'EventVision_v9_7_6_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1911,6 +1912,7 @@ function buildWallOccluderMesh(a,b,index,polygonSignedArea=0){
   mesh.name=`EventVisionWallOccluder_${String(index+1).padStart(2,'0')}`;
   mesh.userData.kind='wallOccluder';
   mesh.userData.wallIndex=index;
+  mesh.userData.wallId=`wall_${String(index+1).padStart(2,'0')}`;
   mesh.userData.depthOnly=true;
   mesh.userData.outwardOffsetM=WALL_OCCLUDER_OUTWARD_OFFSET_M;
   mesh.position.set(
@@ -1955,10 +1957,66 @@ function rebuildWallOccluders(){
   // The group itself can stay visible; its children write depth only and are visually invisible.
   wallOccluderGroup.visible=!!screenshotModeActive;
   scene.add(wallOccluderGroup);
+  updateWallOccluderCameraRule();
 }
 
 function setWallOccludersActive(active){
   if(wallOccluderGroup) wallOccluderGroup.visible=!!active;
+}
+
+
+function pointInPolygonXZ(point,polygon){
+  if(!point || !Array.isArray(polygon) || polygon.length<3) return false;
+  const x=Number(point.x), z=Number(point.z);
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const xi=Number(polygon[i].x), zi=Number(polygon[i].z);
+    const xj=Number(polygon[j].x), zj=Number(polygon[j].z);
+    const intersects=((zi>z)!=(zj>z)) && (x < ((xj-xi)*(z-zi))/((zj-zi)||1e-9) + xi);
+    if(intersects) inside=!inside;
+  }
+  return inside;
+}
+
+function distancePointToSegmentXZ(point,a,b){
+  const px=Number(point.x), pz=Number(point.z);
+  const ax=Number(a.x), az=Number(a.z);
+  const bx=Number(b.x), bz=Number(b.z);
+  const abx=bx-ax, abz=bz-az;
+  const abLenSq=abx*abx + abz*abz;
+  if(abLenSq<1e-9) return Math.hypot(px-ax,pz-az);
+  let t=((px-ax)*abx + (pz-az)*abz)/abLenSq;
+  t=Math.max(0,Math.min(1,t));
+  const cx=ax+t*abx, cz=az+t*abz;
+  return Math.hypot(px-cx,pz-cz);
+}
+
+function getIgnoredCameraSideWallId(cameraPoint){
+  const pts=getWallOccluderSourcePoints();
+  if(!cameraPoint || pts.length<3) return null;
+  // Only ignore a wall when the camera is OUTSIDE the scanned room. This lets the
+  // user step back and shoot from outside without the near facade wall masking the proxies.
+  if(pointInPolygonXZ(cameraPoint,pts)) return null;
+  let best=null;
+  for(let i=0;i<pts.length;i++){
+    const a=pts[i], b=pts[(i+1)%pts.length];
+    const dist=distancePointToSegmentXZ(cameraPoint,a,b);
+    if(!best || dist<best.dist){
+      best={dist, wallId:`wall_${String(i+1).padStart(2,'0')}`};
+    }
+  }
+  return best?.wallId || null;
+}
+
+function updateWallOccluderCameraRule(){
+  if(!wallOccluderGroup) return;
+  const ignoredWallId=(screenshotModeActive && latestViewerPosition)
+    ? getIgnoredCameraSideWallId(latestViewerPosition)
+    : null;
+  currentIgnoredCameraSideWallId=ignoredWallId;
+  wallOccluderGroup.children.forEach(mesh=>{
+    mesh.visible = mesh.userData?.wallId !== ignoredWallId;
+  });
 }
 
 function wallOccluderExportData(){
@@ -1981,7 +2039,9 @@ function wallOccluderExportData(){
       outward_normal_xz:{x:Number(outward.x),z:Number(outward.z)},
       visible_to_user:false,
       writes_color:false,
-      writes_depth:true
+      writes_depth:true,
+      may_be_ignored_when_camera_outside_room:true,
+      ignore_rule:'If the camera is outside the scanned room boundary, ignore the nearest room-boundary wall to the camera so the user can take a photo from outside the space.'
     };
   });
 }
@@ -2007,9 +2067,11 @@ function firstBlockingWall(cameraPoint,targetPoint){
   const b={x:Number(targetPoint.x),z:Number(targetPoint.z)};
   let best=null;
   for(let i=0;i<pts.length;i++){
+    const wallId=`wall_${String(i+1).padStart(2,'0')}`;
+    if(currentIgnoredCameraSideWallId && wallId===currentIgnoredCameraSideWallId) continue;
     const p=pts[i],q=pts[(i+1)%pts.length];
     const t=segmentIntersectionParam2D(a,b,{x:Number(p.x),z:Number(p.z)},{x:Number(q.x),z:Number(q.z)});
-    if(t!=null && (!best || t<best.t)) best={t,wall_id:`wall_${String(i+1).padStart(2,'0')}`};
+    if(t!=null && (!best || t<best.t)) best={t,wall_id:wallId};
   }
   return best;
 }
@@ -2340,28 +2402,9 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   const dy=frontCenter?.uv?.y-backCenter?.uv?.y;
   const directionLength=Math.hypot(Number(dx),Number(dy));
 
-  // v9.7.5: orientation remains mathematically valid even if one anchor is
-  // outside the photo. Being outside the camera frame is not an error.
-  const orientationValid=Number.isFinite(dx) && Number.isFinite(dy) &&
-    Number.isFinite(directionLength) && directionLength>1e-6;
+  const orientationValid=uvInsidePhoto(frontCenter?.uv) && uvInsidePhoto(backCenter?.uv) && Number.isFinite(directionLength) && directionLength>1e-6;
+  const placementValid=uvInsidePhoto(center?.uv) && floor.filter(p=>uvInsidePhoto(p?.uv)).length>=2;
   const sizeValid=!!heightFloor && !!heightTop && Number.isFinite(heightWorld.height_m);
-
-  const samplePoints=[
-    center,
-    ...floor,
-    frontCenter,
-    backCenter,
-    ...frontEdge,
-    ...backEdge,
-    heightFloor,
-    heightTop
-  ].filter(Boolean);
-
-  const insideCount=samplePoints.filter(p=>p.inside_view || uvInsidePhoto(p?.uv)).length;
-  let frameVisibility='out_of_frame';
-  if(insideCount>0){
-    frameVisibility=insideCount===samplePoints.length ? 'visible' : 'partially_visible';
-  }
 
   return {
     id:`${item.type}_${String(item.id).padStart(2,'0')}`,
@@ -2375,11 +2418,10 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
     heightTop,
     height_m:heightWorld.height_m,
     orientation_vector:orientationValid ? {x:dx/directionLength,y:dy/directionLength} : null,
-    frame_visibility:frameVisibility,
     validation:{
-      valid:frameVisibility==='out_of_frame' ? true : (orientationValid && sizeValid),
+      valid:orientationValid && placementValid && sizeValid,
       orientation:orientationValid,
-      placement:frameVisibility!=='out_of_frame',
+      placement:placementValid,
       size:sizeValid
     }
   };
@@ -2472,53 +2514,22 @@ function serializeGenerationTarget(projected,dims){
         top:projected.heightTop?.uv || null
       }
     },
-    frame_visibility:projected.frame_visibility || 'out_of_frame',
     validation:projected.validation
   };
 }
 
 function validateLockedProjection(items){
   const issues=[];
-  const warnings=[];
-  let visibleCount=0;
-  let partiallyVisibleCount=0;
-  let outOfFrameCount=0;
-
   for(const projected of items){
     if(!projected){
-      outOfFrameCount++;
-      warnings.push('One furniture item has no current photo projection and was ignored for this frame.');
+      issues.push('A furniture item could not be projected.');
       continue;
     }
-
-    const visibility=projected.frame_visibility || 'out_of_frame';
-
-    if(visibility==='out_of_frame'){
-      outOfFrameCount++;
-      continue;
-    }
-
-    if(visibility==='partially_visible') partiallyVisibleCount++;
-    else visibleCount++;
-
-    // Only furniture that actually intersects this camera frame can block locking.
-    if(!projected.validation.orientation){
-      issues.push(`${projected.id}: visible chair orientation projection is unavailable.`);
-    }
-    if(!projected.validation.size){
-      issues.push(`${projected.id}: visible chair height projection is unavailable.`);
-    }
+    if(!projected.validation.orientation) issues.push(`${projected.id}: FRONT/BACK anchors are not both inside the locked image.`);
+    if(!projected.validation.placement) issues.push(`${projected.id}: footprint center is outside the locked image.`);
+    if(!projected.validation.size) issues.push(`${projected.id}: height projection is unavailable.`);
   }
-
-  return {
-    valid:issues.length===0,
-    issues,
-    warnings,
-    visible_count:visibleCount,
-    partially_visible_count:partiallyVisibleCount,
-    out_of_frame_count:outOfFrameCount,
-    generation_eligible_count:visibleCount+partiallyVisibleCount
-  };
+  return {valid:issues.length===0,issues};
 }
 
 function getProjectionSnapshotForOverlay(){
@@ -2633,6 +2644,7 @@ function render(_time,frame){
       }
 
       updateCornerLabelScales();
+      if(screenshotModeActive) updateWallOccluderCameraRule();
     }
   }
 
@@ -2990,7 +3002,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_5_clean',
+    protocol_version:'EventVision_v9_7_6_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3352,7 +3364,7 @@ function captureCurrentGenerationFrame(){
     el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent=`FRAME LOCKED ✓ · ${validation.generation_eligible_count} furniture in/at frame · TAKE SCREENSHOT NOW`;
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
   }
@@ -3420,7 +3432,7 @@ function lockGenerationFrame(){
     }
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
     }
     setExportStatus('Frame unlocked. Prepare capture again before exporting.','warn');
     renderGenerationFrameDetails();
@@ -3431,7 +3443,7 @@ function lockGenerationFrame(){
   if(capturePreparationActive){
     stopCapturePreparation('Capture cancelled');
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
     }
     return;
   }
@@ -3503,7 +3515,7 @@ function enterScreenshotMode(){
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
       ? '<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After it is saved, you can move freely.'
-      : 'Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      : 'Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
   }
   rebuildWallOccluders();
   setWallOccludersActive(true);
@@ -3726,7 +3738,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_5_clean',
+    protocol_version:'EventVision_v9_7_6_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -3785,7 +3797,9 @@ function buildSceneExportData(){
       wall_height_m:WALL_OCCLUDER_HEIGHT_M,
       wall_thickness_m:WALL_OCCLUDER_THICKNESS_M,
       occluders:wallOccluderExportData(),
-      generation_rule:'The capture screenshot visibility is authoritative. Do not hallucinate proxy/chair geometry through a scanned wall.'
+      camera_outside_room_rule:'If the capture camera is outside the scanned room boundary, the nearest boundary wall to the camera is ignored for masking. All other scanned walls remain active occluders.',
+      future_extension_note:'The same nearest-camera-side ignore rule should also be applied to obstacle and column occluders once those geometries are added to the app.',
+      generation_rule:'The capture screenshot visibility is authoritative. Do not hallucinate proxy/chair geometry through a scanned wall, except that the nearest wall is intentionally ignored when the camera is outside the room.'
     },
     room:scanSceneData,
     session_calibration:cloneData(sessionCalibration),
