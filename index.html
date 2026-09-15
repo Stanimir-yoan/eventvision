@@ -1247,7 +1247,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_7_clean',
+    source_protocol:'EventVision_v9_7_8_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1550,7 +1550,7 @@ async function startSavedSpaceCalibration(){
 }
 
 function createRenderer(){
-  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
   renderer.xr.enabled = true;
   renderer.setClearColor(0x000000,0);
   renderer.setClearAlpha(0);
@@ -2673,16 +2673,79 @@ function requestArPhotoCapture(){
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Capturing clean AR frame…';
 }
 
-function captureRenderedArPhotoNow(){
+function pixelsToPngBlob(pixels,width,height){
+  const canvas=document.createElement('canvas');
+  canvas.width=width;
+  canvas.height=height;
+  const ctx=canvas.getContext('2d');
+  const image=ctx.createImageData(width,height);
+  // WebGL has bottom-left origin; Canvas ImageData has top-left origin.
+  const rowBytes=width*4;
+  for(let y=0;y<height;y++){
+    const srcRow=(height-1-y)*rowBytes;
+    const dstRow=y*rowBytes;
+    image.data.set(pixels.subarray(srcRow,srcRow+rowBytes),dstRow);
+  }
+  ctx.putImageData(image,0,0);
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=>blob ? resolve(blob) : reject(new Error('PNG encoding failed')),'image/png');
+  });
+}
+
+async function captureRenderedArPhotoNow(frame){
   if(!arPhotoCaptureRequested || !renderer?.domElement) return;
   arPhotoCaptureRequested=false;
   try{
-    // Called immediately after renderer.render() while the XR frame is still in the drawing buffer.
-    // HelloXR supplies the ARKit camera frame to the JS/WebGL view, so this captures the camera
-    // background plus EventVision's visible proxy geometry, but none of the DOM screenshot controls.
-    const dataUrl=renderer.domElement.toDataURL('image/png');
-    if(!dataUrl || dataUrl==='data:,') throw new Error('Canvas returned an empty image');
-    capturedArPhotoBlob=dataUrlToBlob(dataUrl);
+    let blob=null;
+    let captureMethod='';
+
+    // First choice: read the actual XR base-layer framebuffer. In immersive WebXR
+    // Three.js normally renders into this framebuffer rather than the HTML canvas.
+    try{
+      const gl=renderer.getContext();
+      const layer=frame?.session?.renderState?.baseLayer || session?.renderState?.baseLayer || null;
+      const fb=layer?.framebuffer ?? null;
+      const width=Number(layer?.framebufferWidth || gl.drawingBufferWidth);
+      const height=Number(layer?.framebufferHeight || gl.drawingBufferHeight);
+      if(width>0 && height>0){
+        const previousFramebuffer=gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+        const pixels=new Uint8Array(width*height*4);
+        gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,previousFramebuffer);
+
+        // Reject an effectively empty/black framebuffer and try the canvas fallback.
+        let energy=0, alphaEnergy=0;
+        const step=Math.max(4,Math.floor(pixels.length/12000/4)*4);
+        for(let i=0;i<pixels.length;i+=step){
+          energy += pixels[i] + pixels[i+1] + pixels[i+2];
+          alphaEnergy += pixels[i+3];
+        }
+        if(energy>1000 || alphaEnergy>1000){
+          blob=await pixelsToPngBlob(pixels,width,height);
+          captureMethod='xr_framebuffer_readpixels';
+        }
+      }
+    }catch(framebufferErr){
+      console.warn('XR framebuffer capture failed',framebufferErr);
+    }
+
+    // Fallback: preserved WebGL canvas. This works on shells that mirror XR output
+    // back into the default canvas framebuffer.
+    if(!blob){
+      const dataUrl=renderer.domElement.toDataURL('image/png');
+      if(dataUrl && dataUrl!=='data:,'){
+        const candidate=dataUrlToBlob(dataUrl);
+        if(candidate?.size>1000){
+          blob=candidate;
+          captureMethod='preserved_canvas';
+        }
+      }
+    }
+
+    if(!blob) throw new Error('No readable AR framebuffer was exposed by this HelloXR build');
+
+    capturedArPhotoBlob=blob;
     if(capturedArPhotoUrl){
       try{ URL.revokeObjectURL(capturedArPhotoUrl); }catch(_e){}
     }
@@ -2696,20 +2759,20 @@ function captureRenderedArPhotoNow(){
     if(el.saveArPhoto) el.saveArPhoto.hidden=false;
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='PHOTO CAPTURED ✓';
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='<b>PHOTO CAPTURED ✓</b><br>Tap <b>Save photo</b> to save/share it, or <b>Retake photo</b> to capture another frame. You can move the phone now.';
+      el.screenshotGuideText.innerHTML=`<b>PHOTO CAPTURED ✓</b><br>Capture method: ${captureMethod}. Tap <b>Save photo</b>, or <b>Retake photo</b> to try again.`;
     }
-    setExportStatus('AR photo captured. Save/share it, then export JSON and the 2D plan.','good');
+    setExportStatus('AR photo captured. Save it, then export JSON and the 2D plan.','good');
   }catch(err){
     console.error('AR photo capture failed',err);
     if(el.captureArPhoto){
       el.captureArPhoto.disabled=false;
       el.captureArPhoto.textContent='Take photo';
     }
-    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo capture unavailable';
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Native capture bridge needed';
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='This HelloXR build did not expose the composed AR frame to the web canvas. Hardware screenshot remains the fallback until the native HelloXR shell exposes a capture bridge.';
+      el.screenshotGuideText.innerHTML='HelloXR did not expose a readable composed AR framebuffer. The reliable solution is a small native HelloXR capture bridge that captures the ARKit camera frame and web overlay together.';
     }
-    setExportStatus('In-app capture was not available in this HelloXR build.','warn');
+    setExportStatus('This HelloXR build does not expose the composed AR frame to JavaScript. Native capture bridge required.','warn');
   }
 }
 
@@ -2717,22 +2780,31 @@ async function saveCapturedArPhoto(){
   if(!capturedArPhotoBlob) return;
   const filename=capturedArPhotoFilename || 'eventvision-photo.png';
   const file=new File([capturedArPhotoBlob],filename,{type:'image/png'});
+
+  // Only use Web Share when the shell explicitly confirms file sharing support.
+  // Some WKWebView builds support navigator.share() for text/title but silently
+  // drop the files array, which is why Slack previously received only a name.
   try{
-    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-      await navigator.share({files:[file],title:'EventVision AR photo'});
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file]});
       return;
     }
   }catch(err){
     if(err?.name==='AbortError') return;
-    console.warn('Web Share failed, trying download fallback',err);
+    console.warn('File Web Share failed; using download fallback',err);
   }
+
+  const url=capturedArPhotoUrl || URL.createObjectURL(capturedArPhotoBlob);
   const a=document.createElement('a');
-  a.href=capturedArPhotoUrl || URL.createObjectURL(capturedArPhotoBlob);
+  a.href=url;
   a.download=filename;
   a.rel='noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
+  if(el.screenshotGuideText){
+    el.screenshotGuideText.innerHTML='<b>PHOTO READY ✓</b><br>The image was sent to the browser download/save flow because this HelloXR build does not advertise file-sharing support.';
+  }
 }
 
 function render(_time,frame){
@@ -2820,7 +2892,7 @@ function render(_time,frame){
   }
 
   renderer.render(scene,camera);
-  if(arPhotoCaptureRequested) captureRenderedArPhotoNow();
+  if(arPhotoCaptureRequested) captureRenderedArPhotoNow(frame);
 }
 
 function placeCurrentHit(){
@@ -3122,7 +3194,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_7_clean',
+    protocol_version:'EventVision_v9_7_8_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3873,7 +3945,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_7_clean',
+    protocol_version:'EventVision_v9_7_8_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
