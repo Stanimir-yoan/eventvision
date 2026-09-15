@@ -754,18 +754,19 @@ body.xr-active.layout-mode canvas{
   left:10px;
   right:10px;
   bottom:calc(14px + env(safe-area-inset-bottom));
-  display:flex;
-  justify-content:center;
-  gap:10px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
   pointer-events:auto;
 }
 
 .screenshotLock,
-.screenshotLock,
+.screenshotCapture,
+.screenshotSave,
 .screenshotBack{
-  min-width:150px;
+  min-width:0;
   min-height:48px;
-  padding:0 14px;
+  padding:0 12px;
   border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
   background:rgba(15,15,18,.72);
@@ -776,6 +777,10 @@ body.xr-active.layout-mode canvas{
 }
 .screenshotLock{background:rgba(53,93,255,.72);}
 .screenshotLock.locked{background:rgba(25,142,84,.78);}
+.screenshotCapture{background:rgba(255,255,255,.92);color:#111;}
+.screenshotCapture:disabled{opacity:.38;}
+.screenshotSave{background:rgba(25,142,84,.86);}
+.screenshotSave[hidden]{display:none !important;}
 
 body.xr-active.screenshot-mode{
   overflow:hidden;
@@ -1010,18 +1015,20 @@ body.xr-active.screenshot-mode .screenshotHud{
   <svg id="projectionDebug" class="projectionDebug" aria-label="Projected furniture targets"></svg>
   <div class="screenshotTop">
     <div class="pill" id="screenshotPoseStatus">Live pose</div>
-    <div class="pill">Use iPhone screenshot</div>
+    <div class="pill" id="captureModePill">In-app photo capture</div>
   </div>
 
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
+      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. When the frame locks, tap <b>Take photo</b>. The app will capture the clean AR view directly, without the screenshot UI.
     </div>
   </div>
 
   <div class="screenshotBottom">
     <button id="lockGenerationFrame" class="screenshotLock">Prepare capture</button>
+    <button id="captureArPhoto" class="screenshotCapture" disabled>Take photo</button>
+    <button id="saveArPhoto" class="screenshotSave" hidden>Save photo</button>
     <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
   </div>
 </div>
@@ -1095,6 +1102,9 @@ const el = {
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
   screenshotGuideText: document.getElementById('screenshotGuideText'),
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
+  captureArPhoto: document.getElementById('captureArPhoto'),
+  saveArPhoto: document.getElementById('saveArPhoto'),
+  captureModePill: document.getElementById('captureModePill'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
   cornerDetails: document.getElementById('cornerDetails'),
@@ -1126,6 +1136,10 @@ let lockedGenerationFrame = null;
 let capturePreparationActive = false;
 let captureStabilitySamples = [];
 let capturePreparationStartedAt = 0;
+let arPhotoCaptureRequested = false;
+let capturedArPhotoBlob = null;
+let capturedArPhotoUrl = null;
+let capturedArPhotoFilename = null;
 
 const CAPTURE_STABILITY_WINDOW_MS = 500;
 const CAPTURE_STABILITY_MIN_MS = 420;
@@ -1233,7 +1247,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_6_clean',
+    source_protocol:'EventVision_v9_7_7_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -2616,6 +2630,111 @@ function getCaptureImageGeometry(){
   };
 }
 
+function resetCapturedArPhoto(){
+  arPhotoCaptureRequested=false;
+  capturedArPhotoBlob=null;
+  capturedArPhotoFilename=null;
+  if(capturedArPhotoUrl){
+    try{ URL.revokeObjectURL(capturedArPhotoUrl); }catch(_e){}
+  }
+  capturedArPhotoUrl=null;
+  if(el.captureArPhoto){
+    el.captureArPhoto.disabled=!lockedGenerationFrame;
+    el.captureArPhoto.textContent='Take photo';
+  }
+  if(el.saveArPhoto){
+    el.saveArPhoto.hidden=true;
+  }
+}
+
+function dataUrlToBlob(dataUrl){
+  const parts=String(dataUrl).split(',');
+  const header=parts[0] || '';
+  const base64=parts[1] || '';
+  const mime=(header.match(/data:([^;]+)/)||[])[1] || 'image/png';
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return new Blob([bytes],{type:mime});
+}
+
+function requestArPhotoCapture(){
+  if(!screenshotModeActive) return;
+  if(!lockedGenerationFrame){
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Lock the frame first';
+    if(el.screenshotGuideText) el.screenshotGuideText.innerHTML='Tap <b>Prepare capture</b> and wait for <b>FRAME LOCKED</b> before taking the photo.';
+    return;
+  }
+  arPhotoCaptureRequested=true;
+  if(el.captureArPhoto){
+    el.captureArPhoto.disabled=true;
+    el.captureArPhoto.textContent='Capturing…';
+  }
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Capturing clean AR frame…';
+}
+
+function captureRenderedArPhotoNow(){
+  if(!arPhotoCaptureRequested || !renderer?.domElement) return;
+  arPhotoCaptureRequested=false;
+  try{
+    // Called immediately after renderer.render() while the XR frame is still in the drawing buffer.
+    // HelloXR supplies the ARKit camera frame to the JS/WebGL view, so this captures the camera
+    // background plus EventVision's visible proxy geometry, but none of the DOM screenshot controls.
+    const dataUrl=renderer.domElement.toDataURL('image/png');
+    if(!dataUrl || dataUrl==='data:,') throw new Error('Canvas returned an empty image');
+    capturedArPhotoBlob=dataUrlToBlob(dataUrl);
+    if(capturedArPhotoUrl){
+      try{ URL.revokeObjectURL(capturedArPhotoUrl); }catch(_e){}
+    }
+    capturedArPhotoUrl=URL.createObjectURL(capturedArPhotoBlob);
+    capturedArPhotoFilename=`eventvision-photo-${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
+
+    if(el.captureArPhoto){
+      el.captureArPhoto.disabled=false;
+      el.captureArPhoto.textContent='Retake photo';
+    }
+    if(el.saveArPhoto) el.saveArPhoto.hidden=false;
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='PHOTO CAPTURED ✓';
+    if(el.screenshotGuideText){
+      el.screenshotGuideText.innerHTML='<b>PHOTO CAPTURED ✓</b><br>Tap <b>Save photo</b> to save/share it, or <b>Retake photo</b> to capture another frame. You can move the phone now.';
+    }
+    setExportStatus('AR photo captured. Save/share it, then export JSON and the 2D plan.','good');
+  }catch(err){
+    console.error('AR photo capture failed',err);
+    if(el.captureArPhoto){
+      el.captureArPhoto.disabled=false;
+      el.captureArPhoto.textContent='Take photo';
+    }
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo capture unavailable';
+    if(el.screenshotGuideText){
+      el.screenshotGuideText.innerHTML='This HelloXR build did not expose the composed AR frame to the web canvas. Hardware screenshot remains the fallback until the native HelloXR shell exposes a capture bridge.';
+    }
+    setExportStatus('In-app capture was not available in this HelloXR build.','warn');
+  }
+}
+
+async function saveCapturedArPhoto(){
+  if(!capturedArPhotoBlob) return;
+  const filename=capturedArPhotoFilename || 'eventvision-photo.png';
+  const file=new File([capturedArPhotoBlob],filename,{type:'image/png'});
+  try{
+    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+      await navigator.share({files:[file],title:'EventVision AR photo'});
+      return;
+    }
+  }catch(err){
+    if(err?.name==='AbortError') return;
+    console.warn('Web Share failed, trying download fallback',err);
+  }
+  const a=document.createElement('a');
+  a.href=capturedArPhotoUrl || URL.createObjectURL(capturedArPhotoBlob);
+  a.download=filename;
+  a.rel='noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function render(_time,frame){
   if(frame && refSpace){
     const viewerPose = frame.getViewerPose(refSpace);
@@ -2701,6 +2820,7 @@ function render(_time,frame){
   }
 
   renderer.render(scene,camera);
+  if(arPhotoCaptureRequested) captureRenderedArPhotoNow();
 }
 
 function placeCurrentHit(){
@@ -3002,7 +3122,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_6_clean',
+    protocol_version:'EventVision_v9_7_7_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3364,12 +3484,16 @@ function captureCurrentGenerationFrame(){
     el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
+  if(el.captureArPhoto){
+    el.captureArPhoto.disabled=false;
+    el.captureArPhoto.textContent=capturedArPhotoBlob ? 'Retake photo' : 'Take photo';
+  }
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · READY TO TAKE PHOTO';
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
+    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Tap <b>Take photo</b>. EventVision will capture the clean AR view without these controls.';
   }
   try{ navigator.vibrate?.(80); }catch(_){ }
-  setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
+  setExportStatus('Frame locked. Tap Take photo; after capture you may move freely. JSON and 2D plan can be exported later.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
   return true;
@@ -3426,6 +3550,7 @@ function lockGenerationFrame(){
   if(lockedGenerationFrame){
     lockedGenerationFrame=null;
     stopCapturePreparation();
+    resetCapturedArPhoto();
     if(el.lockGenerationFrame){
       el.lockGenerationFrame.textContent='Prepare capture';
       el.lockGenerationFrame.classList.remove('locked');
@@ -3509,12 +3634,19 @@ function enterScreenshotMode(){
     el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : (capturePreparationActive ? 'Cancel preparation' : 'Prepare capture');
     el.lockGenerationFrame.classList.toggle('locked',!!lockedGenerationFrame);
   }
+  if(el.captureArPhoto){
+    el.captureArPhoto.disabled=!lockedGenerationFrame;
+    el.captureArPhoto.textContent=capturedArPhotoBlob ? 'Retake photo' : 'Take photo';
+  }
+  if(el.saveArPhoto){
+    el.saveArPhoto.hidden=!capturedArPhotoBlob;
+  }
   if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'FRAME LOCKED ✓ · TAKE SCREENSHOT NOW' : (capturePreparationActive ? 'Hold roughly steady…' : 'Live AR pose · ready');
+    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'FRAME LOCKED ✓ · READY TO TAKE PHOTO' : (capturePreparationActive ? 'Hold roughly steady…' : 'Live AR pose · ready');
   }
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
-      ? '<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After it is saved, you can move freely.'
+      ? '<b>FRAME LOCKED ✓</b><br>Tap <b>Take photo</b> to capture the clean AR view. After capture, you can move freely.'
       : 'Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
   }
   rebuildWallOccluders();
@@ -3528,6 +3660,7 @@ function enterScreenshotMode(){
 
 function exitScreenshotMode(){
   if(capturePreparationActive) stopCapturePreparation();
+  arPhotoCaptureRequested=false;
   screenshotModeActive=false;
   clearFurnitureProxyGuide();
   clearWallOccluders();
@@ -3542,6 +3675,8 @@ function exitScreenshotMode(){
 
 el.screenshotMode?.addEventListener('click',enterScreenshotMode);
 el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
+el.captureArPhoto?.addEventListener('click',requestArPhotoCapture);
+el.saveArPhoto?.addEventListener('click',saveCapturedArPhoto);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
 function normalizeDeg360(deg){
@@ -3738,7 +3873,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_6_clean',
+    protocol_version:'EventVision_v9_7_7_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
