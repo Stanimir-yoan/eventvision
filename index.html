@@ -683,7 +683,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v9.8.4 — screenshot UI auto-hide.
+/* v9.8.3 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -701,12 +701,6 @@ body.xr-active.layout-mode canvas{
 
 .screenshotHud.ui-hidden .screenshotBottom{
   pointer-events:none;
-}
-
-/* Hide an injected/browser DOM "Exit AR" control only during Screenshot mode.
-   It remains visible in the 2D plan/layout stage. */
-.eventvision-hide-exit-ar{
-  display:none !important;
 }
 
 .projectionDebug{
@@ -888,7 +882,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.4 SHADED PROXY</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.3 SHADED PROXY</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1267,7 +1261,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_8_4_shaded_proxy',
+    source_protocol:'EventVision_v9_8_3_shaded_proxy',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3055,7 +3049,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_8_4_shaded_proxy',
+    protocol_version:'EventVision_v9_8_3_shaded_proxy',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3606,46 +3600,6 @@ function renderGenerationFrameDetails(message=''){
     </div>`;
 }
 
-function isExitArControl(node){
-  if(!(node instanceof HTMLElement)) return false;
-  const tag=node.tagName?.toLowerCase();
-  const role=(node.getAttribute('role')||'').toLowerCase();
-  if(tag!=='button' && tag!=='a' && role!=='button') return false;
-
-  const candidates=[
-    node.textContent,
-    node.getAttribute('aria-label'),
-    node.getAttribute('title')
-  ].filter(Boolean).map(v=>String(v).trim().toLowerCase());
-
-  return candidates.some(value =>
-    value==='exit ar' ||
-    value==='exit ar mode' ||
-    value==='leave ar' ||
-    value==='leave ar mode'
-  );
-}
-
-function syncExitArControlVisibility(){
-  const hide=screenshotModeActive;
-  document.querySelectorAll('button,a,[role="button"]').forEach(node=>{
-    if(!isExitArControl(node)) return;
-    node.classList.toggle('eventvision-hide-exit-ar',hide);
-  });
-}
-
-// HelloXR/browser shells may inject the Exit AR control after the session starts,
-// so watch DOM changes and re-apply the Screenshot-mode visibility rule.
-const exitArControlObserver=new MutationObserver(()=>{
-  if(session) syncExitArControlVisibility();
-});
-exitArControlObserver.observe(document.documentElement,{
-  childList:true,
-  subtree:true,
-  attributes:true,
-  attributeFilter:['aria-label','title']
-});
-
 function enterScreenshotMode(){
   if(!session || !completed){
     alert('Live AR tracking is not active. Finish the room scan first.');
@@ -3653,7 +3607,6 @@ function enterScreenshotMode(){
   }
 
   screenshotModeActive=true;
-  syncExitArControlVisibility();
   document.body.classList.remove('layout-mode');
   document.body.classList.add('screenshot-mode');
   el.hud.classList.remove('active');
@@ -3686,7 +3639,6 @@ function exitScreenshotMode(){
   if(capturePreparationActive) stopCapturePreparation();
   screenshotModeActive=false;
   resetScreenshotUiAutoHide(true);
-  syncExitArControlVisibility();
   clearFurnitureProxyGuide();
   clearWallOccluders();
   setScanGuidesVisible(true);
@@ -3896,7 +3848,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_8_4_shaded_proxy',
+    protocol_version:'EventVision_v9_8_3_shaded_proxy',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -4342,7 +4294,6 @@ function endAR(){
   document.body.classList.remove('layout-mode');
   document.body.classList.remove('screenshot-mode');
   screenshotModeActive=false;
-  syncExitArControlVisibility();
   el.screenshotHud?.classList.remove('active');
   el.calibrationMiniMap?.classList.remove('show');
 
