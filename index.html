@@ -218,6 +218,24 @@ body.xr-active canvas{background:transparent!important}
   transform:translateX(-50%);
 }
 
+/* v9.9: repeat-created chairs remain a rigid transform group. */
+.furnitureItem.groupSelected:not(.selected) .furnitureVisual{
+  outline:1px dashed rgba(107,92,255,.95);
+  outline-offset:3px;
+}
+
+.furnitureItem.groupSelected:not(.selected):after{
+  content:"";
+  position:absolute;
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:rgba(107,92,255,.9);
+  top:-3px;
+  left:50%;
+  transform:translateX(-50%);
+}
+
 /* Chair-array repeat handles. Drag any selected-chair corner to grow a physical grid. */
 .arrayHandle{
   position:absolute;
@@ -683,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v9.8.3 — screenshot UI auto-hide.
+/* v9.9 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -882,7 +900,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.3 SHADED PROXY</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.9 SHADED PROXY</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -942,7 +960,7 @@ body.xr-active.screenshot-mode .screenshotHud{
       <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
     </div>
     <div id="furnitureCount"></div>
-    <div class="furnitureHint">Drag chairs on the plan. Select a chair, then drag any purple corner handle outward to create an evenly spaced chair array. Any edit invalidates the locked generation frame.</div>
+    <div class="furnitureHint">Drag chairs on the plan. Drag a purple corner handle to create an evenly spaced chair array. Repeated chairs stay grouped: drag any group member to move the whole group, and use Rotate to rotate the complete group around its center. Any edit invalidates the locked generation frame.</div>
     <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap.</div>
 
     <div class="resultActionGrid screenshotActionGrid">
@@ -1261,7 +1279,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_8_3_shaded_proxy',
+    source_protocol:'EventVision_v9_9_grouped_furniture_shaded_proxy',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3049,7 +3067,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_8_3_shaded_proxy',
+    protocol_version:'EventVision_v9_9_grouped_furniture_shaded_proxy',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3759,7 +3777,7 @@ function buildStrictLayoutGroups(rawFurniture){
         even_spacing_required:strict
       },
       hard_rules:strict ? [
-        'Treat this group as one rigid, orderly seating arrangement.',
+        'Treat this group as one rigid, orderly seating arrangement. The group may be moved and rotated as one rigid transform in the plan editor; preserve those resulting member positions exactly.',
         'All chairs must face the same world direction and remain parallel.',
         'Keep center-to-center spacing uniform in floor space; perspective may change pixel spacing.',
         'Do not introduce random rotation, random position jitter, staggering, clustering, or scattered placement.',
@@ -3848,7 +3866,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_8_3_shaded_proxy',
+    protocol_version:'EventVision_v9_9_grouped_furniture_shaded_proxy',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -4517,20 +4535,34 @@ function getFurnitureItem(id){
   return furnitureItems.find(item => item.id === id) || null;
 }
 
+function getFurnitureGroupMembers(item){
+  if(!item) return [];
+  const groupId=item.layout_group_id;
+  if(!groupId) return [item];
+  const members=furnitureItems.filter(candidate=>candidate.layout_group_id===groupId);
+  return members.length ? members : [item];
+}
+
 function setSelectedFurniture(id){
   selectedFurnitureId = id;
+  const item = getFurnitureItem(id);
+  const groupId=item?.layout_group_id || null;
+  const groupMembers=item ? getFurnitureGroupMembers(item) : [];
+  const groupIds=new Set(groupMembers.map(member=>String(member.id)));
 
   if(furnitureLayer){
     furnitureLayer.querySelectorAll('.furnitureItem').forEach(node => {
-      node.classList.toggle('selected', node.dataset.id === String(id));
+      const isSelected=node.dataset.id === String(id);
+      node.classList.toggle('selected',isSelected);
+      node.classList.toggle('groupSelected',!!groupId && groupIds.has(node.dataset.id));
     });
   }
 
-  const item = getFurnitureItem(id);
-
   if(item && furnitureToolbar){
     furnitureToolbar.classList.add('visible');
-    selectedFurnitureLabel.textContent='Chair · 60 × 60 × 85 cm';
+    selectedFurnitureLabel.textContent=groupId && groupMembers.length>1
+      ? `Chair group · ${groupMembers.length} chairs`
+      : 'Chair · 60 × 60 × 85 cm';
   } else if(furnitureToolbar){
     furnitureToolbar.classList.remove('visible');
   }
@@ -4652,6 +4684,125 @@ function worldPointToPlanNormalized(world){
     x:(svgX-vb.x)/vb.width,
     y:(svgY-vb.y)/vb.height
   };
+}
+
+function getFurnitureHalfNormalized(item){
+  const size=getFurnitureScreenSize(item);
+  if(!planEditor) return {x:0,y:0};
+  const rect=planEditor.getBoundingClientRect();
+  if(!rect.width || !rect.height) return {x:0,y:0};
+  return {
+    x:Math.min(.49,(size.width/2)/rect.width),
+    y:Math.min(.49,(size.height/2)/rect.height)
+  };
+}
+
+function buildGroupDragSnapshot(item,pointerLocal){
+  if(!item || !pointerLocal?.width || !pointerLocal?.height) return null;
+  const members=getFurnitureGroupMembers(item);
+  return {
+    groupId:item.layout_group_id || null,
+    pointerX:pointerLocal.x/pointerLocal.width,
+    pointerY:pointerLocal.y/pointerLocal.height,
+    members:members.map(member=>({
+      id:member.id,
+      x:Number(member.x),
+      y:Number(member.y),
+      half:getFurnitureHalfNormalized(member)
+    }))
+  };
+}
+
+function applyGroupDragSnapshot(snapshot,pointerLocal){
+  if(!snapshot || !pointerLocal?.width || !pointerLocal?.height) return;
+  const targetX=pointerLocal.x/pointerLocal.width;
+  const targetY=pointerLocal.y/pointerLocal.height;
+  let dx=targetX-snapshot.pointerX;
+  let dy=targetY-snapshot.pointerY;
+
+  // Clamp one shared delta so the group remains rigid and every chair stays in the plan canvas.
+  let minDx=-Infinity,maxDx=Infinity,minDy=-Infinity,maxDy=Infinity;
+  snapshot.members.forEach(entry=>{
+    const halfX=Number(entry.half?.x || 0);
+    const halfY=Number(entry.half?.y || 0);
+    minDx=Math.max(minDx,halfX-entry.x);
+    maxDx=Math.min(maxDx,1-halfX-entry.x);
+    minDy=Math.max(minDy,halfY-entry.y);
+    maxDy=Math.min(maxDy,1-halfY-entry.y);
+  });
+  dx=Math.max(minDx,Math.min(maxDx,dx));
+  dy=Math.max(minDy,Math.min(maxDy,dy));
+
+  snapshot.members.forEach(entry=>{
+    const member=getFurnitureItem(entry.id);
+    if(!member) return;
+    member.x=entry.x+dx;
+    member.y=entry.y+dy;
+  });
+}
+
+function translateFurnitureGroup(item,dx,dy){
+  const members=getFurnitureGroupMembers(item);
+  if(!members.length) return;
+  const snapshot={
+    pointerX:0,pointerY:0,
+    members:members.map(member=>({
+      id:member.id,
+      x:Number(member.x),
+      y:Number(member.y),
+      half:getFurnitureHalfNormalized(member)
+    }))
+  };
+  applyGroupDragSnapshot(snapshot,{x:dx,y:dy,width:1,height:1});
+}
+
+function rotateFurnitureGroup(item,delta){
+  const members=getFurnitureGroupMembers(item);
+  if(!members.length) return false;
+  if(members.length===1){
+    item.rotation=(Number(item.rotation||0)+delta+360)%360;
+    return true;
+  }
+
+  const memberWorld=members.map(member=>({member,world:getFurnitureWorldPosition(member)}));
+  if(memberWorld.some(entry=>!entry.world)) return false;
+
+  const center={
+    x:memberWorld.reduce((sum,entry)=>sum+Number(entry.world.x),0)/memberWorld.length,
+    z:memberWorld.reduce((sum,entry)=>sum+Number(entry.world.z),0)/memberWorld.length
+  };
+  const angle=Number(delta||0)*Math.PI/180;
+  const cos=Math.cos(angle),sin=Math.sin(angle);
+  const proposed=[];
+
+  for(const entry of memberWorld){
+    const rx=Number(entry.world.x)-center.x;
+    const rz=Number(entry.world.z)-center.z;
+    const world={
+      x:center.x + rx*cos-rz*sin,
+      y:entry.world.y,
+      z:center.z + rx*sin+rz*cos
+    };
+    const normalized=worldPointToPlanNormalized(world);
+    if(!normalized) return false;
+    const half=getFurnitureHalfNormalized(entry.member);
+    if(normalized.x<half.x || normalized.x>1-half.x || normalized.y<half.y || normalized.y>1-half.y){
+      return false;
+    }
+    proposed.push({
+      member:entry.member,
+      x:Number(normalized.x),
+      y:Number(normalized.y),
+      rotation:(Number(entry.member.rotation||0)+Number(delta||0)+360)%360
+    });
+  }
+
+  proposed.forEach(next=>{
+    next.member.x=next.x;
+    next.member.y=next.y;
+    next.member.rotation=next.rotation;
+  });
+  return true;
 }
 
 function pointInsideRoomXZ(point){
@@ -4911,40 +5062,43 @@ function makeFurnitureNode(item){
   }
 
   let dragging = false;
+  let groupDragSnapshot=null;
 
   node.addEventListener('pointerdown', e => {
     e.preventDefault();
     e.stopPropagation();
+    const local=clientPointToUntransformedPlan(e.clientX,e.clientY);
     dragging = true;
-    if(item.layout_group_id){
-      item.layout_group_id=null;
-      item.layout_row_index=null;
-      item.layout_column_index=null;
-      item.layout_source='manual_detached';
-    }
+    groupDragSnapshot=buildGroupDragSnapshot(item,local);
     invalidateGenerationFrame();
     setSelectedFurniture(item.id);
     node.setPointerCapture?.(e.pointerId);
   });
 
   node.addEventListener('pointermove', e => {
-    if(!dragging || !planEditor) return;
-
+    if(!dragging || !planEditor || !groupDragSnapshot) return;
     const local=clientPointToUntransformedPlan(e.clientX,e.clientY);
     if(!local?.width || !local?.height) return;
 
-    const size=getFurnitureScreenSize(item);
-    const halfX=Math.min(0.49,(size.width/2)/local.width);
-    const halfY=Math.min(0.49,(size.height/2)/local.height);
+    applyGroupDragSnapshot(groupDragSnapshot,local);
 
-    item.x = Math.max(halfX,Math.min(1-halfX,local.x/local.width));
-    item.y = Math.max(halfY,Math.min(1-halfY,local.y/local.height));
-
-    paint();
+    // Repaint every member so a repeat-created group moves as one rigid object.
+    const members=getFurnitureGroupMembers(item);
+    members.forEach(member=>{
+      const memberNode=furnitureLayer?.querySelector(`.furnitureItem[data-id="${member.id}"]`);
+      if(!memberNode) return;
+      const size=getFurnitureScreenSize(member);
+      memberNode.style.width=`${size.width.toFixed(2)}px`;
+      memberNode.style.height=`${size.height.toFixed(2)}px`;
+      memberNode.style.left=`${(member.x*100).toFixed(4)}%`;
+      memberNode.style.top=`${(member.y*100).toFixed(4)}%`;
+      memberNode.style.transform=`translate(-50%,-50%) rotate(${member.rotation}deg)`;
+    });
   });
 
   const finishDrag = e => {
     dragging = false;
+    groupDragSnapshot=null;
     try { node.releasePointerCapture?.(e.pointerId); } catch (_) {}
   };
 
@@ -4963,16 +5117,18 @@ function makeFurnitureNode(item){
       setSelectedFurniture(item.id);
     }
 
-    // Accessible non-drag alternative: arrow keys move selected item.
+    // Accessible non-drag alternative: arrow keys move the whole selected group.
     const step = e.shiftKey ? 0.03 : 0.01;
     if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
       e.preventDefault();
-      if(e.key === 'ArrowLeft') item.x = clamp01(item.x - step);
-      if(e.key === 'ArrowRight') item.x = clamp01(item.x + step);
-      if(e.key === 'ArrowUp') item.y = clamp01(item.y - step);
-      if(e.key === 'ArrowDown') item.y = clamp01(item.y + step);
+      let dx=0,dy=0;
+      if(e.key === 'ArrowLeft') dx=-step;
+      if(e.key === 'ArrowRight') dx=step;
+      if(e.key === 'ArrowUp') dy=-step;
+      if(e.key === 'ArrowDown') dy=step;
+      translateFurnitureGroup(item,dx,dy);
       invalidateGenerationFrame();
-      paint();
+      renderFurniture();
     }
   });
 
@@ -5028,14 +5184,8 @@ function rotateSelected(delta){
   const item = getFurnitureItem(selectedFurnitureId);
   if(!item) return;
 
-  const groupId=item.layout_group_id;
-  if(groupId){
-    furnitureItems
-      .filter(candidate=>candidate.layout_group_id===groupId)
-      .forEach(candidate=>{ candidate.rotation=(Number(candidate.rotation||0)+delta+360)%360; });
-  }else{
-    item.rotation = (item.rotation + delta + 360) % 360;
-  }
+  const changed=rotateFurnitureGroup(item,delta);
+  if(!changed) return;
   invalidateGenerationFrame();
   renderFurniture();
 }
