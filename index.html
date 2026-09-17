@@ -572,13 +572,13 @@ body.xr-active.layout-mode canvas{
 
 .planCornerNumber{
   fill:#fff;
-  font-size:12px;
+  font-size:16px;
   font-weight:900;
   text-anchor:middle;
   dominant-baseline:central;
   paint-order:stroke;
   stroke:#0d0d10;
-  stroke-width:4px;
+  stroke-width:5px;
   stroke-linejoin:round;
 }
 
@@ -679,13 +679,13 @@ body.xr-active.layout-mode canvas{
 }
 
 .planWallLabel{
-  fill:#9fa1ad;
-  font-size:10px;
-  font-weight:800;
+  fill:#b9bbc7;
+  font-size:14px;
+  font-weight:850;
   text-anchor:middle;
   paint-order:stroke;
   stroke:#0d0d10;
-  stroke-width:3px;
+  stroke-width:4px;
   stroke-linejoin:round;
 }
 
@@ -701,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v10.2 — screenshot UI auto-hide.
+/* v10.3 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -899,7 +899,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 
 
 /* ================================================================
-   v10.2 — full-screen floor-plan editor
+   v10.3 — full-screen floor-plan editor
    Layer 1 = plan workspace. Layer 2 = compact floating controls.
    ================================================================ */
 body.xr-active.layout-mode{
@@ -1217,8 +1217,8 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 .editorDetailsPanel summary{min-height:46px !important;}
 
 /* SVG styling is slightly brighter against the larger workspace. */
-.editorScreen .planWallLabel{fill:#aeb0bc;}
-.editorScreen .planCornerNumber{font-size:13px;}
+.editorScreen .planWallLabel{fill:#c1c3cf;font-size:14px;}
+.editorScreen .planCornerNumber{font-size:16px;}
 
 @media(max-width:430px){
   .editorTopbar{left:9px;right:9px;top:calc(8px + env(safe-area-inset-top));}
@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.2 EDITOR</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.3 EDITOR</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1624,7 +1624,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v10_2_fullscreen_editor',
+    source_protocol:'EventVision_v10_3_fullscreen_editor',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -2542,12 +2542,12 @@ function tintHex(hex,multiplier=1){
 
 function createProxyFaceMaterials(baseHex){
   return [
-    proxyMaterial(tintHex(baseHex,0.96),1), // +X right
-    proxyMaterial(tintHex(baseHex,0.82),1), // -X left
-    proxyMaterial(tintHex(baseHex,1.10),1), // +Y top
-    proxyMaterial(tintHex(baseHex,0.66),1), // -Y bottom
-    proxyMaterial(tintHex(baseHex,1.02),1), // +Z front
-    proxyMaterial(tintHex(baseHex,0.74),1)  // -Z back
+    proxyMaterial(tintHex(baseHex,1.00),1), // +X right
+    proxyMaterial(tintHex(baseHex,0.88),1), // -X left
+    proxyMaterial(tintHex(baseHex,1.12),1), // +Y top
+    proxyMaterial(tintHex(baseHex,0.74),1), // -Y bottom
+    proxyMaterial(tintHex(baseHex,1.05),1), // +Z front
+    proxyMaterial(tintHex(baseHex,0.80),1)  // -Z back
   ];
 }
 
@@ -2564,9 +2564,9 @@ function addProxyBox(group,size,position,material,renderOrder=850){
 
 function proxyShadeMultiplierFromNormal(nx,ny,nz){
   const ax=Math.abs(nx), ay=Math.abs(ny), az=Math.abs(nz);
-  if(ay>=ax && ay>=az) return ny>=0 ? 1.10 : 0.66; // top / bottom
-  if(az>=ax) return nz>=0 ? 1.02 : 0.74;            // FRONT +Z / BACK -Z
-  return nx>=0 ? 0.96 : 0.82;                       // right +X / left -X
+  if(ay>=ax && ay>=az) return ny>=0 ? 1.12 : 0.74; // top / bottom
+  if(az>=ax) return nz>=0 ? 1.05 : 0.80;            // FRONT +Z / BACK -Z
+  return nx>=0 ? 1.00 : 0.88;                       // right +X / left -X
 }
 
 function applyProxyDirectionalVertexShading(root){
@@ -2590,16 +2590,16 @@ function applyProxyDirectionalVertexShading(root){
     const materialCount=Array.isArray(obj.material) ? obj.material.length : 1;
     const mats=[];
     for(let i=0;i<materialCount;i++){
-      const baseHex=(i===1) ? 0xd5d1e2 : 0xb7b3c8;
+      const baseHex=(i===1) ? 0xe7e1ff : 0xb9a8ff;
       mats.push(new THREE.MeshStandardMaterial({
         color:baseHex,
         vertexColors:true,
-        roughness:0.78,
+        roughness:0.72,
         metalness:0.0,
         // A tiny emissive lift prevents the darkest faces from becoming unreadable
         // while still allowing real light/shadow gradients across the GLB geometry.
         emissive:new THREE.Color(baseHex),
-        emissiveIntensity:0.045,
+        emissiveIntensity:0.075,
         flatShading:false,
         transparent:false,
         opacity:1,
@@ -3425,7 +3425,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v10_2_fullscreen_editor',
+    protocol_version:'EventVision_v10_3_fullscreen_editor',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3666,7 +3666,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const midV=(minV+maxV)/2;
   const w=Math.max(.001,maxU-minU),h=Math.max(.001,maxV-minV);
 
-  // v10.2: the editor SVG viewBox follows the real display aspect ratio.
+  // v10.3: the editor SVG viewBox follows the real display aspect ratio.
   // This lets the plan canvas fill the whole screen without stretching room geometry.
   const editorRect=planEditor?.getBoundingClientRect?.();
   const cssW=Math.max(1,Number(editorRect?.width || window.innerWidth || 500));
@@ -3708,7 +3708,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   poly.setAttribute('points',mapped.map(p=>`${p.x},${p.y}`).join(' '));
   poly.setAttribute('fill','#18181d');
   poly.setAttribute('stroke','#fff');
-  poly.setAttribute('stroke-width','4');
+  poly.setAttribute('stroke-width','8');
   poly.setAttribute('stroke-linejoin','round');
   el.plan.appendChild(poly);
 
@@ -3716,10 +3716,10 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
     const c=document.createElementNS(ns,'circle');
     c.setAttribute('cx',p.x);
     c.setAttribute('cy',p.y);
-    c.setAttribute('r','11');
+    c.setAttribute('r','24');
     c.setAttribute('fill',i===0?'#6b5cff':'#0d0d10');
     c.setAttribute('stroke','#fff');
-    c.setAttribute('stroke-width','3');
+    c.setAttribute('stroke-width','6');
     el.plan.appendChild(c);
 
     const n=document.createElementNS(ns,'text');
@@ -3739,9 +3739,9 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
 
     const label=document.createElementNS(ns,'text');
     label.setAttribute('x',mx);
-    label.setAttribute('y',my-8);
+    label.setAttribute('y',my-15);
     label.setAttribute('class','planWallLabel');
-    label.setAttribute('transform',`rotate(${angle.toFixed(2)} ${mx.toFixed(2)} ${(my-8).toFixed(2)})`);
+    label.setAttribute('transform',`rotate(${angle.toFixed(2)} ${mx.toFixed(2)} ${(my-15).toFixed(2)})`);
     label.textContent=`Wall ${i+1}`;
     el.plan.appendChild(label);
   });
@@ -4380,7 +4380,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v10_2_fullscreen_editor',
+    protocol_version:'EventVision_v10_3_fullscreen_editor',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -5438,7 +5438,7 @@ function computeChairArrayCandidates(source,sx,sz,pointerWorld){
   const dims=getFurnitureDimensions(source);
   if(!sourceWorld || !pointerWorld) return {candidates:[],columns:1,rows:1};
 
-  // v10.2: use the chair's REAL world-space orientation derived from the
+  // v10.3: use the chair's REAL world-space orientation derived from the
   // auto-oriented plan basis. The previous implementation used raw world X/Z
   // trigonometry, which became incorrect as soon as v9.10 straightened the
   // floorplan relative to the AR world's axes.
@@ -5929,7 +5929,7 @@ planEditor?.addEventListener('pointerup',finishPlanGesturePointer);
 planEditor?.addEventListener('pointercancel',finishPlanGesturePointer);
 applyPlanViewTransform();
 
-// v10.2: browser chrome/orientation changes can resize the fullscreen editor after
+// v10.3: browser chrome/orientation changes can resize the fullscreen editor after
 // the scan was built. Repaint overlay positions against the SVG's real viewport
 // without changing any measured room geometry or furniture world coordinates.
 if(typeof ResizeObserver!=='undefined' && planEditor){
