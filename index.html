@@ -862,7 +862,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.1 SHADED PROXY</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1234,7 +1234,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_8_clean',
+    source_protocol:'EventVision_v9_8_1_shaded_proxy',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1554,7 +1554,16 @@ function createRenderer(){
   scene.background = null;
   camera = new THREE.PerspectiveCamera();
 
-  scene.add(new THREE.HemisphereLight(0xffffff,0x666666,2));
+  // Soft fill + directional key light for readable 3D proxy shading.
+  // Most scan/debug objects use MeshBasicMaterial, so this mainly affects the GLB chair proxy.
+  const proxyFillLight=new THREE.HemisphereLight(0xffffff,0x555562,1.25);
+  proxyFillLight.name='EventVisionProxyFillLight';
+  scene.add(proxyFillLight);
+
+  const proxyKeyLight=new THREE.DirectionalLight(0xffffff,1.85);
+  proxyKeyLight.name='EventVisionProxyKeyLight';
+  proxyKeyLight.position.set(-2.5,4.5,3.0);
+  scene.add(proxyKeyLight);
 
   reticle = new THREE.Mesh(
     new THREE.RingGeometry(.05,.072,32).rotateX(-Math.PI/2),
@@ -2174,14 +2183,21 @@ function applyProxyDirectionalVertexShading(root){
     obj.geometry=g;
 
     // Keep the same EventVision proxy palette as before:
-    // lavender body + lighter seat/upholstery, with deterministic face shading.
+    // lavender body + lighter seat/upholstery, with deterministic face shading + soft real-time lighting.
     const materialCount=Array.isArray(obj.material) ? obj.material.length : 1;
     const mats=[];
     for(let i=0;i<materialCount;i++){
       const baseHex=(i===1) ? 0xd5d1e2 : 0xb7b3c8;
-      mats.push(new THREE.MeshBasicMaterial({
+      mats.push(new THREE.MeshStandardMaterial({
         color:baseHex,
         vertexColors:true,
+        roughness:0.78,
+        metalness:0.0,
+        // A tiny emissive lift prevents the darkest faces from becoming unreadable
+        // while still allowing real light/shadow gradients across the GLB geometry.
+        emissive:new THREE.Color(baseHex),
+        emissiveIntensity:0.045,
+        flatShading:false,
         transparent:false,
         opacity:1,
         depthTest:true,
@@ -3003,7 +3019,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_8_clean',
+    protocol_version:'EventVision_v9_8_1_shaded_proxy',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3739,7 +3755,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_8_clean',
+    protocol_version:'EventVision_v9_8_1_shaded_proxy',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
