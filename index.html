@@ -701,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v10.0 — screenshot UI auto-hide.
+/* v10.1 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -899,7 +899,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 
 
 /* ================================================================
-   v10.0 — full-screen floor-plan editor
+   v10.1 — full-screen floor-plan editor
    Layer 1 = plan workspace. Layer 2 = compact floating controls.
    ================================================================ */
 body.xr-active.layout-mode{
@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.0 EDITOR</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.1 EDITOR</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1624,7 +1624,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v10_0_fullscreen_editor',
+    source_protocol:'EventVision_v10_1_fullscreen_editor',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3425,7 +3425,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v10_0_fullscreen_editor',
+    protocol_version:'EventVision_v10_1_fullscreen_editor',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3666,7 +3666,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const midV=(minV+maxV)/2;
   const w=Math.max(.001,maxU-minU),h=Math.max(.001,maxV-minV);
 
-  // v10.0: the editor SVG viewBox follows the real display aspect ratio.
+  // v10.1: the editor SVG viewBox follows the real display aspect ratio.
   // This lets the plan canvas fill the whole screen without stretching room geometry.
   const editorRect=planEditor?.getBoundingClientRect?.();
   const cssW=Math.max(1,Number(editorRect?.width || window.innerWidth || 500));
@@ -4380,7 +4380,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v10_0_fullscreen_editor',
+    protocol_version:'EventVision_v10_1_fullscreen_editor',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -5157,6 +5157,61 @@ function serializeFurnitureDimensions(dims){
   };
 }
 
+function getPlanSvgViewportMetrics(){
+  if(!el.plan || !planEditor) return null;
+  const rect=planEditor.getBoundingClientRect();
+  const vb=el.plan.viewBox?.baseVal;
+  if(!rect.width || !rect.height || !vb?.width || !vb?.height) return null;
+
+  // SVG uses preserveAspectRatio="xMidYMid meet". The actual drawable SVG area can
+  // therefore be smaller than the fullscreen editor if the browser viewport changes
+  // after the plan was created. Furniture overlays must use this same letterboxed area.
+  const scale=Math.min(rect.width/vb.width,rect.height/vb.height);
+  const renderWidth=vb.width*scale;
+  const renderHeight=vb.height*scale;
+  const offsetX=(rect.width-renderWidth)/2;
+  const offsetY=(rect.height-renderHeight)/2;
+
+  return {
+    rect,
+    vb,
+    scale,
+    renderWidth,
+    renderHeight,
+    offsetX,
+    offsetY
+  };
+}
+
+function planNormalizedToEditorPoint(nx,ny){
+  const metrics=getPlanSvgViewportMetrics();
+  if(!metrics) return null;
+  return {
+    x:metrics.offsetX+Number(nx)*metrics.renderWidth,
+    y:metrics.offsetY+Number(ny)*metrics.renderHeight,
+    width:metrics.rect.width,
+    height:metrics.rect.height
+  };
+}
+
+function editorPointToPlanNormalized(local){
+  const metrics=getPlanSvgViewportMetrics();
+  if(!metrics || !local) return null;
+  return {
+    x:(Number(local.x)-metrics.offsetX)/metrics.renderWidth,
+    y:(Number(local.y)-metrics.offsetY)/metrics.renderHeight
+  };
+}
+
+function furnitureNormalizedToLayerPercent(item){
+  const point=planNormalizedToEditorPoint(item?.x,item?.y);
+  if(!point?.width || !point?.height) return null;
+  return {
+    x:point.x/point.width*100,
+    y:point.y/point.height*100
+  };
+}
+
 function getFurnitureWorldPosition(item){
   if(!item || !planTransform || !el.plan) return null;
 
@@ -5170,13 +5225,14 @@ function getFurnitureWorldPosition(item){
 }
 
 function getPlanScreenScale(){
-  if(!planTransform || !el.plan || !planEditor) return null;
-  const rect=planEditor.getBoundingClientRect();
-  const vb=el.plan.viewBox?.baseVal;
-  if(!rect.width || !rect.height || !vb?.width || !vb?.height) return null;
+  if(!planTransform) return null;
+  const metrics=getPlanSvgViewportMetrics();
+  if(!metrics) return null;
+  // preserveAspectRatio="meet" uses one uniform pixel scale for both axes.
+  const pxPerMeter=planTransform.k*metrics.scale;
   return {
-    pxPerMeterX:planTransform.k*(rect.width/vb.width),
-    pxPerMeterY:planTransform.k*(rect.height/vb.height)
+    pxPerMeterX:pxPerMeter,
+    pxPerMeterY:pxPerMeter
   };
 }
 
@@ -5198,11 +5254,11 @@ function getFurnitureScreenSize(item){
 function planPointToWorld(local){
   if(!local || !planTransform || !el.plan) return null;
   const vb=el.plan.viewBox?.baseVal;
-  if(!vb?.width || !vb?.height || !local.width || !local.height) return null;
-  const nx=local.x/local.width;
-  const ny=local.y/local.height;
-  const svgX=vb.x + nx*vb.width;
-  const svgY=vb.y + ny*vb.height;
+  if(!vb?.width || !vb?.height) return null;
+  const normalized=editorPointToPlanNormalized(local);
+  if(!normalized) return null;
+  const svgX=vb.x + normalized.x*vb.width;
+  const svgY=vb.y + normalized.y*vb.height;
   return planSvgToWorld(svgX,svgY,planTransform);
 }
 
@@ -5219,13 +5275,13 @@ function worldPointToPlanNormalized(world){
 }
 
 function getFurnitureHalfNormalized(item){
-  const size=getFurnitureScreenSize(item);
-  if(!planEditor) return {x:0,y:0};
-  const rect=planEditor.getBoundingClientRect();
-  if(!rect.width || !rect.height) return {x:0,y:0};
+  if(!planTransform || !el.plan) return {x:0,y:0};
+  const vb=el.plan.viewBox?.baseVal;
+  if(!vb?.width || !vb?.height) return {x:0,y:0};
+  const dims=getFurnitureDimensions(item);
   return {
-    x:Math.min(.49,(size.width/2)/rect.width),
-    y:Math.min(.49,(size.height/2)/rect.height)
+    x:Math.min(.49,(Number(dims.width||dims.footprint_width)*planTransform.k/2)/vb.width),
+    y:Math.min(.49,(Number(dims.depth||dims.footprint_depth)*planTransform.k/2)/vb.height)
   };
 }
 
@@ -5234,8 +5290,8 @@ function buildGroupDragSnapshot(item,pointerLocal){
   const members=getFurnitureGroupMembers(item);
   return {
     groupId:item.layout_group_id || null,
-    pointerX:pointerLocal.x/pointerLocal.width,
-    pointerY:pointerLocal.y/pointerLocal.height,
+    pointerX:editorPointToPlanNormalized(pointerLocal)?.x ?? 0,
+    pointerY:editorPointToPlanNormalized(pointerLocal)?.y ?? 0,
     members:members.map(member=>({
       id:member.id,
       x:Number(member.x),
@@ -5247,8 +5303,10 @@ function buildGroupDragSnapshot(item,pointerLocal){
 
 function applyGroupDragSnapshot(snapshot,pointerLocal){
   if(!snapshot || !pointerLocal?.width || !pointerLocal?.height) return;
-  const targetX=pointerLocal.x/pointerLocal.width;
-  const targetY=pointerLocal.y/pointerLocal.height;
+  const target=editorPointToPlanNormalized(pointerLocal);
+  if(!target) return;
+  const targetX=target.x;
+  const targetY=target.y;
   let dx=targetX-snapshot.pointerX;
   let dy=targetY-snapshot.pointerY;
 
@@ -5450,8 +5508,9 @@ function renderChairArrayPreview(source,result,pointerLocal){
     ghost.className='arrayPreviewChair';
     ghost.style.width=`${size.width.toFixed(2)}px`;
     ghost.style.height=`${size.height.toFixed(2)}px`;
-    ghost.style.left=`${(candidate.x*100).toFixed(4)}%`;
-    ghost.style.top=`${(candidate.y*100).toFixed(4)}%`;
+    const layerPos=furnitureNormalizedToLayerPercent(candidate);
+    ghost.style.left=`${Number(layerPos?.x ?? candidate.x*100).toFixed(4)}%`;
+    ghost.style.top=`${Number(layerPos?.y ?? candidate.y*100).toFixed(4)}%`;
     ghost.style.transform=`translate(-50%,-50%) rotate(${candidate.rotation}deg)`;
     furnitureLayer.appendChild(ghost);
     activeArrayPreviewNodes.push(ghost);
@@ -5555,8 +5614,9 @@ function makeFurnitureNode(item){
       e.preventDefault();
       e.stopPropagation();
       const local=clientPointToUntransformedPlan(e.clientX,e.clientY);
+      const normalizedPointer=editorPointToPlanNormalized(local);
       const pointerWorld=planPointToWorld(local);
-      if(!local || !pointerWorld) return;
+      if(!local || !normalizedPointer || !pointerWorld) return;
       lastResult=computeChairArrayCandidates(item,sx,sz,pointerWorld);
       renderChairArrayPreview(item,lastResult,local);
     });
@@ -5586,8 +5646,9 @@ function makeFurnitureNode(item){
 
     node.style.width=`${size.width.toFixed(2)}px`;
     node.style.height=`${size.height.toFixed(2)}px`;
-    node.style.left = `${item.x * 100}%`;
-    node.style.top = `${item.y * 100}%`;
+    const layerPos=furnitureNormalizedToLayerPercent(item);
+    node.style.left = `${Number(layerPos?.x ?? item.x*100).toFixed(4)}%`;
+    node.style.top = `${Number(layerPos?.y ?? item.y*100).toFixed(4)}%`;
     node.style.transform = `translate(-50%,-50%) rotate(${item.rotation}deg)`;
 
     node.dataset.scaleMode=size.physical?'physical':'icon';
@@ -5622,8 +5683,9 @@ function makeFurnitureNode(item){
       const size=getFurnitureScreenSize(member);
       memberNode.style.width=`${size.width.toFixed(2)}px`;
       memberNode.style.height=`${size.height.toFixed(2)}px`;
-      memberNode.style.left=`${(member.x*100).toFixed(4)}%`;
-      memberNode.style.top=`${(member.y*100).toFixed(4)}%`;
+      const memberLayerPos=furnitureNormalizedToLayerPercent(member);
+      memberNode.style.left=`${Number(memberLayerPos?.x ?? member.x*100).toFixed(4)}%`;
+      memberNode.style.top=`${Number(memberLayerPos?.y ?? member.y*100).toFixed(4)}%`;
       memberNode.style.transform=`translate(-50%,-50%) rotate(${member.rotation}deg)`;
     });
   });
@@ -5851,6 +5913,16 @@ function finishPlanGesturePointer(e){
 planEditor?.addEventListener('pointerup',finishPlanGesturePointer);
 planEditor?.addEventListener('pointercancel',finishPlanGesturePointer);
 applyPlanViewTransform();
+
+// v10.1: browser chrome/orientation changes can resize the fullscreen editor after
+// the scan was built. Repaint overlay positions against the SVG's real viewport
+// without changing any measured room geometry or furniture world coordinates.
+if(typeof ResizeObserver!=='undefined' && planEditor){
+  const planOverlayResizeObserver=new ResizeObserver(()=>{
+    if(document.body.classList.contains('layout-mode')) renderFurniture();
+  });
+  planOverlayResizeObserver.observe(planEditor);
+}
 
 // Reset furniture when a completely new room scan is started.
 const originalScanAgain = document.getElementById('scanAgain');
