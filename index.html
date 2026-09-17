@@ -701,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v10.1 — screenshot UI auto-hide.
+/* v10.2 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -899,7 +899,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 
 
 /* ================================================================
-   v10.1 — full-screen floor-plan editor
+   v10.2 — full-screen floor-plan editor
    Layer 1 = plan workspace. Layer 2 = compact floating controls.
    ================================================================ */
 body.xr-active.layout-mode{
@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.1 EDITOR</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.2 EDITOR</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1624,7 +1624,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v10_1_fullscreen_editor',
+    source_protocol:'EventVision_v10_2_fullscreen_editor',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3425,7 +3425,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v10_1_fullscreen_editor',
+    protocol_version:'EventVision_v10_2_fullscreen_editor',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3666,7 +3666,7 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const midV=(minV+maxV)/2;
   const w=Math.max(.001,maxU-minU),h=Math.max(.001,maxV-minV);
 
-  // v10.1: the editor SVG viewBox follows the real display aspect ratio.
+  // v10.2: the editor SVG viewBox follows the real display aspect ratio.
   // This lets the plan canvas fill the whole screen without stretching room geometry.
   const editorRect=planEditor?.getBoundingClientRect?.();
   const cssW=Math.max(1,Number(editorRect?.width || window.innerWidth || 500));
@@ -4380,7 +4380,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v10_1_fullscreen_editor',
+    protocol_version:'EventVision_v10_2_fullscreen_editor',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -5438,14 +5438,23 @@ function computeChairArrayCandidates(source,sx,sz,pointerWorld){
   const dims=getFurnitureDimensions(source);
   if(!sourceWorld || !pointerWorld) return {candidates:[],columns:1,rows:1};
 
-  const theta=Number(source.rotation||0)*Math.PI/180;
-  const cos=Math.cos(theta),sin=Math.sin(theta);
-  const dx=pointerWorld.x-sourceWorld.x;
-  const dz=pointerWorld.z-sourceWorld.z;
+  // v10.2: use the chair's REAL world-space orientation derived from the
+  // auto-oriented plan basis. The previous implementation used raw world X/Z
+  // trigonometry, which became incorrect as soon as v9.10 straightened the
+  // floorplan relative to the AR world's axes.
+  const orientation=getFurnitureOrientationWorld(source);
+  const R=orientation?.right;
+  const F=orientation?.forward;
+  if(!R || !F) return {candidates:[],columns:1,rows:1};
 
-  // Convert the dragged pointer into the chair's local floor axes.
-  const localX=dx*cos+dz*sin;
-  const localZ=-dx*sin+dz*cos;
+  const dx=Number(pointerWorld.x)-Number(sourceWorld.x);
+  const dz=Number(pointerWorld.z)-Number(sourceWorld.z);
+
+  // Project the pointer delta onto the chair-local RIGHT and FRONT axes.
+  // These axes already include both plan auto-orientation and chair rotation.
+  const localX=dx*R.x + dz*R.z;
+  const localZ=dx*F.x + dz*F.z;
+
   const halfW=Number(dims.footprint_width||dims.width)/2;
   const halfD=Number(dims.footprint_depth||dims.depth)/2;
   const stepX=Number(dims.footprint_width||dims.width)+CHAIR_ARRAY_GAP_M;
@@ -5460,13 +5469,19 @@ function computeChairArrayCandidates(source,sx,sz,pointerWorld){
   for(let row=0;row<rows;row++){
     for(let column=0;column<columns;column++){
       if(row===0 && column===0) continue; // source chair already exists
+
       const localOffsetX=sx*column*stepX;
       const localOffsetZ=sz*row*stepZ;
+
+      // Build the new chair position from the SAME RIGHT/FRONT basis used by
+      // its footprint and AR proxy. This makes array creation invariant to the
+      // scan's world heading and to automatic plan straightening.
       const world={
-        x:sourceWorld.x + localOffsetX*cos - localOffsetZ*sin,
-        y:sourceWorld.y,
-        z:sourceWorld.z + localOffsetX*sin + localOffsetZ*cos
+        x:Number(sourceWorld.x) + R.x*localOffsetX + F.x*localOffsetZ,
+        y:Number(sourceWorld.y),
+        z:Number(sourceWorld.z) + R.z*localOffsetX + F.z*localOffsetZ
       };
+
       const normalized=worldPointToPlanNormalized(world);
       if(!normalized || normalized.x<=0 || normalized.x>=1 || normalized.y<=0 || normalized.y>=1) continue;
 
@@ -5914,7 +5929,7 @@ planEditor?.addEventListener('pointerup',finishPlanGesturePointer);
 planEditor?.addEventListener('pointercancel',finishPlanGesturePointer);
 applyPlanViewTransform();
 
-// v10.1: browser chrome/orientation changes can resize the fullscreen editor after
+// v10.2: browser chrome/orientation changes can resize the fullscreen editor after
 // the scan was built. Repaint overlay positions against the SVG's real viewport
 // without changing any measured room geometry or furniture world coordinates.
 if(typeof ResizeObserver!=='undefined' && planEditor){
