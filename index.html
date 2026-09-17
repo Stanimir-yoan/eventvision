@@ -96,6 +96,9 @@ body.xr-active canvas{background:transparent!important}
   border-radius:16px;
   touch-action:none;
   background:#0d0d10;
+  /* v9.8: taller editing surface. The SVG viewBox is also taller, so room geometry
+     remains metrically undistorted while giving more vertical working room. */
+  min-height:420px;
 }
 
 .planViewport{
@@ -114,7 +117,7 @@ body.xr-active canvas{background:transparent!important}
 
 .planViewToolbar{
   display:grid;
-  grid-template-columns:auto repeat(5,minmax(0,1fr));
+  grid-template-columns:auto repeat(3,minmax(0,1fr));
   gap:8px;
   align-items:center;
   margin:10px 0 4px;
@@ -123,7 +126,7 @@ body.xr-active canvas{background:transparent!important}
 .planViewBtn{min-height:38px;border:1px solid rgba(255,255,255,.12);border-radius:11px;background:#17171c;color:#fff;font-size:15px;font-weight:850}
 .planViewBtn:active{transform:scale(.97)}
 .planViewReadout{grid-column:1 / -1;text-align:center;color:var(--muted);font-size:11px;font-weight:700;min-height:15px}
-@media(max-width:430px){.planViewToolbar{grid-template-columns:repeat(5,minmax(0,1fr))}.planViewToolbar .planViewLabel{grid-column:1 / -1;text-align:center}}
+@media(max-width:430px){.planViewToolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.planViewToolbar .planViewLabel{grid-column:1 / -1;text-align:center}}
 
 #furnitureLayer{
   position:absolute;
@@ -859,7 +862,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.7 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8 CLEAN</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -899,19 +902,17 @@ body.xr-active.screenshot-mode .screenshotHud{
 
     <div class="planEditor" id="planEditor">
       <div class="planViewport" id="planViewport">
-        <svg id="plan" viewBox="0 0 500 430"></svg>
+        <svg id="plan" viewBox="0 0 500 600"></svg>
         <div id="furnitureLayer" aria-label="Furniture layout layer"></div>
       </div>
     </div>
 
     <div class="planViewToolbar" aria-label="Plan view controls">
       <div class="planViewLabel">Plan view</div>
-      <button type="button" class="planViewBtn" id="planZoomOut" aria-label="Zoom plan out">−</button>
-      <button type="button" class="planViewBtn" id="planZoomIn" aria-label="Zoom plan in">＋</button>
       <button type="button" class="planViewBtn" id="planRotateLeft" aria-label="Rotate whole plan left">↺</button>
       <button type="button" class="planViewBtn" id="planRotateRight" aria-label="Rotate whole plan right">↻</button>
-      <button type="button" class="planViewBtn" id="planViewReset" aria-label="Reset plan view">Reset</button>
-      <div class="planViewReadout" id="planViewReadout">100% · 0° · drag empty space to pan</div>
+      <button type="button" class="planViewBtn" id="planViewReset" aria-label="Re-center plan to default view">Re-center</button>
+      <div class="planViewReadout" id="planViewReadout">100% · 0° · pinch with two fingers to zoom · drag empty space to pan</div>
     </div>
 
     <div id="furnitureToolbar" aria-live="polite">
@@ -1233,7 +1234,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_7_6_clean',
+    source_protocol:'EventVision_v9_8_clean',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3002,7 +3003,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_7_6_clean',
+    protocol_version:'EventVision_v9_8_clean',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3108,8 +3109,8 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const minX=Math.min(...xs),maxX=Math.max(...xs);
   const minZ=Math.min(...zs),maxZ=Math.max(...zs);
   const w=Math.max(.001,maxX-minX),h=Math.max(.001,maxZ-minZ);
-  const k=Math.min(455/w,385/h);
-  const cx=250,cy=215;
+  const k=Math.min(455/w,555/h);
+  const cx=250,cy=300;
   const worldCenterX=(minX+maxX)/2;
   const worldCenterZ=(minZ+maxZ)/2;
 
@@ -3738,7 +3739,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_7_6_clean',
+    protocol_version:'EventVision_v9_8_clean',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -3885,7 +3886,7 @@ function buildGenerationPlanCanvas(){
   }
 
   const baseW=500;
-  const baseH=430;
+  const baseH=600;
   const scale=2.4;
   const canvas=document.createElement('canvas');
   canvas.width=Math.round(baseW*scale);
@@ -4292,8 +4293,6 @@ window.addEventListener('resize',()=>{
 const furnitureLayer = document.getElementById('furnitureLayer');
 const planEditor = document.getElementById('planEditor');
 const planViewport = document.getElementById('planViewport');
-const planZoomOutBtn = document.getElementById('planZoomOut');
-const planZoomInBtn = document.getElementById('planZoomIn');
 const planRotateLeftBtn = document.getElementById('planRotateLeft');
 const planRotateRightBtn = document.getElementById('planRotateRight');
 const planViewResetBtn = document.getElementById('planViewReset');
@@ -4329,11 +4328,47 @@ function normalizePlanViewRotation(deg){
 function applyPlanViewTransform(){
   if(!planViewport) return;
   planViewport.style.transform=`translate(${planViewState.panX.toFixed(1)}px, ${planViewState.panY.toFixed(1)}px) scale(${planViewState.zoom.toFixed(3)}) rotate(${planViewState.rotation.toFixed(2)}deg)`;
-  if(planViewReadout) planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}° · drag empty space to pan`;
+  if(planViewReadout) planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}° · pinch with two fingers to zoom · drag empty space to pan`;
 }
 
 function setPlanZoom(nextZoom){
   planViewState.zoom=Math.max(.65,Math.min(2.75,Number(nextZoom)||1));
+  applyPlanViewTransform();
+}
+
+function clampPlanZoom(value){
+  return Math.max(.65,Math.min(2.75,Number(value)||1));
+}
+
+function setPlanZoomAroundPoint(nextZoom,clientX,clientY,anchorState=null){
+  if(!planEditor) return;
+  const rect=planEditor.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+
+  const zoom=clampPlanZoom(nextZoom);
+  const cx=rect.left+rect.width/2;
+  const cy=rect.top+rect.height/2;
+  const rotation=(anchorState?.rotation ?? planViewState.rotation)*Math.PI/180;
+  const cos=Math.cos(rotation),sin=Math.sin(rotation);
+
+  let localX,localY;
+  if(anchorState?.localAnchor){
+    localX=anchorState.localAnchor.x;
+    localY=anchorState.localAnchor.y;
+  }else{
+    const oldZoom=Math.max(.0001,planViewState.zoom);
+    const dx=Number(clientX)-cx-planViewState.panX;
+    const dy=Number(clientY)-cy-planViewState.panY;
+    localX=(cos*dx+sin*dy)/oldZoom;
+    localY=(-sin*dx+cos*dy)/oldZoom;
+  }
+
+  // Keep the same untransformed plan point under the moving pinch midpoint.
+  const rotatedX=(cos*localX-sin*localY)*zoom;
+  const rotatedY=(sin*localX+cos*localY)*zoom;
+  planViewState.zoom=zoom;
+  planViewState.panX=Number(clientX)-cx-rotatedX;
+  planViewState.panY=Number(clientY)-cy-rotatedY;
   applyPlanViewTransform();
 }
 
@@ -4912,41 +4947,118 @@ rotateLeftBtn?.addEventListener('click', () => rotateSelected(-15));
 rotateRightBtn?.addEventListener('click', () => rotateSelected(15));
 deleteFurnitureBtn?.addEventListener('click', deleteSelectedFurniture);
 
-planZoomOutBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom-.15));
-planZoomInBtn?.addEventListener('click',()=>setPlanZoom(planViewState.zoom+.15));
 planRotateLeftBtn?.addEventListener('click',()=>rotatePlanView(-15));
 planRotateRightBtn?.addEventListener('click',()=>rotatePlanView(15));
 planViewResetBtn?.addEventListener('click',resetPlanView);
 
+// Desktop convenience remains available; mobile/tablet zoom is now a two-finger pinch.
 planEditor?.addEventListener('wheel',e=>{
   e.preventDefault();
-  setPlanZoom(planViewState.zoom + (e.deltaY<0 ? .12 : -.12));
+  setPlanZoomAroundPoint(planViewState.zoom + (e.deltaY<0 ? .12 : -.12),e.clientX,e.clientY);
 },{passive:false});
 
+const activePlanPointers=new Map();
 let planPanPointerId=null;
 let planPanLast=null;
-planEditor?.addEventListener('pointerdown', e => {
+let planPinchState=null;
+
+function getFirstTwoPlanPointers(){
+  return [...activePlanPointers.entries()].slice(0,2).map(([id,p])=>({id,...p}));
+}
+
+function beginPlanPinch(){
+  if(activePlanPointers.size<2 || !planEditor) return;
+  const [a,b]=getFirstTwoPlanPointers();
+  if(!a || !b) return;
+  const rect=planEditor.getBoundingClientRect();
+  const midX=(a.x+b.x)/2;
+  const midY=(a.y+b.y)/2;
+  const distance=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y));
+  const cx=rect.left+rect.width/2;
+  const cy=rect.top+rect.height/2;
+  const rotation=planViewState.rotation*Math.PI/180;
+  const cos=Math.cos(rotation),sin=Math.sin(rotation);
+  const dx=midX-cx-planViewState.panX;
+  const dy=midY-cy-planViewState.panY;
+  const invZoom=1/Math.max(.0001,planViewState.zoom);
+
+  planPinchState={
+    startDistance:distance,
+    startZoom:planViewState.zoom,
+    rotation:planViewState.rotation,
+    localAnchor:{
+      x:(cos*dx+sin*dy)*invZoom,
+      y:(-sin*dx+cos*dy)*invZoom
+    }
+  };
+  planPanPointerId=null;
+  planPanLast=null;
+}
+
+planEditor?.addEventListener('pointerdown',e=>{
+  // Furniture keeps its own one-finger drag controls. Pinch/pan begins on empty plan space.
   if(e.target?.closest?.('.furnitureItem')) return;
+  e.preventDefault();
   setSelectedFurniture(null);
+  activePlanPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  try{planEditor.setPointerCapture?.(e.pointerId);}catch(_){}
+
+  if(activePlanPointers.size>=2){
+    beginPlanPinch();
+    return;
+  }
+
   planPanPointerId=e.pointerId;
   planPanLast={x:e.clientX,y:e.clientY};
-  try{planEditor.setPointerCapture?.(e.pointerId);}catch(_){}
 });
+
 planEditor?.addEventListener('pointermove',e=>{
+  if(!activePlanPointers.has(e.pointerId)) return;
+  activePlanPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+
+  if(activePlanPointers.size>=2){
+    e.preventDefault();
+    if(!planPinchState) beginPlanPinch();
+    const [a,b]=getFirstTwoPlanPointers();
+    if(!a || !b || !planPinchState) return;
+    const distance=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y));
+    const midX=(a.x+b.x)/2;
+    const midY=(a.y+b.y)/2;
+    const zoom=planPinchState.startZoom*(distance/planPinchState.startDistance);
+    setPlanZoomAroundPoint(zoom,midX,midY,planPinchState);
+    return;
+  }
+
   if(planPanPointerId!==e.pointerId || !planPanLast) return;
   planViewState.panX += e.clientX-planPanLast.x;
   planViewState.panY += e.clientY-planPanLast.y;
   planPanLast={x:e.clientX,y:e.clientY};
   applyPlanViewTransform();
 });
-function finishPlanPan(e){
-  if(planPanPointerId!==e.pointerId) return;
-  planPanPointerId=null;
-  planPanLast=null;
+
+function finishPlanGesturePointer(e){
+  if(!activePlanPointers.has(e.pointerId)) return;
+  activePlanPointers.delete(e.pointerId);
   try{planEditor?.releasePointerCapture?.(e.pointerId);}catch(_){}
+
+  if(activePlanPointers.size>=2){
+    beginPlanPinch();
+    return;
+  }
+
+  planPinchState=null;
+  if(activePlanPointers.size===1){
+    const [remainingId,remaining]=activePlanPointers.entries().next().value;
+    planPanPointerId=remainingId;
+    planPanLast={x:remaining.x,y:remaining.y};
+  }else{
+    planPanPointerId=null;
+    planPanLast=null;
+  }
 }
-planEditor?.addEventListener('pointerup',finishPlanPan);
-planEditor?.addEventListener('pointercancel',finishPlanPan);
+
+planEditor?.addEventListener('pointerup',finishPlanGesturePointer);
+planEditor?.addEventListener('pointercancel',finishPlanGesturePointer);
 applyPlanViewTransform();
 
 // Reset furniture when a completely new room scan is started.
