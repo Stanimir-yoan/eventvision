@@ -683,6 +683,24 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
+.projectionDebug,
+.screenshotTop,
+.screenshotGuide,
+.screenshotBottom{
+  transition:opacity .18s ease;
+}
+
+.screenshotHud.ui-hidden .projectionDebug,
+.screenshotHud.ui-hidden .screenshotTop,
+.screenshotHud.ui-hidden .screenshotGuide,
+.screenshotHud.ui-hidden .screenshotBottom{
+  opacity:0;
+}
+
+.screenshotHud.ui-hidden .screenshotBottom{
+  pointer-events:none;
+}
+
 .projectionDebug{
   position:absolute;
   inset:0;
@@ -862,7 +880,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.1 SHADED PROXY</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.8.2 SHADED PROXY</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -1125,6 +1143,13 @@ let scanSceneData = null;
 let screenshotModeActive = false;
 let lockedGenerationFrame = null;
 let capturePreparationActive = false;
+
+const SCREENSHOT_UI_AUTO_HIDE_DELAY_MS = 1000;
+const SCREENSHOT_UI_AUTO_HIDE_MAX_POSITION_DELTA_M = 0.01;
+const SCREENSHOT_UI_AUTO_HIDE_MAX_ROTATION_DELTA_DEG = 1.0;
+let screenshotUiHidden = false;
+let screenshotUiStationarySince = 0;
+let screenshotUiReferencePose = null;
 let captureStabilitySamples = [];
 let capturePreparationStartedAt = 0;
 
@@ -1234,7 +1259,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_8_1_shaded_proxy',
+    source_protocol:'EventVision_v9_8_2_shaded_proxy',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -2717,6 +2742,7 @@ function render(_time,frame){
     }
   }
 
+  if(screenshotModeActive) updateScreenshotUiAutoHide(timeMs);
   renderer.render(scene,camera);
 }
 
@@ -3019,7 +3045,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_8_1_shaded_proxy',
+    protocol_version:'EventVision_v9_8_2_shaded_proxy',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3306,10 +3332,60 @@ function getPlanPositionFromWorld(worldPosition){
   };
 }
 
+function setScreenshotUiHidden(hidden){
+  screenshotUiHidden=!!hidden;
+  el.screenshotHud?.classList.toggle('ui-hidden', screenshotUiHidden);
+}
+
+function resetScreenshotUiAutoHide(){
+  screenshotUiStationarySince=0;
+  screenshotUiReferencePose=null;
+  setScreenshotUiHidden(false);
+}
+
+function updateScreenshotUiAutoHide(frameTimeMs){
+  if(!screenshotModeActive || !latestViewerPosition || !latestViewerOrientation){
+    resetScreenshotUiAutoHide();
+    return;
+  }
+
+  const t=Number.isFinite(frameTimeMs) ? Number(frameTimeMs) : performance.now();
+
+  if(!screenshotUiReferencePose){
+    screenshotUiReferencePose={
+      position:latestViewerPosition.clone(),
+      orientation:latestViewerOrientation.clone()
+    };
+    screenshotUiStationarySince=t;
+    setScreenshotUiHidden(false);
+    return;
+  }
+
+  const posDelta=latestViewerPosition.distanceTo(screenshotUiReferencePose.position);
+  const rotDeltaDeg=latestViewerOrientation.angleTo(screenshotUiReferencePose.orientation)*180/Math.PI;
+  const stationary=posDelta<=SCREENSHOT_UI_AUTO_HIDE_MAX_POSITION_DELTA_M && rotDeltaDeg<=SCREENSHOT_UI_AUTO_HIDE_MAX_ROTATION_DELTA_DEG;
+
+  if(stationary){
+    if(!screenshotUiStationarySince) screenshotUiStationarySince=t;
+    if((t-screenshotUiStationarySince)>=SCREENSHOT_UI_AUTO_HIDE_DELAY_MS){
+      setScreenshotUiHidden(true);
+    }
+    return;
+  }
+
+  screenshotUiReferencePose={
+    position:latestViewerPosition.clone(),
+    orientation:latestViewerOrientation.clone()
+  };
+  screenshotUiStationarySince=t;
+  setScreenshotUiHidden(false);
+}
+
 function stopCapturePreparation(message=''){
   capturePreparationActive=false;
   captureStabilitySamples=[];
   capturePreparationStartedAt=0;
+  setScreenshotUiHidden(false);
   if(el.lockGenerationFrame && !lockedGenerationFrame){
     el.lockGenerationFrame.textContent='Prepare capture';
     el.lockGenerationFrame.classList.remove('locked');
@@ -3389,6 +3465,9 @@ function captureCurrentGenerationFrame(){
   setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
+  screenshotUiReferencePose = latestViewerPosition && latestViewerOrientation ? { position: latestViewerPosition.clone(), orientation: latestViewerOrientation.clone() } : null;
+  screenshotUiStationarySince = performance.now();
+  setScreenshotUiHidden(false);
   return true;
 }
 
@@ -3447,6 +3526,7 @@ function lockGenerationFrame(){
       el.lockGenerationFrame.textContent='Prepare capture';
       el.lockGenerationFrame.classList.remove('locked');
     }
+    setScreenshotUiHidden(false);
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
     if(el.screenshotGuideText){
       el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
@@ -3459,6 +3539,7 @@ function lockGenerationFrame(){
 
   if(capturePreparationActive){
     stopCapturePreparation('Capture cancelled');
+    setScreenshotUiHidden(false);
     if(el.screenshotGuideText){
       el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
     }
@@ -3521,6 +3602,7 @@ function enterScreenshotMode(){
   el.hud.classList.remove('active');
   el.screenshotHud.classList.add('active');
   el.screenshotHud.setAttribute('aria-hidden','false');
+  resetScreenshotUiAutoHide();
 
   if(el.lockGenerationFrame){
     el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : (capturePreparationActive ? 'Cancel preparation' : 'Prepare capture');
@@ -3546,6 +3628,7 @@ function enterScreenshotMode(){
 function exitScreenshotMode(){
   if(capturePreparationActive) stopCapturePreparation();
   screenshotModeActive=false;
+  resetScreenshotUiAutoHide();
   clearFurnitureProxyGuide();
   clearWallOccluders();
   setScanGuidesVisible(true);
@@ -3755,7 +3838,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_8_1_shaded_proxy',
+    protocol_version:'EventVision_v9_8_2_shaded_proxy',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
