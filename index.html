@@ -701,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v9.10 — screenshot UI auto-hide.
+/* v10.0 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -896,11 +896,346 @@ body.xr-active.screenshot-mode .screenshotHud{
 .calibrationMiniMap .cornerDot.target{fill:#63efb0;stroke:#fff;stroke-width:2;}
 .calibrationMiniMap .cornerText{fill:#fff;font-size:8px;font-weight:900;text-anchor:middle;dominant-baseline:central;}
 
+
+
+/* ================================================================
+   v10.0 — full-screen floor-plan editor
+   Layer 1 = plan workspace. Layer 2 = compact floating controls.
+   ================================================================ */
+body.xr-active.layout-mode{
+  overflow:hidden !important;
+  background:#09090c !important;
+}
+body.xr-active.layout-mode .shell{
+  display:block !important;
+  position:fixed !important;
+  inset:0 !important;
+  z-index:20000;
+  width:100vw !important;
+  max-width:none !important;
+  min-height:0 !important;
+  margin:0 !important;
+  padding:0 !important;
+  background:#09090c !important;
+  overflow:hidden !important;
+}
+body.xr-active.layout-mode .shell > .homeMeta,
+body.xr-active.layout-mode .shell > h1,
+body.xr-active.layout-mode .shell > p,
+body.xr-active.layout-mode #introCard{display:none !important;}
+
+#result.editorScreen,
+#result.editorScreen.show{
+  position:fixed !important;
+  inset:0 !important;
+  z-index:10;
+  width:100vw !important;
+  height:100dvh !important;
+  min-height:100vh;
+  margin:0 !important;
+  padding:0 !important;
+  border:0 !important;
+  overflow:hidden !important;
+  background:#09090c !important;
+}
+
+/* Layer 1: canvas */
+.editorScreen .planEditor{
+  position:absolute !important;
+  inset:0 !important;
+  z-index:1;
+  width:100% !important;
+  height:100% !important;
+  min-height:0 !important;
+  margin:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  overflow:hidden !important;
+  touch-action:none;
+  background:
+    radial-gradient(circle at 50% 42%,rgba(107,92,255,.055),transparent 44%),
+    #09090c;
+}
+.editorScreen .planViewport{
+  position:absolute !important;
+  inset:0 !important;
+  width:100% !important;
+  height:100% !important;
+  transform-origin:50% 50%;
+}
+.editorScreen .planEditor #plan{
+  position:absolute;
+  inset:0;
+  width:100% !important;
+  height:100% !important;
+  margin:0 !important;
+  display:block;
+  border-radius:0 !important;
+  background:transparent !important;
+  touch-action:none;
+}
+.editorScreen #furnitureLayer{
+  position:absolute;
+  inset:0;
+  border-radius:0 !important;
+  overflow:hidden;
+}
+
+/* Soft workspace grid: visual only; geometry is still the measured SVG plan. */
+.editorScreen .planEditor::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  opacity:.16;
+  background-image:
+    linear-gradient(rgba(255,255,255,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:28px 28px;
+  mask-image:radial-gradient(circle at center,#000 30%,transparent 88%);
+  -webkit-mask-image:radial-gradient(circle at center,#000 30%,transparent 88%);
+}
+
+/* Layer 2: top bar */
+.editorTopbar{
+  position:absolute;
+  z-index:30;
+  top:calc(10px + env(safe-area-inset-top));
+  left:12px;
+  right:12px;
+  min-height:56px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  pointer-events:none;
+}
+.editorIdentity,
+.editorTopActions{display:flex;align-items:center;gap:9px;pointer-events:auto;}
+.editorIdentity{
+  min-width:0;
+  padding:9px 12px 9px 10px;
+  border:1px solid rgba(255,255,255,.11);
+  border-radius:16px;
+  background:rgba(18,18,23,.78);
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+.editorStatusDot{
+  width:8px;height:8px;border-radius:50%;
+  background:#63efb0;
+  box-shadow:0 0 0 4px rgba(99,239,176,.10);
+  flex:0 0 auto;
+}
+.editorIdentityCopy{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.editorIdentityCopy strong{font-size:13px;line-height:1.05;letter-spacing:-.01em;}
+.editorIdentityCopy #furnitureCount{
+  margin:0 !important;
+  max-width:150px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.1;
+}
+.editorTrackingBadge{
+  min-height:42px !important;
+  height:42px;
+  border-color:rgba(255,255,255,.11) !important;
+  background:rgba(18,18,23,.78) !important;
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+}
+.editorIconBtn{
+  width:42px;height:42px;display:grid;place-items:center;
+  padding:0;border:1px solid rgba(255,255,255,.11);border-radius:14px;
+  background:rgba(18,18,23,.82);color:#fff;font-size:17px;font-weight:900;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  -webkit-tap-highlight-color:transparent;
+}
+.editorIconBtn:active{transform:scale(.96);}
+
+/* View navigation floats just under the top bar. */
+.editorViewControls{
+  position:absolute;
+  z-index:28;
+  top:calc(76px + env(safe-area-inset-top));
+  left:50%;
+  transform:translateX(-50%);
+  display:grid;
+  grid-template-columns:40px auto 40px;
+  gap:6px;
+  align-items:center;
+  padding:5px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:15px;
+  background:rgba(18,18,23,.74);
+  box-shadow:0 10px 28px rgba(0,0,0,.16);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  pointer-events:auto;
+}
+.editorCircleBtn,
+.editorCenterBtn{
+  height:38px;border:0;border-radius:10px;background:rgba(255,255,255,.055);
+  color:#fff;font-weight:850;-webkit-tap-highlight-color:transparent;
+}
+.editorCircleBtn{width:40px;font-size:18px;}
+.editorCenterBtn{padding:0 12px;font-size:11px;}
+.editorCircleBtn:active,.editorCenterBtn:active{transform:scale(.96);}
+.editorViewReadout{
+  position:absolute;
+  left:50%;top:calc(100% + 7px);
+  transform:translateX(-50%);
+  width:max-content;
+  max-width:78vw;
+  padding:5px 8px;
+  border-radius:999px;
+  background:rgba(9,9,12,.56);
+  color:rgba(255,255,255,.54);
+  font-size:9px;
+  font-weight:750;
+  white-space:nowrap;
+  pointer-events:none;
+}
+
+/* Furniture contextual toolbar only appears when something is selected. */
+#furnitureToolbar.editorSelectionToolbar{
+  position:absolute;
+  z-index:34;
+  left:12px;
+  right:12px;
+  bottom:calc(88px + env(safe-area-inset-bottom));
+  margin:0 !important;
+  padding:7px;
+  grid-template-columns:minmax(0,1fr) 44px 44px auto;
+  gap:6px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:16px;
+  background:rgba(18,18,23,.88);
+  box-shadow:0 12px 34px rgba(0,0,0,.30);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+#furnitureToolbar.editorSelectionToolbar .toolBtn{
+  border-color:rgba(255,255,255,.08);
+  background:rgba(255,255,255,.06);
+}
+#furnitureToolbar.editorSelectionToolbar .toolBtn.delete{padding:0 12px;min-width:62px;}
+
+/* Main dock: only the two high-frequency actions. */
+.editorBottomDock{
+  position:absolute;
+  z-index:32;
+  left:12px;
+  right:12px;
+  bottom:calc(10px + env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns:1fr 1.15fr;
+  gap:8px;
+  padding:6px;
+  border:1px solid rgba(255,255,255,.11);
+  border-radius:18px;
+  background:rgba(18,18,23,.82);
+  box-shadow:0 14px 38px rgba(0,0,0,.34);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  pointer-events:auto;
+}
+.editorDockBtn{
+  height:54px;
+  border:0;
+  border-radius:13px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  color:#fff;
+  font-size:13px;
+  font-weight:900;
+  -webkit-tap-highlight-color:transparent;
+}
+.editorDockBtn:active{transform:scale(.985);}
+.editorDockSecondary{background:rgba(255,255,255,.075);}
+.editorDockPrimary{background:var(--accent);box-shadow:0 7px 20px rgba(107,92,255,.23);}
+.editorDockIcon{font-size:20px;font-weight:500;line-height:1;}
+
+/* Secondary tools drawer */
+.editorUtilityBackdrop{
+  position:absolute;inset:0;z-index:48;
+  background:rgba(0,0,0,.42);
+  opacity:0;pointer-events:none;
+  transition:opacity .2s ease;
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+}
+.editorUtilityBackdrop.open{opacity:1;pointer-events:auto;}
+.editorUtilityPanel{
+  position:absolute;
+  z-index:50;
+  top:calc(70px + env(safe-area-inset-top));
+  right:12px;
+  bottom:calc(10px + env(safe-area-inset-bottom));
+  width:min(370px,calc(100vw - 24px));
+  padding:14px;
+  overflow:auto;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:20px;
+  background:rgba(18,18,23,.96);
+  box-shadow:0 24px 70px rgba(0,0,0,.5);
+  transform:translateX(calc(100% + 28px));
+  transition:transform .24s cubic-bezier(.2,.8,.2,1);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  pointer-events:auto;
+}
+.editorUtilityPanel.open{transform:translateX(0);}
+.editorUtilityHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
+.editorUtilityHeader strong{display:block;margin-top:3px;font-size:16px;}
+.editorUtilityActions{display:grid;gap:7px;}
+.editorUtilityAction{
+  width:100%;min-height:58px;padding:8px 10px;
+  display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:center;
+  border:1px solid rgba(255,255,255,.08);border-radius:14px;
+  background:rgba(255,255,255,.045);color:#fff;text-align:left;
+}
+.editorUtilityActionIcon{
+  width:36px;height:36px;display:grid;place-items:center;border-radius:11px;
+  background:rgba(107,92,255,.16);color:#d5d0ff;font-size:16px;font-weight:850;
+}
+.editorUtilityAction span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.editorUtilityAction b{font-size:12px;}
+.editorUtilityAction small{color:var(--muted);font-size:10px;line-height:1.2;}
+.editorUtilityDanger .editorUtilityActionIcon{background:rgba(255,108,119,.12);color:#ff9aa3;}
+.editorExportStatus{margin:8px 2px 0 !important;padding:0 !important;min-height:14px !important;}
+.editorUtilityMeta{margin-top:12px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);}
+.editorUtilityMeta .furnitureHint,.editorUtilityMeta .furnitureScaleNote{margin:0 0 6px !important;}
+.editorDetailsPanel{margin-top:10px !important;border-color:rgba(255,255,255,.09) !important;}
+.editorDetailsPanel summary{min-height:46px !important;}
+
+/* SVG styling is slightly brighter against the larger workspace. */
+.editorScreen .planWallLabel{fill:#aeb0bc;}
+.editorScreen .planCornerNumber{font-size:13px;}
+
+@media(max-width:430px){
+  .editorTopbar{left:9px;right:9px;top:calc(8px + env(safe-area-inset-top));}
+  .editorIdentity{padding-right:10px;}
+  .editorIdentityCopy #furnitureCount{max-width:120px;}
+  .editorTrackingBadge{width:42px;padding:0 !important;justify-content:center;}
+  .editorTrackingBadge #trackingText{display:none;}
+  .editorViewControls{top:calc(70px + env(safe-area-inset-top));}
+  .editorBottomDock{left:9px;right:9px;bottom:calc(8px + env(safe-area-inset-bottom));}
+  #furnitureToolbar.editorSelectionToolbar{left:9px;right:9px;bottom:calc(84px + env(safe-area-inset-bottom));}
+  .editorUtilityPanel{right:8px;width:calc(100vw - 16px);top:calc(62px + env(safe-area-inset-top));bottom:calc(8px + env(safe-area-inset-bottom));}
+}
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v9.10 SHADED PROXY</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.0 EDITOR</span></div>
   <h1>Scan the real floor</h1>
   <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
 
@@ -923,105 +1258,115 @@ body.xr-active.screenshot-mode .screenshotHud{
     </div>
   </section>
 
-  <section id="result">
-    <div class="resultTop">
-      <div>
-        <div class="eyebrow">SCAN COMPLETE</div>
-        <h2 class="resultTitle">Measured floor plan</h2>
-      </div>
-      <div class="resultHeaderActions">
-        <div id="trackingBadge" class="trackingBadge">
-          <span class="trackingDot"></span>
-          <span id="trackingText">Live phone</span>
-        </div>
-        <button id="scanAgain" class="resultScanAgain">Scan again</button>
-      </div>
-    </div>
-
+  <section id="result" class="editorScreen" aria-label="Floor plan editor">
+    <!-- Layer 1: full-screen editable plan canvas -->
     <div class="planEditor" id="planEditor">
       <div class="planViewport" id="planViewport">
-        <svg id="plan" viewBox="0 0 500 600"></svg>
+        <svg id="plan" viewBox="0 0 1000 1800" aria-label="Measured floor plan"></svg>
         <div id="furnitureLayer" aria-label="Furniture layout layer"></div>
       </div>
     </div>
 
-    <div class="planViewToolbar" aria-label="Plan view controls">
-      <div class="planViewLabel">Plan view</div>
-      <button type="button" class="planViewBtn" id="planRotateLeft" aria-label="Rotate whole plan left">↺</button>
-      <button type="button" class="planViewBtn" id="planRotateRight" aria-label="Rotate whole plan right">↻</button>
-      <button type="button" class="planViewBtn" id="planViewReset" aria-label="Re-center plan to default view">Re-center</button>
-      <div class="planViewReadout" id="planViewReadout">100% · 0° · pinch with two fingers to zoom · drag empty space to pan</div>
+    <!-- Layer 2: essential editor UI -->
+    <header class="editorTopbar">
+      <div class="editorIdentity">
+        <span class="editorStatusDot" aria-hidden="true"></span>
+        <div class="editorIdentityCopy">
+          <strong>Floor plan</strong>
+          <span id="furnitureCount">Ready to edit</span>
+        </div>
+      </div>
+      <div class="editorTopActions">
+        <div id="trackingBadge" class="trackingBadge editorTrackingBadge">
+          <span class="trackingDot"></span>
+          <span id="trackingText">Live phone</span>
+        </div>
+        <button id="editorMenuBtn" class="editorIconBtn" type="button" aria-label="Open plan tools" aria-expanded="false">•••</button>
+      </div>
+    </header>
+
+    <div class="editorViewControls" aria-label="Plan view controls">
+      <button type="button" class="editorCircleBtn" id="planRotateLeft" aria-label="Rotate whole plan left">↺</button>
+      <button type="button" class="editorCenterBtn" id="planViewReset" aria-label="Re-center plan to default view">Re-center</button>
+      <button type="button" class="editorCircleBtn" id="planRotateRight" aria-label="Rotate whole plan right">↻</button>
+      <div class="editorViewReadout" id="planViewReadout">100% · 0°</div>
     </div>
 
-    <div id="furnitureToolbar" aria-live="polite">
+    <div id="furnitureToolbar" class="editorSelectionToolbar" aria-live="polite">
       <div class="selectedLabel" id="selectedFurnitureLabel">Chair selected</div>
-      <button type="button" class="toolBtn" id="rotateLeft" aria-label="Rotate left">↺</button>
-      <button type="button" class="toolBtn" id="rotateRight" aria-label="Rotate right">↻</button>
-      <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete furniture">Delete</button>
+      <button type="button" class="toolBtn" id="rotateLeft" aria-label="Rotate selected furniture left">↺</button>
+      <button type="button" class="toolBtn" id="rotateRight" aria-label="Rotate selected furniture right">↻</button>
+      <button type="button" class="toolBtn delete" id="deleteFurniture" aria-label="Delete selected furniture">Delete</button>
     </div>
-    <div id="furnitureCount"></div>
-    <div class="furnitureHint">Drag chairs on the plan. Drag a purple corner handle to create an evenly spaced chair array. Repeated chairs stay grouped: drag any group member to move the whole group, and use Rotate to rotate the complete group around its center. Any edit invalidates the locked generation frame.</div>
-    <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap.</div>
 
-    <div class="resultActionGrid screenshotActionGrid">
-      <button id="screenshotMode" class="addFurnitureBtn screenshotModeBtn">
-        <span class="addFurnitureIcon">▣</span>
-        <span>Screenshot mode</span>
-      </button>
-
-      <button id="addFurniture" class="addFurnitureBtn">
-        <span class="addFurnitureIcon">＋</span>
+    <nav class="editorBottomDock" aria-label="Floor plan actions">
+      <button id="addFurniture" class="editorDockBtn editorDockSecondary" type="button">
+        <span class="editorDockIcon">＋</span>
         <span>Add chair</span>
       </button>
-
-      <button id="saveSpace" class="addFurnitureBtn saveSpaceBtn" type="button">
-        <span class="addFurnitureIcon">⌂</span>
-        <span>Save this space for later calibration</span>
+      <button id="screenshotMode" class="editorDockBtn editorDockPrimary" type="button">
+        <span class="editorDockIcon">▣</span>
+        <span>Capture</span>
       </button>
-    </div>
+    </nav>
 
-    <div class="debugActionRow" aria-label="Generation exports">
-      <button id="exportData" class="exportActionBtn" type="button">
-        <span class="exportIcon">{ }</span>
-        <span class="exportCopy">
-          <span class="exportTitle">Export scene JSON</span>
-          <span class="exportSub">Locked camera + exact chair targets</span>
-        </span>
-      </button>
-      <button id="exportPlan" class="exportActionBtn exportPlanBtn" type="button">
-        <span class="exportIcon">▱</span>
-        <span class="exportCopy">
-          <span class="exportTitle">Export 2D plan PNG</span>
-          <span class="exportSub">Clean orientation cross-check image</span>
-        </span>
-      </button>
-      <div id="exportStatus" class="exportStatus" role="status" aria-live="polite">Lock a generation frame before exporting.</div>
-    </div>
-
-    <details id="detailsPanel">
-      <summary>
-        <span>Details</span>
-        <span class="detailsChevron">⌄</span>
-      </summary>
-      <div class="detailsBody">
-        <div class="metrics">
-          <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
-          <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
+    <!-- Secondary tools stay available without cluttering the workspace. -->
+    <div id="editorUtilityBackdrop" class="editorUtilityBackdrop" aria-hidden="true"></div>
+    <aside id="editorUtilityPanel" class="editorUtilityPanel" aria-hidden="true">
+      <div class="editorUtilityHeader">
+        <div>
+          <div class="eyebrow">PLAN TOOLS</div>
+          <strong>Room & export</strong>
         </div>
+        <button id="editorUtilityClose" class="editorIconBtn" type="button" aria-label="Close plan tools">×</button>
+      </div>
 
-        <div class="detailSectionTitle">Corner coordinates</div>
-        <div id="cornerDetails" class="cornerDetails"></div>
+      <div class="editorUtilityActions">
+        <button id="saveSpace" class="editorUtilityAction" type="button">
+          <span class="editorUtilityActionIcon">⌂</span>
+          <span><b>Save room</b><small>Use this space again later</small></span>
+        </button>
+        <button id="exportData" class="editorUtilityAction" type="button">
+          <span class="editorUtilityActionIcon">{ }</span>
+          <span><b>Export scene JSON</b><small>Camera + exact furniture targets</small></span>
+        </button>
+        <button id="exportPlan" class="editorUtilityAction" type="button">
+          <span class="editorUtilityActionIcon">▱</span>
+          <span><b>Export 2D plan</b><small>Clean orientation reference PNG</small></span>
+        </button>
+        <button id="scanAgain" class="editorUtilityAction editorUtilityDanger" type="button">
+          <span class="editorUtilityActionIcon">↻</span>
+          <span><b>Scan again</b><small>Replace the current room scan</small></span>
+        </button>
+      </div>
+      <div id="exportStatus" class="exportStatus editorExportStatus" role="status" aria-live="polite">Lock a generation frame before exporting.</div>
 
-        <div class="detailSectionTitle">Walls</div>
-        <div id="walls"></div>
+      <div class="editorUtilityMeta">
+        <div class="furnitureHint">Drag chairs to position them. Drag a purple corner handle to create an evenly spaced chair array. Repeated chairs remain grouped so you can move and rotate the arrangement together.</div>
+        <div class="furnitureScaleNote">Chair: 0.60 × 0.60 m footprint · 0.85 m height · array spacing: 0.15 m gap.</div>
+      </div>
 
-        <div class="detailSectionTitle">Generation frame</div>
-        <div id="screenshotPoseDetails" class="captureDetails">
-          <div class="emptyDetail">No screenshot pose saved yet.</div>
+      <details id="detailsPanel" class="editorDetailsPanel">
+        <summary>
+          <span>Room details</span>
+          <span class="detailsChevron">⌄</span>
+        </summary>
+        <div class="detailsBody">
+          <div class="metrics">
+            <div class="metric"><small>Corners</small><b id="cornerMetric">—</b></div>
+            <div class="metric"><small>Area</small><b id="areaMetric">—</b></div>
+          </div>
+          <div class="detailSectionTitle">Corner coordinates</div>
+          <div id="cornerDetails" class="cornerDetails"></div>
+          <div class="detailSectionTitle">Walls</div>
+          <div id="walls"></div>
+          <div class="detailSectionTitle">Generation frame</div>
+          <div id="screenshotPoseDetails" class="captureDetails">
+            <div class="emptyDetail">No screenshot pose saved yet.</div>
+          </div>
         </div>
-      </div>
-      </div>
-    </details>
+      </details>
+    </aside>
   </section>
 </main>
 
@@ -1279,7 +1624,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v9_10_auto_oriented_plan',
+    source_protocol:'EventVision_v10_0_fullscreen_editor',
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -3080,7 +3425,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v9_10_auto_oriented_plan',
+    protocol_version:'EventVision_v10_0_fullscreen_editor',
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3320,8 +3665,23 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   const midU=(minU+maxU)/2;
   const midV=(minV+maxV)/2;
   const w=Math.max(.001,maxU-minU),h=Math.max(.001,maxV-minV);
-  const k=Math.min(455/w,555/h);
-  const cx=250,cy=300;
+
+  // v10.0: the editor SVG viewBox follows the real display aspect ratio.
+  // This lets the plan canvas fill the whole screen without stretching room geometry.
+  const editorRect=planEditor?.getBoundingClientRect?.();
+  const cssW=Math.max(1,Number(editorRect?.width || window.innerWidth || 500));
+  const cssH=Math.max(1,Number(editorRect?.height || window.innerHeight || 600));
+  const planW=1000;
+  const planH=planW*(cssH/cssW);
+  el.plan.setAttribute('viewBox',`0 0 ${planW.toFixed(2)} ${planH.toFixed(2)}`);
+  el.plan.setAttribute('preserveAspectRatio','xMidYMid meet');
+
+  // Reserve visual breathing room for floating controls while keeping measured geometry exact.
+  const usableW=planW*0.82;
+  const usableH=planH*0.66;
+  const k=Math.min(usableW/w,usableH/h);
+  const cx=planW/2;
+  const cy=planH*(0.48);
   const worldCenterX=anchorX + autoBasis.ex.x*midU + autoBasis.ez.x*midV;
   const worldCenterZ=anchorZ + autoBasis.ex.z*midU + autoBasis.ez.z*midV;
 
@@ -4020,7 +4380,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v9_10_auto_oriented_plan',
+    protocol_version:'EventVision_v10_0_fullscreen_editor',
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -4571,6 +4931,27 @@ window.addEventListener('resize',()=>{
 });
 
 
+// ===== Full-screen editor utility drawer =====
+const editorMenuBtn=document.getElementById('editorMenuBtn');
+const editorUtilityPanel=document.getElementById('editorUtilityPanel');
+const editorUtilityBackdrop=document.getElementById('editorUtilityBackdrop');
+const editorUtilityClose=document.getElementById('editorUtilityClose');
+
+function setEditorUtilityOpen(open){
+  const isOpen=!!open;
+  editorUtilityPanel?.classList.toggle('open',isOpen);
+  editorUtilityBackdrop?.classList.toggle('open',isOpen);
+  editorUtilityPanel?.setAttribute('aria-hidden',isOpen?'false':'true');
+  editorUtilityBackdrop?.setAttribute('aria-hidden',isOpen?'false':'true');
+  editorMenuBtn?.setAttribute('aria-expanded',isOpen?'true':'false');
+}
+editorMenuBtn?.addEventListener('click',()=>setEditorUtilityOpen(!editorUtilityPanel?.classList.contains('open')));
+editorUtilityClose?.addEventListener('click',()=>setEditorUtilityOpen(false));
+editorUtilityBackdrop?.addEventListener('click',()=>setEditorUtilityOpen(false));
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && editorUtilityPanel?.classList.contains('open')) setEditorUtilityOpen(false);
+});
+
 // ===== Furniture layout editor =====
 const furnitureLayer = document.getElementById('furnitureLayer');
 const planEditor = document.getElementById('planEditor');
@@ -4613,7 +4994,7 @@ function applyPlanViewTransform(){
   if(planViewReadout){
     const auto=planTransform?.auto_rotation_deg;
     const autoText=Number.isFinite(auto) && Math.abs(auto)>.1 ? ` · auto-straightened ${Math.abs(auto).toFixed(1)}°` : '';
-    planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}°${autoText} · pinch with two fingers to zoom · drag empty space to pan`;
+    planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}°${autoText}`;
   }
 }
 
@@ -4732,8 +5113,8 @@ function updateFurnitureCount(){
 
   const count = furnitureItems.length;
   furnitureCountEl.textContent = count
-    ? `${count} furniture item${count === 1 ? '' : 's'} on plan`
-    : '';
+    ? `${count} chair${count === 1 ? '' : 's'} · pinch to zoom`
+    : 'Pinch to zoom · drag to pan';
 }
 
 function clamp01(v){
