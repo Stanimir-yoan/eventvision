@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#0b0b0e">
-<title>EventVision — HelloXR Scan</title>
+<title>EventVision — Floorplan Scanner</title>
 <style>
 :root{--bg:#0b0b0e;--panel:#15151a;--panel2:#1e1e24;--text:#fff;--muted:#a7a7b0;--line:#303038;--accent:#6b5cff;--good:#43d47c}
 *{box-sizing:border-box}
@@ -1235,9 +1235,9 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · CLEAN CORE</div><span class="versionBadge">v10.4 EDITOR</span></div>
-  <h1>Scan the real floor</h1>
-  <p>Clean core build: room geometry, chair layout, locked camera projection and production export only.</p>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.4 EDITOR</span></div>
+  <h1>Create your event floorplan</h1>
+  <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
   <section class="card" id="introCard">
     <strong>Scan workflow</strong>
@@ -1246,8 +1246,8 @@ body.xr-active.layout-mode #introCard{display:none !important;}
       <div class="step"><div class="num">2</div><div><b>Aim + tap</b><div class="small">Aim at each wall/floor corner. The first point locks the ground height; every later corner is projected onto that same floor plane.</div></div></div>
       <div class="step"><div class="num">3</div><div><b>Close room</b><div class="small">Finish after at least 3 corners to create the measured top view.</div></div></div>
     </div>
-    <button id="start" class="primary" disabled>Enter AR scan</button>
-    <div id="support">Checking WebXR…</div>
+    <button id="start" class="primary" disabled>Checking AR support…</button>
+    <div id="support" role="status" aria-live="polite">Checking AR support…</div>
     <div id="savedSpacePanel" class="savedSpacePanel">
       <div class="savedSpaceTitle">Saved space available</div>
       <div id="savedSpaceMeta" class="savedSpaceMeta"></div>
@@ -1394,13 +1394,13 @@ body.xr-active.layout-mode #introCard{display:none !important;}
   <svg id="projectionDebug" class="projectionDebug" aria-label="Projected furniture targets"></svg>
   <div class="screenshotTop">
     <div class="pill" id="screenshotPoseStatus">Live pose</div>
-    <div class="pill">Use iPhone screenshot</div>
+    <div class="pill">Save a phone screenshot</div>
   </div>
 
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Screenshot mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take the iPhone screenshot as soon as it says <b>FRAME LOCKED</b>.
+      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take a screenshot as soon as it says <b>FRAME LOCKED</b>.
     </div>
   </div>
 
@@ -1415,8 +1415,8 @@ window.__eventVisionModuleReady=false;
 setTimeout(()=>{
   if(window.__eventVisionModuleReady) return;
   const status=document.getElementById('support');
-  if(status && status.textContent.includes('Checking WebXR')){
-    status.innerHTML='<span class="warn">App module did not start. Check the network/Three.js load, then reopen this page in HelloXR.</span>';
+  if(status && status.textContent.includes('Checking AR support')){
+    status.innerHTML='<span class="warn">The app could not finish loading. Check your connection, reload the page and try again.</span>';
   }
 },8000);
 </script>
@@ -1445,7 +1445,7 @@ async function loadThreeWithFallback(){
 const THREE=await loadThreeWithFallback().catch(err=>{
   const status=document.getElementById('support');
   if(status){
-    status.innerHTML=`<span class="warn">Could not load Three.js in this webview. Check internet access in HelloXR and reopen the page.<br><small>${String(err && err.message ? err.message : err)}</small></span>`;
+    status.innerHTML=`<span class="warn">The 3D engine could not load. Check your connection, reload the page and try again.<br><small>${String(err && err.message ? err.message : err)}</small></span>`;
   }
   throw err;
 });
@@ -1966,20 +1966,46 @@ function createRenderer(){
 }
 
 async function check(){
+  const userAgent=navigator.userAgent || '';
+  const isAndroid=/Android/i.test(userAgent);
+  const isIOS=/iPad|iPhone|iPod/i.test(userAgent) ||
+    (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+  el.start.disabled=true;
+
+  if(!window.isSecureContext){
+    el.start.textContent='AR unavailable';
+    el.support.innerHTML='<span class="warn">AR scanning needs a secure HTTPS address. Open the published GitHub Pages URL rather than a downloaded local file.</span>';
+    return;
+  }
+
   if(!navigator.xr){
-    el.support.innerHTML='<span class="warn">No WebXR API. Open this URL in HelloXR, not Safari.</span>';
+    el.start.textContent='AR unavailable';
+    if(isIOS){
+      el.support.innerHTML='<span class="warn">AR scanning on iPhone and iPad will be added in the next stage. For now, open this URL on a compatible Android phone.</span>';
+    }else if(isAndroid){
+      el.support.innerHTML='<span class="warn">WebXR is not available in this browser. Open this URL in Chrome and make sure Google Play Services for AR is installed and up to date.</span>';
+    }else{
+      el.support.innerHTML='<span class="warn">Room scanning requires a compatible Android phone using Chrome.</span>';
+    }
     return;
   }
   try{
     const supported = await navigator.xr.isSessionSupported('immersive-ar');
     if(supported){
       el.start.disabled=false;
-      el.support.innerHTML='<span class="good">Immersive AR available ✓</span>';
+      el.start.textContent='Start scanning';
+      el.support.innerHTML='<span class="good">This device is ready for AR scanning ✓</span>';
     } else {
-      el.support.innerHTML='<span class="warn">AR unavailable here. Open the page inside HelloXR.</span>';
+      el.start.textContent='AR unavailable';
+      el.support.innerHTML=isAndroid
+        ? '<span class="warn">This phone cannot start AR scanning. Use Chrome on an ARCore-compatible Android device and update Google Play Services for AR.</span>'
+        : '<span class="warn">Room scanning is not supported on this device or browser yet. Use a compatible Android phone with Chrome.</span>';
     }
   }catch(err){
-    el.support.textContent='WebXR check failed: '+err.message;
+    el.start.textContent='Try starting AR';
+    el.start.disabled=false;
+    el.support.innerHTML='<span class="warn">AR support could not be confirmed. Tap the button to try starting the scanner.</span>';
   }
 }
 
@@ -4018,7 +4044,7 @@ function captureCurrentGenerationFrame(){
   }
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
+    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the phone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
   }
   try{ navigator.vibrate?.(80); }catch(_){ }
   setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
@@ -4168,7 +4194,7 @@ function enterScreenshotMode(){
   }
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
-      ? '<b>FRAME LOCKED ✓</b><br>Take the iPhone screenshot now. After it is saved, you can move freely.'
+      ? '<b>FRAME LOCKED ✓</b><br>Take the phone screenshot now. After it is saved, you can move freely.'
       : 'Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
   }
   rebuildWallOccluders();
