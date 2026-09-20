@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5 CONTRACT</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.1 AR COMPAT</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -2022,16 +2022,26 @@ async function check(){
 check();
 
 async function enterAR(mode='scan'){
+  const androidAR = /Android/i.test(navigator.userAgent);
+  const sessionOptions = androidAR ? {
+    requiredFeatures:['local','hit-test'],
+    optionalFeatures:['dom-overlay'],
+    domOverlay:{root:document.body}
+  } : {
+    requiredFeatures:['hit-test'],
+    optionalFeatures:['local-floor','dom-overlay','computerVision'],
+    domOverlay:{root:document.body}
+  };
   if(!renderer) createRenderer();
+  renderer.xr.setReferenceSpaceType(androidAR ? 'local' : 'local-floor');
 
   try{
-    session = await navigator.xr.requestSession('immersive-ar',{
-      requiredFeatures:['hit-test'],
-      optionalFeatures:['local-floor','dom-overlay','computerVision'],
-      domOverlay:{root:document.body}
-    });
+    session = await navigator.xr.requestSession('immersive-ar',sessionOptions);
   }catch(err){
-    alert('Could not start AR: '+err.message);
+    console.error('EventVision AR session request failed',sessionOptions,err);
+    alert('EventVision v10.5.1 — AR session request failed\n'+
+      err.name+': '+err.message+'\nRequired: '+sessionOptions.requiredFeatures.join(', ')+
+      '\nOptional: '+sessionOptions.optionalFeatures.join(', '));
     return;
   }
 
@@ -2074,8 +2084,8 @@ async function enterAR(mode='scan'){
   await renderer.xr.setSession(session);
 
   try{
-    refSpace=await session.requestReferenceSpace('local-floor');
-    trackingReferenceSpaceType='local-floor';
+    refSpace=await session.requestReferenceSpace(androidAR ? 'local' : 'local-floor');
+    trackingReferenceSpaceType=androidAR ? 'local' : 'local-floor';
   }catch(_){
     refSpace=await session.requestReferenceSpace('local');
     trackingReferenceSpaceType='local';
