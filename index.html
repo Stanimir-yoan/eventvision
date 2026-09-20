@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.1 AR COMPAT</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.2 AR CHECK</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -2021,7 +2021,73 @@ async function check(){
 
 check();
 
+let arStartupBusy=false;
+
+function showARStartupTests(){
+  if(document.getElementById('arStartupTests')) return;
+  const panel=document.createElement('section');
+  panel.id='arStartupTests';
+  panel.className='card';
+  const heading=document.createElement('h3');
+  heading.textContent='AR startup tests';
+  const explanation=document.createElement('p');
+  explanation.textContent='Run both tests, then send a screenshot of the results. These briefly request AR and close it; they do not scan a room.';
+  const result=document.createElement('pre');
+  result.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px';
+  result.textContent='EventVision v10.5.2\n';
+  const buttons=[];
+  panel.append(heading,explanation);
+  for(const withOverlay of [false,true]){
+    const button=document.createElement('button');
+    const label=withOverlay ? '2. Test AR with controls overlay' : '1. Test basic AR';
+    button.textContent=label;
+    button.style.cssText='display:block;margin:12px 0;padding:12px';
+    buttons.push(button);
+    button.addEventListener('click',async()=>{
+      if(arStartupBusy || session) return;
+      arStartupBusy=true;
+      buttons.forEach(b=>b.disabled=true);
+      let testSession=null;
+      let testHitSource=null;
+      let stage='session request';
+      const options={requiredFeatures:['local','hit-test']};
+      if(withOverlay){
+        options.optionalFeatures=['dom-overlay'];
+        options.domOverlay={root:document.body};
+      }
+      result.textContent+='\n'+label+'\n';
+      try{
+        testSession=await navigator.xr.requestSession('immersive-ar',options);
+        result.textContent+='Session: PASS\n';
+        stage='local reference space';
+        await testSession.requestReferenceSpace('local');
+        stage='hit-test source';
+        const viewer=await testSession.requestReferenceSpace('viewer');
+        testHitSource=await testSession.requestHitTestSource({space:viewer});
+        result.textContent+='Local space + hit-test source: PASS\n';
+        if(withOverlay) result.textContent+='Overlay granted: '+(testSession.domOverlayState?.type || 'no')+'\n';
+      }catch(error){
+        result.textContent+=stage+': '+error.name+' — '+error.message+'\n';
+      }finally{
+        try{ testHitSource?.cancel(); }catch(_){}
+        if(testSession){
+          try{ await testSession.end(); }catch(error){
+            result.textContent+='Session cleanup: '+error.message+'\n';
+          }
+        }
+        arStartupBusy=false;
+        buttons.forEach(b=>b.disabled=false);
+      }
+    });
+    panel.append(button);
+  }
+  panel.append(result);
+  el.introCard.after(panel);
+  panel.scrollIntoView({block:'center'});
+}
+
 async function enterAR(mode='scan'){
+  if(arStartupBusy || session) return;
   const androidAR = /Android/i.test(navigator.userAgent);
   const sessionOptions = androidAR ? {
     requiredFeatures:['local','hit-test'],
@@ -2036,14 +2102,21 @@ async function enterAR(mode='scan'){
   renderer.xr.setReferenceSpaceType(androidAR ? 'local' : 'local-floor');
 
   try{
+    arStartupBusy=true;
     session = await navigator.xr.requestSession('immersive-ar',sessionOptions);
   }catch(err){
     console.error('EventVision AR session request failed',sessionOptions,err);
-    alert('EventVision v10.5.1 — AR session request failed\n'+
+    alert('EventVision v10.5.2 — AR session request failed\n'+
       err.name+': '+err.message+'\nRequired: '+sessionOptions.requiredFeatures.join(', ')+
-      '\nOptional: '+sessionOptions.optionalFeatures.join(', '));
+      '\nOptional: '+sessionOptions.optionalFeatures.join(', ')+
+      '\n\nRun the two AR startup tests shown below the introduction.');
+    if(androidAR) showARStartupTests();
     return;
+  }finally{
+    arStartupBusy=false;
   }
+
+  document.getElementById('arStartupTests')?.remove();
 
   const wantsCalibration=mode==='calibrate' && !!calibrationSavedSpace;
   completed=false;
