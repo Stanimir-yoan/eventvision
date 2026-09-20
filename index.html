@@ -1263,7 +1263,7 @@ body.ar-performance.xr-active *{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.7.0 DIGITAL PHOTO</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.7.1 CAMERA SAFE</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1428,7 +1428,7 @@ body.ar-performance.xr-active *{
   <div class="screenshotGuide">
     <div class="screenshotGuideTitle">Capture mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Frame the scene however you want. At least one chair must intersect the photo. Chairs outside the frame are allowed and will be marked out of frame in the exported scene data. Tap the round shutter button to capture the real camera view together with the visible 3D furniture proxies.
+      Frame the scene however you want. Keep at least one chair visible. Chairs outside the frame are allowed and will be marked out of frame in the exported scene data. Tap the round shutter to save a clean camera photo; the furniture projections stay in the scene JSON for the AI placement step.
     </div>
   </div>
 
@@ -1546,7 +1546,7 @@ let xrCameraBinding = null;
 let photoReadbackFramebuffer = null;
 let lastCapturedPhotoMeta = null;
 
-const APP_VERSION='10.7.0';
+const APP_VERSION='10.7.1';
 const EVENTVISION_APP_PROTOCOL='EventVision_v10_5_shared_scan_contract';
 const EVENTVISION_SCAN_SCHEMA='eventvision_scan_result';
 const EVENTVISION_SCAN_VERSION=1;
@@ -4726,30 +4726,6 @@ function readRawCameraPixels(view){
   return {pixels,width,height};
 }
 
-function readXrOverlayPixels(view){
-  const gl=renderer?.getContext?.();
-  const baseLayer=session?.renderState?.baseLayer;
-  const viewport=baseLayer?.getViewport?.(view);
-  if(!gl || !baseLayer?.framebuffer || !viewport) throw new Error('The rendered AR overlay is not available for capture.');
-
-  const width=Number(viewport.width || 0);
-  const height=Number(viewport.height || 0);
-  if(width<1 || height<1) throw new Error('The rendered AR overlay has an invalid size.');
-
-  const previousFramebuffer=gl.getParameter(gl.FRAMEBUFFER_BINDING);
-  const pixels=new Uint8Array(width*height*4);
-  try{
-    gl.bindFramebuffer(gl.FRAMEBUFFER,baseLayer.framebuffer);
-    gl.readPixels(Number(viewport.x||0),Number(viewport.y||0),width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
-    const glError=gl.getError();
-    if(glError!==gl.NO_ERROR) throw new Error(`AR overlay readback failed (WebGL ${glError}).`);
-  }finally{
-    gl.bindFramebuffer(gl.FRAMEBUFFER,previousFramebuffer);
-    restoreThreeRendererState();
-  }
-  return {pixels,width,height};
-}
-
 function pixelBufferToFlippedCanvas(pixels,width,height,{unpremultiply=false}={}){
   const clamped=new Uint8ClampedArray(pixels.length);
   clamped.set(pixels);
@@ -4781,16 +4757,16 @@ function pixelBufferToFlippedCanvas(pixels,width,height,{unpremultiply=false}={}
   return flipped;
 }
 
-function composeArPhoto(cameraReadback,overlayReadback){
-  const cameraCanvas=pixelBufferToFlippedCanvas(cameraReadback.pixels,cameraReadback.width,cameraReadback.height);
-  const overlayCanvas=pixelBufferToFlippedCanvas(overlayReadback.pixels,overlayReadback.width,overlayReadback.height,{unpremultiply:true});
-  const output=document.createElement('canvas');
-  output.width=cameraReadback.width;
-  output.height=cameraReadback.height;
-  const ctx=output.getContext('2d',{alpha:false});
-  ctx.drawImage(cameraCanvas,0,0,output.width,output.height);
-  ctx.drawImage(overlayCanvas,0,0,output.width,output.height);
-  return output;
+function composeArPhoto(cameraReadback){
+  // IMPORTANT: do not read the WebXR compositor/base-layer framebuffer here.
+  // Chrome/ARCore is allowed to expose that framebuffer as null or unreadable.
+  // The clean camera frame is the authoritative photo; projected furniture targets
+  // remain in lockedGenerationFrame / exported JSON and are not baked into pixels.
+  return pixelBufferToFlippedCanvas(
+    cameraReadback.pixels,
+    cameraReadback.width,
+    cameraReadback.height
+  );
 }
 
 function showDigitalCaptureFlash(){
@@ -4808,15 +4784,29 @@ function setPhotoCaptureBusy(busy){
   }
 }
 
+function showCaptureFeedback(title,message,{error=false}={}){
+  // Never use alert() while an immersive WebXR session is active. On Android,
+  // opening a modal browser dialog can suspend or end the XR session.
+  if(el.screenshotPoseStatus){
+    el.screenshotPoseStatus.textContent=title || (error ? 'Capture unavailable' : 'Ready');
+  }
+  if(el.screenshotGuideText && message){
+    el.screenshotGuideText.innerHTML=message;
+  }
+  if(error){
+    try{ navigator.vibrate?.([35,45,35]); }catch(_){ }
+  }
+}
+
 function requestDigitalPhoto(){
   resetScreenshotUiAutoHide(true);
   if(!screenshotModeActive || !session){
-    alert('Open Capture mode while live AR tracking is active.');
+    showCaptureFeedback('Tracking unavailable','Live AR tracking is not active. Return to the room scan and keep the AR session open before entering Capture.',{error:true});
     return;
   }
   if(photoCaptureInFlight || photoCaptureRequested) return;
   if(!furnitureItems.length){
-    alert('Add at least one chair before taking a photo.');
+    showCaptureFeedback('Add furniture first','Add at least one chair before taking a photo.',{error:true});
     return;
   }
   if(capturePreparationActive) stopCapturePreparation();
@@ -4838,11 +4828,12 @@ function processDigitalPhotoCapture(view,frameTimeMs){
     }
     stopCapturePreparation();
 
-    // Both readbacks happen synchronously inside this exact XR animation frame,
-    // so the camera pixels, rendered proxy overlay and saved XR pose stay aligned.
+    // Read the raw camera image in this exact XR animation frame. The saved XR pose
+    // and furniture projections are locked from the same frame. We intentionally do
+    // not read the WebXR compositor framebuffer because it is not portable/readable
+    // on all Chrome + ARCore devices.
     const cameraReadback=readRawCameraPixels(view);
-    const overlayReadback=readXrOverlayPixels(view);
-    const outputCanvas=composeArPhoto(cameraReadback,overlayReadback);
+    const outputCanvas=composeArPhoto(cameraReadback);
     const capturedAt=new Date().toISOString();
     const filename=`eventvision-ar-photo-${timestampForFilename()}.png`;
 
@@ -4850,7 +4841,7 @@ function processDigitalPhotoCapture(view,frameTimeMs){
     lockedGenerationFrame.image.actual_photo_height_px=cameraReadback.height;
     lockedGenerationFrame.image.expected_screenshot_width_px=cameraReadback.width;
     lockedGenerationFrame.image.expected_screenshot_height_px=cameraReadback.height;
-    lockedGenerationFrame.image.capture_source='webxr_raw_camera_access_plus_rendered_overlay';
+    lockedGenerationFrame.image.capture_source='webxr_raw_camera_access_clean_photo';
     lockedGenerationFrame.captured_photo={
       filename,
       mime_type:'image/png',
@@ -4861,7 +4852,7 @@ function processDigitalPhotoCapture(view,frameTimeMs){
       visible_item_ids:cloneData(lockedGenerationFrame.validation.visible_item_ids),
       out_of_frame_item_ids:cloneData(lockedGenerationFrame.validation.out_of_frame_item_ids),
       occluded_item_ids:cloneData(lockedGenerationFrame.validation.occluded_item_ids),
-      capture_source:'webxr_raw_camera_access_plus_rendered_overlay'
+      capture_source:'webxr_raw_camera_access_clean_photo'
     };
     lastCapturedPhotoMeta=cloneData(lockedGenerationFrame.captured_photo);
 
@@ -4878,7 +4869,7 @@ function processDigitalPhotoCapture(view,frameTimeMs){
       if(!blob){
         setPhotoCaptureBusy(false);
         if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo encoding failed';
-        alert('The photo was captured but could not be encoded as PNG.');
+        showCaptureFeedback('Photo encoding failed','The camera frame was captured, but this browser could not encode the PNG. Tracking is still active; try the shutter again.',{error:true});
         return;
       }
 
@@ -4891,13 +4882,13 @@ function processDigitalPhotoCapture(view,frameTimeMs){
           el.screenshotPoseStatus.textContent=`PHOTO SAVED ✓ · ${n} in frame`;
         }
         if(el.screenshotGuideText){
-          el.screenshotGuideText.innerHTML='<b>PHOTO SAVED ✓</b><br>You can move to another angle and tap the shutter again. Only furniture visible in each photo is included in that photo\'s generation payload.';
+          el.screenshotGuideText.innerHTML='<b>PHOTO SAVED ✓</b><br>Clean camera photo saved. Furniture placement targets for this exact frame remain in the scene JSON. Move to another angle and tap the shutter again whenever you want.';
         }
-        setExportStatus('Digital AR photo saved. Scene JSON now matches this exact photo pose.','good');
+        setExportStatus('Clean AR camera photo saved. Scene JSON matches this exact photo pose.','good');
       }catch(err){
         console.error('Digital photo save failed',err);
         if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo captured · save failed';
-        alert(`The AR photo was captured, but the browser blocked the PNG download.\n\n${err?.message || err}`);
+        showCaptureFeedback('Photo save blocked',`The camera frame was captured, but the browser blocked the PNG save.<br>${String(err?.message || err)}`,{error:true});
       }finally{
         setPhotoCaptureBusy(false);
       }
@@ -4909,18 +4900,19 @@ function processDigitalPhotoCapture(view,frameTimeMs){
     renderGenerationFrameDetails();
     updateProjectionDebugOverlay();
     setPhotoCaptureBusy(false);
-    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Capture failed · adjust view';
-    if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Frame the scene however you want, but keep <b>at least one chair visible</b>. Chairs outside the frame are allowed.';
-    }
-    alert(`Could not take the AR photo.\n\n${err?.message || err}`);
+    const reason=String(err?.message || err || 'Unknown capture error');
+    showCaptureFeedback(
+      'Capture failed · tracking kept active',
+      `The photo was not saved, but the AR session is still running.<br><b>${reason}</b><br>Keep at least one chair visible and tap the shutter again.`,
+      {error:true}
+    );
   }
 }
 
 function captureCurrentGenerationFrame(){
   if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix){
     stopCapturePreparation('Camera projection not ready');
-    alert('Camera projection is not ready yet. Keep the phone aimed at the scene and try again.');
+    showCaptureFeedback('Camera pose not ready','Keep the phone aimed at the scene for a moment, then try again.',{error:true});
     return false;
   }
 
@@ -4937,7 +4929,7 @@ function captureCurrentGenerationFrame(){
 
   if(!result.ok){
     stopCapturePreparation('Lock failed · adjust view');
-    alert('Cannot lock this generation frame yet:\n\n'+result.error);
+    showCaptureFeedback('Frame not ready',String(result.error || 'Keep at least one chair visible and try again.'),{error:true});
     return false;
   }
 
@@ -4949,10 +4941,10 @@ function captureCurrentGenerationFrame(){
   }
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent=`FRAME READY ✓ · ${lockedGenerationFrame.validation.visible_count} in frame`;
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='<b>FRAME READY ✓</b><br>Tap the round shutter button to save the digital AR photo. Chairs outside the frame are allowed.';
+    el.screenshotGuideText.innerHTML='<b>FRAME READY ✓</b><br>Tap the round shutter button to save the clean camera photo. Chairs outside the frame are allowed.';
   }
   try{ navigator.vibrate?.(55); }catch(_){ }
-  setExportStatus('Frame prepared. Tap the round shutter to save the AR photo, or simply take the photo from a different angle.','good');
+  setExportStatus('Frame prepared. Tap the round shutter to save the clean camera photo, or move to a different angle first.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
   return true;
@@ -5033,7 +5025,7 @@ function lockGenerationFrame(){
   }
 
   if(!latestXRViewData?.view_matrix || !latestXRViewData?.projection_matrix){
-    alert('Camera projection is not ready yet. Aim at the scene for a moment and try again.');
+    showCaptureFeedback('Camera pose not ready','Aim at the scene for a moment, then try again.',{error:true});
     return;
   }
 
@@ -5078,7 +5070,7 @@ function renderGenerationFrameDetails(message=''){
 
 function enterScreenshotMode(){
   if(!session || !completed){
-    alert('Live AR tracking is not active. Finish the room scan first.');
+    setExportStatus('Live AR tracking is not active. Finish the room scan and keep the AR session open before Capture.','warn');
     return;
   }
 
@@ -5105,8 +5097,8 @@ function enterScreenshotMode(){
   }
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
-      ? '<b>FRAME READY ✓</b><br>Tap the round shutter to save a digital AR photo. You may also move to a completely different angle and take a new photo.'
-      : 'Frame the scene however you want. Keep at least <b>one chair visible</b>. Chairs outside the frame are allowed. Tap the round shutter to capture the real camera image plus the visible 3D proxies.';
+      ? '<b>FRAME READY ✓</b><br>Tap the round shutter to save a clean camera photo for this exact pose. You may move to a completely different angle and take another photo.'
+      : 'Frame the scene however you want. Keep at least <b>one chair visible</b>. Chairs outside the frame are allowed. Tap the round shutter to save a clean camera photo; the exact furniture projections are stored with the capture data.';
   }
   rebuildWallOccluders();
   setWallOccludersActive(true);
