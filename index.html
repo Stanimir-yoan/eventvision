@@ -701,7 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v10.4 — screenshot UI auto-hide.
+/* v10.6 — screenshot UI auto-hide.
    Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
 .screenshotTop,
 .screenshotGuide,
@@ -802,7 +802,6 @@ body.xr-active.layout-mode canvas{
 }
 
 .screenshotLock,
-.screenshotLock,
 .screenshotBack{
   min-width:150px;
   min-height:48px;
@@ -899,7 +898,7 @@ body.xr-active.screenshot-mode .screenshotHud{
 
 
 /* ================================================================
-   v10.4 — full-screen floor-plan editor
+   v10.6 — full-screen floor-plan editor
    Layer 1 = plan workspace. Layer 2 = compact floating controls.
    ================================================================ */
 body.xr-active.layout-mode{
@@ -1240,7 +1239,7 @@ body.ar-performance.xr-active *{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.4 ANDROID LITE</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.6.0 CLEAN</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1516,9 +1515,18 @@ let screenshotModeActive = false;
 let lockedGenerationFrame = null;
 let capturePreparationActive = false;
 
+const APP_VERSION='10.6.0';
 const EVENTVISION_APP_PROTOCOL='EventVision_v10_5_shared_scan_contract';
 const EVENTVISION_SCAN_SCHEMA='eventvision_scan_result';
 const EVENTVISION_SCAN_VERSION=1;
+
+// Platform detection is centralized so XR setup, diagnostics and performance mode
+// cannot silently drift into different Android/iOS rules.
+const USER_AGENT=navigator.userAgent || '';
+const IS_ANDROID=/Android/i.test(USER_AGENT);
+const IS_IOS=/iPad|iPhone|iPod/i.test(USER_AGENT) ||
+  (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+const PLATFORM_KIND=IS_ANDROID ? 'android' : (IS_IOS ? 'ios' : 'web');
 
 // Screenshot HUD auto-hide is deliberately independent from room/proxy transforms.
 const SCREENSHOT_UI_HIDE_AFTER_MS = 1000;
@@ -1566,6 +1574,7 @@ const PROXY_LEG_THICKNESS_M = 0.05;
 const CHAIR_PROXY_GLB_URL = './test-chair.glb';
 const CHAIR_PROXY_GLB_YAW_CORRECTION_DEG = 0;
 let chairProxyGlbTemplate = null;
+let chairProxyGlbMetrics = null;
 let chairProxyGlbLoadState = 'idle';
 let chairProxyGlbPromise = null;
 
@@ -1941,7 +1950,7 @@ async function startSavedSpaceCalibration(){
   await enterAR('calibrate');
 }
 
-const androidPerformanceMode=/Android/i.test(navigator.userAgent);
+const androidPerformanceMode=IS_ANDROID;
 let lastARUiUpdate=-Infinity;
 let fpsWindowStart=null;
 let fpsFrameCount=0;
@@ -1997,11 +2006,6 @@ function createRenderer(){
 }
 
 async function check(){
-  const userAgent=navigator.userAgent || '';
-  const isAndroid=/Android/i.test(userAgent);
-  const isIOS=/iPad|iPhone|iPod/i.test(userAgent) ||
-    (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
-
   el.start.disabled=true;
 
   if(!window.isSecureContext){
@@ -2012,9 +2016,9 @@ async function check(){
 
   if(!navigator.xr){
     el.start.textContent='AR unavailable';
-    if(isIOS){
+    if(IS_IOS){
       el.support.innerHTML='<span class="warn">AR scanning on iPhone and iPad will be added in the next stage. For now, open this URL on a compatible Android phone.</span>';
-    }else if(isAndroid){
+    }else if(IS_ANDROID){
       el.support.innerHTML='<span class="warn">WebXR is not available in this browser. Open this URL in Chrome and make sure Google Play Services for AR is installed and up to date.</span>';
     }else{
       el.support.innerHTML='<span class="warn">Room scanning requires a compatible Android phone using Chrome.</span>';
@@ -2029,7 +2033,7 @@ async function check(){
       el.support.innerHTML='<span class="good">This device is ready for AR scanning ✓</span>';
     } else {
       el.start.textContent='AR unavailable';
-      el.support.innerHTML=isAndroid
+      el.support.innerHTML=IS_ANDROID
         ? '<span class="warn">This phone cannot start AR scanning. Use Chrome on an ARCore-compatible Android device and update Google Play Services for AR.</span>'
         : '<span class="warn">Room scanning is not supported on this device or browser yet. Use a compatible Android phone with Chrome.</span>';
     }
@@ -2056,7 +2060,7 @@ function showARStartupTests(){
   explanation.textContent='Run both tests, then send a screenshot of the results. These briefly request AR and close it; they do not scan a room.';
   const result=document.createElement('pre');
   result.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px';
-  result.textContent='EventVision v10.5.4\n';
+  result.textContent=`EventVision v${APP_VERSION}\n`;
   const buttons=[];
   panel.append(heading,explanation);
   for(const withOverlay of [false,true]){
@@ -2119,8 +2123,9 @@ function showARStartupTests(){
 
 async function enterAR(mode='scan'){
   if(arStartupBusy || session) return;
-  const androidAR = /Android/i.test(navigator.userAgent);
-  const sessionOptions = androidAR ? {
+
+  const androidAR=IS_ANDROID;
+  const sessionOptions=androidAR ? {
     requiredFeatures:['local','hit-test'],
     optionalFeatures:['dom-overlay'],
     domOverlay:{root:document.body}
@@ -2129,94 +2134,121 @@ async function enterAR(mode='scan'){
     optionalFeatures:['local-floor','dom-overlay','computerVision'],
     domOverlay:{root:document.body}
   };
+
   if(!renderer) createRenderer();
   renderer.xr.setReferenceSpaceType(androidAR ? 'local' : 'local-floor');
+  arStartupBusy=true;
 
+  let requestedSession=null;
   try{
-    arStartupBusy=true;
-    session = await navigator.xr.requestSession('immersive-ar',sessionOptions);
+    requestedSession=await navigator.xr.requestSession('immersive-ar',sessionOptions);
+    session=requestedSession;
+    session.addEventListener('end',endAR,{once:true});
+
+    document.getElementById('arStartupTests')?.remove();
+
+    const wantsCalibration=mode==='calibrate' && !!calibrationSavedSpace;
+    completed=false;
+    corners=[];
+    finishedCorners=[];
+    latestViewerPosition=null;
+    latestViewerOrientation=null;
+    planTransform=null;
+    phonePoseGroup=null;
+    scanSceneData=null;
+    activeScanResult=null;
+    trackingReferenceSpaceType=null;
+    lockedGenerationFrame=null;
+    latestXRViewData=null;
+    capturePreparationActive=false;
+    captureStabilitySamples=[];
+    resetScreenshotUiAutoHide(true);
+    clearFurnitureProxyGuide();
+    clearWallOccluders();
+    screenshotModeActive=false;
+    renderGenerationFrameDetails();
+    document.body.classList.remove('layout-mode','screenshot-mode');
+    floorY=null;
+    sessionCalibration=null;
+
+    if(!wantsCalibration){
+      calibrationMode=false;
+      calibrationSavedSpace=null;
+      calibrationObserved=[];
+      calibrationCandidate=null;
+      calibrationPhase='collect';
+      resetFurnitureLayout({resetView:true,render:false});
+    }else{
+      calibrationMode=true;
+      calibrationObserved=[];
+      calibrationCandidate=null;
+      calibrationPhase='collect';
+    }
+
+    if(el.introCard) el.introCard.style.display='block';
+    clearObjects();
+    el.result.classList.remove('show');
+
+    // Everything below can fail even after requestSession() succeeds. Keep it in
+    // this transaction so a partial XR startup is always rolled back cleanly.
+    await renderer.xr.setSession(session);
+
+    try{
+      refSpace=await session.requestReferenceSpace(androidAR ? 'local' : 'local-floor');
+      trackingReferenceSpaceType=androidAR ? 'local' : 'local-floor';
+    }catch(_){
+      refSpace=await session.requestReferenceSpace('local');
+      trackingReferenceSpaceType='local';
+    }
+
+    const viewerSpace=await session.requestReferenceSpace('viewer');
+    hitSource=await session.requestHitTestSource({space:viewerSpace});
+
+    renderer.domElement.style.display='block';
+    document.body.classList.add('xr-active');
+    el.hud.classList.add('active');
+
+    if(calibrationMode){
+      updateCalibrationHud();
+    }else{
+      if(el.finish) el.finish.style.display='';
+      if(el.undo) el.undo.textContent='Undo';
+      if(el.addCorner) el.addCorner.textContent='Add corner';
+      updateControls();
+    }
+
+    fpsWindowStart=null;
+    fpsFrameCount=0;
+    lastARUiUpdate=-Infinity;
+    renderer.setAnimationLoop(render);
   }catch(err){
+    console.error('EventVision AR startup failed',sessionOptions,err);
+    try{ hitSource?.cancel?.(); }catch(_){}
+    hitSource=null;
+
+    // If the session was created but renderer/reference-space/hit-test setup
+    // failed, explicitly end it. Its `end` event will run the normal cleanup.
+    if(requestedSession){
+      try{
+        await requestedSession.end();
+      }catch(cleanupErr){
+        console.warn('EventVision AR startup rollback failed',cleanupErr);
+      }
+    }
+
+    if(session===requestedSession) session=null;
+    refSpace=null;
+    trackingReferenceSpaceType=null;
+    renderer?.setAnimationLoop(null);
     if(renderer?.domElement) renderer.domElement.style.display='none';
-    console.error('EventVision AR session request failed',sessionOptions,err);
-    alert('EventVision v10.5.4 — AR session request failed\n'+
-      err.name+': '+err.message+'\nRequired: '+sessionOptions.requiredFeatures.join(', ')+
-      '\nOptional: '+sessionOptions.optionalFeatures.join(', ')+
-      '\n\nRun the two AR startup tests shown below the introduction.');
+    document.body.classList.remove('xr-active','layout-mode','screenshot-mode');
+    el.hud.classList.remove('active');
+
+    alert(`EventVision v${APP_VERSION} — AR startup failed\n${err?.name || 'Error'}: ${err?.message || err}\nRequired: ${sessionOptions.requiredFeatures.join(', ')}\nOptional: ${sessionOptions.optionalFeatures.join(', ')}\n\nRun the two AR startup tests shown below the introduction.`);
     if(androidAR) showARStartupTests();
-    return;
   }finally{
     arStartupBusy=false;
   }
-
-  document.getElementById('arStartupTests')?.remove();
-
-  const wantsCalibration=mode==='calibrate' && !!calibrationSavedSpace;
-  completed=false;
-  corners=[];
-  finishedCorners=[];
-  latestViewerPosition=null;
-  latestViewerOrientation=null;
-  planTransform=null;
-  phonePoseGroup=null;
-  scanSceneData=null;
-  activeScanResult=null;
-  trackingReferenceSpaceType=null;
-  lockedGenerationFrame=null;
-  latestXRViewData=null;
-  clearFurnitureProxyGuide();
-  screenshotModeActive=false;
-  renderGenerationFrameDetails();
-  document.body.classList.remove('layout-mode');
-  document.body.classList.remove('screenshot-mode');
-  floorY=null;
-  sessionCalibration=null;
-  if(!wantsCalibration){
-    calibrationMode=false;
-    calibrationSavedSpace=null;
-    calibrationObserved=[];
-    calibrationCandidate=null;
-    calibrationPhase='collect';
-  }else{
-    calibrationMode=true;
-    calibrationObserved=[];
-    calibrationCandidate=null;
-    calibrationPhase='collect';
-  }
-  if(el.introCard) el.introCard.style.display='block';
-  clearObjects();
-  el.result.classList.remove('show');
-
-  await renderer.xr.setSession(session);
-
-  try{
-    refSpace=await session.requestReferenceSpace(androidAR ? 'local' : 'local-floor');
-    trackingReferenceSpaceType=androidAR ? 'local' : 'local-floor';
-  }catch(_){
-    refSpace=await session.requestReferenceSpace('local');
-    trackingReferenceSpaceType='local';
-  }
-
-  const viewerSpace = await session.requestReferenceSpace('viewer');
-  hitSource = await session.requestHitTestSource({space:viewerSpace});
-
-  renderer.domElement.style.display='block';
-  document.body.classList.add('xr-active');
-  el.hud.classList.add('active');
-  if(calibrationMode){
-    updateCalibrationHud();
-  }else{
-    if(el.finish) el.finish.style.display='';
-    if(el.undo) el.undo.textContent='Undo';
-    if(el.addCorner) el.addCorner.textContent='Add corner';
-    updateControls();
-  }
-
-  session.addEventListener('end',endAR);
-
-  fpsWindowStart=null;
-  fpsFrameCount=0;
-  lastARUiUpdate=-Infinity;
-  renderer.setAnimationLoop(render);
 }
 
 function matrixToArray(matrix){
@@ -2265,29 +2297,38 @@ function cloneData(value){
 }
 
 
-function projectWorldPoint(worldPoint,viewData,imageGeometry=null){
-  if(!worldPoint || !Array.isArray(viewData?.view_matrix) || !Array.isArray(viewData?.projection_matrix)) return null;
+function createWorldProjector(viewData,imageGeometry=null){
+  if(!Array.isArray(viewData?.view_matrix) || !Array.isArray(viewData?.projection_matrix)) return null;
 
+  // Build these matrices once per furniture/frame, not once per projected point.
+  // A chair projects many anchors, so this removes a large amount of temporary
+  // Matrix4 allocation when layouts contain dozens or hundreds of chairs.
   const viewMatrix=new THREE.Matrix4().fromArray(viewData.view_matrix);
   const projectionMatrix=new THREE.Matrix4().fromArray(viewData.projection_matrix);
-  const cameraPoint=new THREE.Vector4(Number(worldPoint.x),Number(worldPoint.y),Number(worldPoint.z),1).applyMatrix4(viewMatrix);
-  const clipPoint=cameraPoint.clone().applyMatrix4(projectionMatrix);
-  if(!Number.isFinite(clipPoint.w) || Math.abs(clipPoint.w)<1e-8) return null;
-
-  const ndc={
-    x:clipPoint.x/clipPoint.w,
-    y:clipPoint.y/clipPoint.w,
-    z:clipPoint.z/clipPoint.w
-  };
-  const uv={x:(ndc.x+1)/2,y:(1-ndc.y)/2};
   const width=Number(imageGeometry?.viewport_css_width || window.innerWidth || 1);
   const height=Number(imageGeometry?.viewport_css_height || window.innerHeight || 1);
 
-  return {
-    uv:{x:Number(uv.x),y:Number(uv.y)},
-    css_px:{x:Number(uv.x*width),y:Number(uv.y*height)},
-    camera_space:{depth_m:Number(-cameraPoint.z)},
-    inside_view:cameraPoint.z<0 && ndc.x>=-1 && ndc.x<=1 && ndc.y>=-1 && ndc.y<=1 && ndc.z>=-1 && ndc.z<=1
+  return worldPoint=>{
+    if(!worldPoint) return null;
+    const cameraPoint=new THREE.Vector4(
+      Number(worldPoint.x),Number(worldPoint.y),Number(worldPoint.z),1
+    ).applyMatrix4(viewMatrix);
+    const clipPoint=cameraPoint.clone().applyMatrix4(projectionMatrix);
+    if(!Number.isFinite(clipPoint.w) || Math.abs(clipPoint.w)<1e-8) return null;
+
+    const ndc={
+      x:clipPoint.x/clipPoint.w,
+      y:clipPoint.y/clipPoint.w,
+      z:clipPoint.z/clipPoint.w
+    };
+    const uv={x:(ndc.x+1)/2,y:(1-ndc.y)/2};
+
+    return {
+      uv:{x:Number(uv.x),y:Number(uv.y)},
+      css_px:{x:Number(uv.x*width),y:Number(uv.y*height)},
+      camera_space:{depth_m:Number(-cameraPoint.z)},
+      inside_view:cameraPoint.z<0 && ndc.x>=-1 && ndc.x<=1 && ndc.y>=-1 && ndc.y<=1 && ndc.z>=-1 && ndc.z<=1
+    };
   };
 }
 
@@ -2379,8 +2420,9 @@ function getFurnitureOrientationWorldPoints(item){
   const depth=Number(dims.footprint_depth ?? dims.depth);
   if(!center || !Number.isFinite(width) || !Number.isFinite(depth)) return null;
 
-  const F=getFurnitureOrientationWorld(item).forward;
-  const R=getFurnitureOrientationWorld(item).right;
+  const orientation=getFurnitureOrientationWorld(item);
+  const F=orientation.forward;
+  const R=orientation.right;
   const halfW=width/2;
   const halfD=depth/2;
   const point=(forward,right)=>({
@@ -2417,6 +2459,9 @@ function getFurnitureHeightAnchorWorldPoints(item){
 function disposeProxyObject(root){
   if(!root) return;
   root.traverse?.(obj=>{
+    // GLB proxy clones intentionally share immutable template geometry/materials.
+    // Disposing one clone must never invalidate every other chair or the cache.
+    if(obj?.userData?.eventVisionSharedProxyResource) return;
     if(obj.geometry?.dispose) obj.geometry.dispose();
     const materials=Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
     materials.forEach(mat=>{
@@ -2818,12 +2863,34 @@ async function loadChairProxyGlb(){
     ));
     if(!gltf?.scene) throw new Error('GLB did not contain a scene');
     chairProxyGlbTemplate=gltf.scene;
+
+    // Expensive geometry/material preparation is done once. Individual chairs
+    // clone the Object3D hierarchy but share these immutable render resources.
+    applyProxyDirectionalVertexShading(chairProxyGlbTemplate);
+    chairProxyGlbTemplate.updateMatrixWorld(true);
+    const templateBox=new THREE.Box3().setFromObject(chairProxyGlbTemplate);
+    const templateSize=new THREE.Vector3();
+    templateBox.getSize(templateSize);
+    if(templateSize.x<1e-6 || templateSize.y<1e-6 || templateSize.z<1e-6){
+      throw new Error('GLB chair proxy has invalid bounds');
+    }
+    chairProxyGlbMetrics={
+      size:{x:Number(templateSize.x),y:Number(templateSize.y),z:Number(templateSize.z)},
+      center:{
+        x:Number((templateBox.min.x+templateBox.max.x)/2),
+        z:Number((templateBox.min.z+templateBox.max.z)/2)
+      },
+      minY:Number(templateBox.min.y)
+    };
+
     chairProxyGlbLoadState='ready';
     console.info('EventVision GLB proxy loaded:',CHAIR_PROXY_GLB_URL);
     // If proxies were already built before the asset finished loading, rebuild them now.
     if(scene && completed && furnitureItems?.length) rebuildFurnitureProxyGuide();
     return chairProxyGlbTemplate;
   })().catch(err=>{
+    chairProxyGlbTemplate=null;
+    chairProxyGlbMetrics=null;
     chairProxyGlbLoadState='failed';
     console.warn('EventVision GLB proxy load failed; using procedural fallback.',err);
     return null;
@@ -2832,7 +2899,7 @@ async function loadChairProxyGlb(){
 }
 
 function createGlbFurnitureProxy(item,center,dims){
-  if(!chairProxyGlbTemplate) return null;
+  if(!chairProxyGlbTemplate || !chairProxyGlbMetrics) return null;
   const width=Number(dims.footprint_width ?? dims.width ?? 0.6);
   const depth=Number(dims.footprint_depth ?? dims.depth ?? 0.6);
   const height=Number(dims.overall_height ?? dims.height ?? 0.85);
@@ -2843,31 +2910,26 @@ function createGlbFurnitureProxy(item,center,dims){
   proxy.userData.furnitureId=item.id;
   proxy.userData.proxyAsset='test-chair.glb';
   proxy.position.set(center.x,center.y,center.z);
-  // v10.4: proxy yaw follows the same auto-oriented world basis as its position.
   proxy.rotation.y=getFurnitureWorldYawRad(item) + CHAIR_PROXY_GLB_YAW_CORRECTION_DEG*Math.PI/180;
 
   const model=chairProxyGlbTemplate.clone(true);
   model.name='EventVisionGLBChairProxy';
-  applyProxyDirectionalVertexShading(model);
+  model.traverse(obj=>{
+    if(obj?.isMesh) obj.userData.eventVisionSharedProxyResource=true;
+  });
 
-  // Normalize the uploaded GLB into EventVision's authoritative real-world envelope.
-  // Non-uniform XYZ normalization is intentional: proxy footprint/height must match JSON exactly.
-  model.updateMatrixWorld(true);
-  let box=new THREE.Box3().setFromObject(model);
-  const size=new THREE.Vector3();
-  box.getSize(size);
-  if(size.x<1e-6 || size.y<1e-6 || size.z<1e-6) return null;
-  model.scale.multiply(new THREE.Vector3(width/size.x,height/size.y,depth/size.z));
-  model.updateMatrixWorld(true);
+  const raw=chairProxyGlbMetrics;
+  const sx=width/raw.size.x;
+  const sy=height/raw.size.y;
+  const sz=depth/raw.size.z;
+  model.scale.set(sx,sy,sz);
 
-  // Put model origin at floor-center: feet on Y=0, centered in X/Z.
-  box=new THREE.Box3().setFromObject(model);
-  const cx=(box.min.x+box.max.x)/2;
-  const cz=(box.min.z+box.max.z)/2;
-  model.position.x-=cx;
-  model.position.y-=box.min.y;
-  model.position.z-=cz;
-  model.updateMatrixWorld(true);
+  // Put the prepared template at floor-center without recomputing Box3 per chair.
+  model.position.set(
+    -raw.center.x*sx,
+    -raw.minY*sy,
+    -raw.center.z*sz
+  );
 
   proxy.add(model);
   return proxy;
@@ -2984,14 +3046,16 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   const heightWorld=getFurnitureHeightAnchorWorldPoints(item);
   if(!footprintWorld || !orientationWorld || !heightWorld) return null;
 
-  const floor=footprintWorld.corners.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
-  const center=compactProjection(projectWorldPoint(footprintWorld.center,viewData,imageGeometry));
-  const frontCenter=compactProjection(projectWorldPoint(orientationWorld.front_center,viewData,imageGeometry));
-  const backCenter=compactProjection(projectWorldPoint(orientationWorld.back_center,viewData,imageGeometry));
-  const frontEdge=orientationWorld.front_edge.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
-  const backEdge=orientationWorld.back_edge.map(p=>compactProjection(projectWorldPoint(p,viewData,imageGeometry)));
-  const heightFloor=compactProjection(projectWorldPoint(heightWorld.floor,viewData,imageGeometry));
-  const heightTop=compactProjection(projectWorldPoint(heightWorld.top,viewData,imageGeometry));
+  const project=createWorldProjector(viewData,imageGeometry);
+  if(!project) return null;
+  const floor=footprintWorld.corners.map(p=>compactProjection(project(p)));
+  const center=compactProjection(project(footprintWorld.center));
+  const frontCenter=compactProjection(project(orientationWorld.front_center));
+  const backCenter=compactProjection(project(orientationWorld.back_center));
+  const frontEdge=orientationWorld.front_edge.map(p=>compactProjection(project(p)));
+  const backEdge=orientationWorld.back_edge.map(p=>compactProjection(project(p)));
+  const heightFloor=compactProjection(project(heightWorld.floor));
+  const heightTop=compactProjection(project(heightWorld.top));
 
   const dx=frontCenter?.uv?.x-backCenter?.uv?.x;
   const dy=frontCenter?.uv?.y-backCenter?.uv?.y;
@@ -3468,6 +3532,15 @@ function updateControls(){
 function closeRoom(){
   if(corners.length<3) return;
 
+  if(polygonHasSelfIntersections(corners)){
+    el.hint.textContent='Room outline crosses itself — undo the last corner and trace the perimeter in order';
+    return;
+  }
+  if(areaXZ(corners)<0.05){
+    el.hint.textContent='Room area is too small — add valid wall/floor corners before finishing';
+    return;
+  }
+
   sessionCalibration={mode:'fresh_scan',method:'direct_room_scan',calibrated_at:new Date().toISOString()};
   if(el.saveSpace) el.saveSpace.innerHTML='<span class="addFurnitureIcon">⌂</span><span>Save this space for later calibration</span>';
   normalizeCornerGroundPlane();
@@ -3558,6 +3631,49 @@ function areaXZ(points){
     sum+=a.x*b.z-b.x*a.z;
   }
   return Math.abs(sum)/2;
+}
+
+function orientationXZ(a,b,c){
+  return (Number(b.x)-Number(a.x))*(Number(c.z)-Number(a.z)) -
+    (Number(b.z)-Number(a.z))*(Number(c.x)-Number(a.x));
+}
+
+function pointOnSegmentXZ(a,b,p,epsilon=1e-7){
+  if(Math.abs(orientationXZ(a,b,p))>epsilon) return false;
+  return Number(p.x)>=Math.min(Number(a.x),Number(b.x))-epsilon &&
+    Number(p.x)<=Math.max(Number(a.x),Number(b.x))+epsilon &&
+    Number(p.z)>=Math.min(Number(a.z),Number(b.z))-epsilon &&
+    Number(p.z)<=Math.max(Number(a.z),Number(b.z))+epsilon;
+}
+
+function segmentsIntersectXZ(a,b,c,d,epsilon=1e-7){
+  const o1=orientationXZ(a,b,c);
+  const o2=orientationXZ(a,b,d);
+  const o3=orientationXZ(c,d,a);
+  const o4=orientationXZ(c,d,b);
+
+  if(((o1>epsilon && o2<-epsilon) || (o1<-epsilon && o2>epsilon)) &&
+     ((o3>epsilon && o4<-epsilon) || (o3<-epsilon && o4>epsilon))) return true;
+
+  return pointOnSegmentXZ(a,b,c,epsilon) || pointOnSegmentXZ(a,b,d,epsilon) ||
+    pointOnSegmentXZ(c,d,a,epsilon) || pointOnSegmentXZ(c,d,b,epsilon);
+}
+
+function polygonHasSelfIntersections(points){
+  if(!Array.isArray(points) || points.length<4) return false;
+  const n=points.length;
+  for(let i=0;i<n;i++){
+    const a=points[i];
+    const b=points[(i+1)%n];
+    for(let j=i+1;j<n;j++){
+      // Adjacent edges share a vertex by design; first/last edges are adjacent too.
+      if(j===i || j===i+1 || (i===0 && j===n-1)) continue;
+      const c=points[j];
+      const d=points[(j+1)%n];
+      if(segmentsIntersectXZ(a,b,c,d)) return true;
+    }
+  }
+  return false;
 }
 
 
@@ -3654,10 +3770,7 @@ function makeScanId(){
 }
 
 function detectScanPlatform(){
-  const ua=navigator.userAgent || '';
-  if(/Android/i.test(ua)) return 'android';
-  if(/iPad|iPhone|iPod/i.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)) return 'ios';
-  return 'web';
+  return PLATFORM_KIND;
 }
 
 function buildEventVisionScanResult(points,{provider='webxr',mode='fresh_scan'}={}){
@@ -3798,6 +3911,13 @@ function validateEventVisionScanResult(input){
       if(!finiteVector3(corner?.position_m)) errors.push(`Corner ${index+1} needs a finite canonical position_m.`);
       if(!finiteVector3(corner?.tracking_position_m)) errors.push(`Corner ${index+1} needs a finite tracking_position_m.`);
     });
+  }
+
+  if(Array.isArray(roomCorners) && roomCorners.length>=4){
+    const polygon=roomCorners.map(c=>({x:Number(c?.position_m?.x),z:Number(c?.position_m?.z)}));
+    if(polygon.every(p=>Number.isFinite(p.x) && Number.isFinite(p.z)) && polygonHasSelfIntersections(polygon)){
+      errors.push('room.corners must describe a simple non-self-intersecting perimeter.');
+    }
   }
 
   if(!finite(room?.area_m2) || room.area_m2<=0) errors.push('room.area_m2 must be positive.');
@@ -5282,40 +5402,40 @@ el.exportPlan?.addEventListener('click',exportGenerationPlanPNG);
 
 
 function endAR(){
+  // XRHitTestSource is an active subscription. Explicitly cancel it instead of
+  // waiting for the browser to reclaim it after the session has ended.
+  try{ hitSource?.cancel?.(); }catch(_){}
+  hitSource=null;
+  refSpace=null;
+  trackingReferenceSpaceType=null;
+
+  capturePreparationActive=false;
+  captureStabilitySamples=[];
+  resetScreenshotUiAutoHide(true);
+  currentIgnoredCameraSideWallId=null;
+
   clearFurnitureProxyGuide();
   clearWallOccluders();
   renderer?.setAnimationLoop(null);
+  reticle && (reticle.visible=false);
   el.hud.classList.remove('active');
-  document.body.classList.remove('xr-active');
-  document.body.classList.remove('layout-mode');
-  document.body.classList.remove('screenshot-mode');
+  document.body.classList.remove('xr-active','layout-mode','screenshot-mode');
   screenshotModeActive=false;
   el.screenshotHud?.classList.remove('active');
   el.calibrationMiniMap?.classList.remove('show');
 
   if(renderer?.domElement) renderer.domElement.style.display='none';
-
   session=null;
-  hitSource=null;
 
   if(completed && finishedCorners.length>=3){
     drawResult(finishedCorners);
 
-    if(phonePoseGroup){
-      phonePoseGroup.classList.add('paused');
-    }
-    if(el.trackingBadge){
-      el.trackingBadge.classList.add('paused');
-    }
-    if(el.trackingText){
-      el.trackingText.textContent='Tracking paused';
-    }
+    phonePoseGroup?.classList.add('paused');
+    el.trackingBadge?.classList.add('paused');
+    if(el.trackingText) el.trackingText.textContent='Tracking paused';
 
     requestAnimationFrame(()=>{
-      el.result.scrollIntoView({
-        behavior:'smooth',
-        block:'start'
-      });
+      el.result.scrollIntoView({behavior:'smooth',block:'start'});
     });
   }
 }
@@ -5324,6 +5444,8 @@ function endAR(){
 el.addFurniture?.addEventListener('click',addFurniture);
 
 el.scanAgain.addEventListener('click',()=>{
+  setEditorUtilityOpen(false);
+  resetFurnitureLayout({resetView:true,render:false});
   completed=false;
   calibrationMode=false;
   calibrationSavedSpace=null;
@@ -5348,6 +5470,7 @@ el.scanAgain.addEventListener('click',()=>{
   clearObjects();
   el.result.classList.remove('show');
   el.addFurniture.innerHTML='<span class="addFurnitureIcon">＋</span><span>Add chair</span>';
+  renderFurniture();
 
   if(session){
     // Return directly to tracing while preserving the same XR world origin.
@@ -5391,6 +5514,15 @@ window.addEventListener('resize',()=>{
 
   if(completed && planTransform){
     renderFurniture();
+  }
+});
+
+
+window.addEventListener('pagehide',()=>{
+  try{ hitSource?.cancel?.(); }catch(_){}
+  hitSource=null;
+  if(session){
+    try{ session.end().catch(()=>{}); }catch(_){}
   }
 });
 
@@ -5443,6 +5575,18 @@ let activeArrayPreviewNodes=[];
 let activeArrayPreviewCandidates=[];
 let activeArrayPreviewResult=null;
 
+function resetFurnitureLayout({resetView=true,render=true}={}){
+  clearChairArrayPreview();
+  furnitureItems=[];
+  selectedFurnitureId=null;
+  furnitureIdCounter=1;
+  layoutGroupCounter=1;
+  activeArrayPreviewCandidates=[];
+  activeArrayPreviewResult=null;
+  if(resetView) resetPlanView();
+  if(render) renderFurniture();
+}
+
 const planViewState={zoom:1,rotation:0,panX:0,panY:0};
 
 function normalizePlanViewRotation(deg){
@@ -5460,11 +5604,6 @@ function applyPlanViewTransform(){
     const autoText=Number.isFinite(auto) && Math.abs(auto)>.1 ? ` · auto-straightened ${Math.abs(auto).toFixed(1)}°` : '';
     planViewReadout.textContent=`${Math.round(planViewState.zoom*100)}% · ${Math.round(planViewState.rotation)}°${autoText}`;
   }
-}
-
-function setPlanZoom(nextZoom){
-  planViewState.zoom=Math.max(.65,Math.min(2.75,Number(nextZoom)||1));
-  applyPlanViewTransform();
 }
 
 function clampPlanZoom(value){
@@ -6402,15 +6541,6 @@ if(typeof ResizeObserver!=='undefined' && planEditor){
   });
   planOverlayResizeObserver.observe(planEditor);
 }
-
-// Reset furniture when a completely new room scan is started.
-const originalScanAgain = document.getElementById('scanAgain');
-originalScanAgain?.addEventListener('click', () => {
-  furnitureItems = [];
-  selectedFurnitureId = null;
-  resetPlanView();
-  renderFurniture();
-});
 
 // Stable public bridge for future native scanners.
 // Swift/ARKit will call: window.EventVisionScan.receive(scanResultObject)
