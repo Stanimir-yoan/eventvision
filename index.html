@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.2 AR CHECK</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.3 AR CHECK</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1948,6 +1948,7 @@ function createRenderer(){
   renderer.domElement.style.zIndex='1000';
   renderer.domElement.style.background='transparent';
   renderer.domElement.style.touchAction='none';
+  renderer.domElement.style.display='none';
   document.body.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
@@ -2024,6 +2025,7 @@ check();
 let arStartupBusy=false;
 
 function showARStartupTests(){
+  if(renderer?.domElement) renderer.domElement.style.display='none';
   if(document.getElementById('arStartupTests')) return;
   const panel=document.createElement('section');
   panel.id='arStartupTests';
@@ -2034,7 +2036,7 @@ function showARStartupTests(){
   explanation.textContent='Run both tests, then send a screenshot of the results. These briefly request AR and close it; they do not scan a room.';
   const result=document.createElement('pre');
   result.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px';
-  result.textContent='EventVision v10.5.2\n';
+  result.textContent='EventVision v10.5.3\n';
   const buttons=[];
   panel.append(heading,explanation);
   for(const withOverlay of [false,true]){
@@ -2044,9 +2046,13 @@ function showARStartupTests(){
     button.style.cssText='display:block;margin:12px 0;padding:12px';
     buttons.push(button);
     button.addEventListener('click',async()=>{
-      if(arStartupBusy || session) return;
+      if(arStartupBusy || session){
+        result.textContent+='\nAnother AR request is active. Close AR or reload this page before testing again.\n';
+        return;
+      }
       arStartupBusy=true;
       buttons.forEach(b=>b.disabled=true);
+      button.textContent='Testing…';
       let testSession=null;
       let testHitSource=null;
       let stage='session request';
@@ -2055,7 +2061,10 @@ function showARStartupTests(){
         options.optionalFeatures=['dom-overlay'];
         options.domOverlay={root:document.body};
       }
-      result.textContent+='\n'+label+'\n';
+      result.textContent+='\n'+label+'\nRequesting AR…\n';
+      const pendingNotice=setTimeout(()=>{
+        result.textContent+='Still waiting for Chrome. If the screen is stuck in AR, use Android Back, then reload this page.\n';
+      },10000);
       try{
         testSession=await navigator.xr.requestSession('immersive-ar',options);
         result.textContent+='Session: PASS\n';
@@ -2076,6 +2085,8 @@ function showARStartupTests(){
           }
         }
         arStartupBusy=false;
+        clearTimeout(pendingNotice);
+        button.textContent=label;
         buttons.forEach(b=>b.disabled=false);
       }
     });
@@ -2105,8 +2116,9 @@ async function enterAR(mode='scan'){
     arStartupBusy=true;
     session = await navigator.xr.requestSession('immersive-ar',sessionOptions);
   }catch(err){
+    if(renderer?.domElement) renderer.domElement.style.display='none';
     console.error('EventVision AR session request failed',sessionOptions,err);
-    alert('EventVision v10.5.2 — AR session request failed\n'+
+    alert('EventVision v10.5.3 — AR session request failed\n'+
       err.name+': '+err.message+'\nRequired: '+sessionOptions.requiredFeatures.join(', ')+
       '\nOptional: '+sessionOptions.optionalFeatures.join(', ')+
       '\n\nRun the two AR startup tests shown below the introduction.');
@@ -2167,6 +2179,7 @@ async function enterAR(mode='scan'){
   const viewerSpace = await session.requestReferenceSpace('viewer');
   hitSource = await session.requestHitTestSource({space:viewerSpace});
 
+  renderer.domElement.style.display='block';
   document.body.classList.add('xr-active');
   el.hud.classList.add('active');
   if(calibrationMode){
