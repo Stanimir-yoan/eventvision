@@ -1235,7 +1235,7 @@ body.xr-active.layout-mode #introCard{display:none !important;}
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.4 EDITOR</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5 CONTRACT</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1505,9 +1505,15 @@ let latestViewerOrientation = null;
 let planTransform = null;
 let phonePoseGroup = null;
 let scanSceneData = null;
+let activeScanResult = null;
+let trackingReferenceSpaceType = null;
 let screenshotModeActive = false;
 let lockedGenerationFrame = null;
 let capturePreparationActive = false;
+
+const EVENTVISION_APP_PROTOCOL='EventVision_v10_5_shared_scan_contract';
+const EVENTVISION_SCAN_SCHEMA='eventvision_scan_result';
+const EVENTVISION_SCAN_VERSION=1;
 
 // Screenshot HUD auto-hide is deliberately independent from room/proxy transforms.
 const SCREENSHOT_UI_HIDE_AFTER_MS = 1000;
@@ -1624,7 +1630,7 @@ function makeSavedSpaceSnapshot(){
   return {
     schema:'eventvision_saved_space_v1',
     saved_at:new Date().toISOString(),
-    source_protocol:'EventVision_v10_4_fullscreen_editor',
+    source_protocol:EVENTVISION_APP_PROTOCOL,
     room:{
       area_m2:Number(scanSceneData.area_m2),
       corners:scanSceneData.corners.map(c=>({
@@ -1907,6 +1913,10 @@ function acceptCalibration(){
   if(el.undo) el.undo.textContent='Undo';
   if(el.addCorner) el.addCorner.textContent='Add corner';
   rebuildObjects();
+  activeScanResult=buildEventVisionScanResult(finishedCorners,{
+    provider:'webxr',
+    mode:'relocalized_saved_space'
+  });
   drawResult(finishedCorners);
   document.body.classList.add('layout-mode');
   el.hud.classList.remove('active');
@@ -2034,6 +2044,8 @@ async function enterAR(mode='scan'){
   planTransform=null;
   phonePoseGroup=null;
   scanSceneData=null;
+  activeScanResult=null;
+  trackingReferenceSpaceType=null;
   lockedGenerationFrame=null;
   latestXRViewData=null;
   clearFurnitureProxyGuide();
@@ -2061,8 +2073,13 @@ async function enterAR(mode='scan'){
 
   await renderer.xr.setSession(session);
 
-  refSpace = await session.requestReferenceSpace('local-floor')
-    .catch(()=>session.requestReferenceSpace('local'));
+  try{
+    refSpace=await session.requestReferenceSpace('local-floor');
+    trackingReferenceSpaceType='local-floor';
+  }catch(_){
+    refSpace=await session.requestReferenceSpace('local');
+    trackingReferenceSpaceType='local';
+  }
 
   const viewerSpace = await session.requestReferenceSpace('viewer');
   hitSource = await session.requestHitTestSource({space:viewerSpace});
@@ -3332,6 +3349,11 @@ function closeRoom(){
   updateControls();
   reticle.visible=false;
 
+  activeScanResult=buildEventVisionScanResult(finishedCorners,{
+    provider:'webxr',
+    mode:'fresh_scan'
+  });
+
   // Draw the plan but KEEP this exact XR session alive.
   drawResult(finishedCorners);
 
@@ -3464,7 +3486,7 @@ function buildSceneData(points){
   }));
 
   return {
-    protocol_version:'EventVision_v10_4_fullscreen_editor',
+    protocol_version:EVENTVISION_APP_PROTOCOL,
     coordinate_system:{
       unit:'meter',
       floor_plane:'XZ',
@@ -3487,6 +3509,271 @@ function buildSceneData(points){
       visible_to_user:false
     }
   };
+}
+
+// ===== EventVision shared scan-result contract =====
+// Android/WebXR and the future iOS/ARKit scanner both exchange this exact shape.
+// The canonical room coordinates are platform-neutral; tracking_position_m keeps
+// the provider's live AR coordinates available for overlays and camera capture.
+function makeScanId(){
+  if(globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `scan_${Date.now()}_${Math.random().toString(36).slice(2,10)}`;
+}
+
+function detectScanPlatform(){
+  const ua=navigator.userAgent || '';
+  if(/Android/i.test(ua)) return 'android';
+  if(/iPad|iPhone|iPod/i.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)) return 'ios';
+  return 'web';
+}
+
+function buildEventVisionScanResult(points,{provider='webxr',mode='fresh_scan'}={}){
+  if(!Array.isArray(points) || points.length<3){
+    throw new Error('A scan result requires at least three room corners.');
+  }
+
+  const lockedY=Number.isFinite(floorY) ? Number(floorY) : Number(points[0]?.y || 0);
+  const groundPoints=points.map(p=>new THREE.Vector3(Number(p.x),lockedY,Number(p.z)));
+  const system=buildPlanCoordinateSystem(groundPoints);
+  if(!system) throw new Error('Corner 1 and Corner 2 must define a valid room axis.');
+
+  const roomCorners=groundPoints.map((point,index)=>{
+    const canonical=toPlanLocal(point,system);
+    return {
+      id:`corner_${String(index+1).padStart(2,'0')}`,
+      order:index+1,
+      position_m:{x:Number(canonical.x),y:0,z:Number(canonical.z)},
+      tracking_position_m:{x:Number(point.x),y:Number(point.y),z:Number(point.z)}
+    };
+  });
+
+  const roomWalls=roomCorners.map((corner,index)=>{
+    const next=roomCorners[(index+1)%roomCorners.length];
+    const a=groundPoints[index];
+    const b=groundPoints[(index+1)%groundPoints.length];
+    return {
+      id:`wall_${String(index+1).padStart(2,'0')}`,
+      from_corner_id:corner.id,
+      to_corner_id:next.id,
+      length_m:Number(distanceXZ(a,b))
+    };
+  });
+
+  const posePosition=latestXRViewData?.position || (latestViewerPosition ? {
+    x:Number(latestViewerPosition.x),
+    y:Number(latestViewerPosition.y),
+    z:Number(latestViewerPosition.z)
+  } : null);
+  const poseOrientation=latestXRViewData?.orientation_quaternion || (latestViewerOrientation ? {
+    x:Number(latestViewerOrientation.x),
+    y:Number(latestViewerOrientation.y),
+    z:Number(latestViewerOrientation.z),
+    w:Number(latestViewerOrientation.w)
+  } : null);
+
+  const result={
+    schema:EVENTVISION_SCAN_SCHEMA,
+    version:EVENTVISION_SCAN_VERSION,
+    scan_id:makeScanId(),
+    created_at:new Date().toISOString(),
+    app_protocol:EVENTVISION_APP_PROTOCOL,
+    source:{
+      provider,
+      platform:detectScanPlatform(),
+      mode
+    },
+    units:'meters',
+    coordinate_system:{
+      handedness:'right_handed',
+      canonical_origin:'corner_01',
+      canonical_x_axis:'corner_01_to_corner_02',
+      vertical_axis:'Y',
+      floor_plane:'XZ',
+      canonical_floor_y_m:0
+    },
+    tracking:{
+      reference_space:trackingReferenceSpaceType || 'provider_world',
+      floor_y_m:lockedY,
+      device_pose_at_finish:(posePosition && poseOrientation) ? {
+        position_m:cloneData(posePosition),
+        orientation_quaternion:cloneData(poseOrientation)
+      } : null,
+      projection_at_finish:latestXRViewData ? {
+        view_matrix:cloneData(latestXRViewData.view_matrix),
+        projection_matrix:cloneData(latestXRViewData.projection_matrix),
+        viewport:cloneData(latestXRViewData.viewport)
+      } : null
+    },
+    room:{
+      closed:true,
+      area_m2:Number(areaXZ(groundPoints)),
+      perimeter_m:Number(roomWalls.reduce((sum,wall)=>sum+wall.length_m,0)),
+      corners:roomCorners,
+      walls:roomWalls
+    },
+    quality:{
+      corner_count:roomCorners.length,
+      floor_locked:true,
+      metric_scale:true
+    }
+  };
+
+  const validation=validateEventVisionScanResult(result);
+  if(!validation.valid) throw new Error(`Invalid scan result: ${validation.errors.join(' ')}`);
+  return result;
+}
+
+function parseEventVisionScanResult(input){
+  if(typeof input==='string') return JSON.parse(input);
+  return input;
+}
+
+function validateEventVisionScanResult(input){
+  const errors=[];
+  let data;
+  try{
+    data=parseEventVisionScanResult(input);
+  }catch(err){
+    return {valid:false,errors:[`Invalid JSON: ${err?.message || err}`]};
+  }
+
+  const finite=value=>typeof value==='number' && Number.isFinite(value);
+  const finiteVector3=value=>value && finite(value.x) && finite(value.y) && finite(value.z);
+
+  if(!data || typeof data!=='object') errors.push('Result must be an object.');
+  if(data?.schema!==EVENTVISION_SCAN_SCHEMA) errors.push(`schema must be ${EVENTVISION_SCAN_SCHEMA}.`);
+  if(Number(data?.version)!==EVENTVISION_SCAN_VERSION) errors.push(`version must be ${EVENTVISION_SCAN_VERSION}.`);
+  if(data?.units!=='meters') errors.push('units must be meters.');
+  if(data?.coordinate_system?.vertical_axis!=='Y' || data?.coordinate_system?.floor_plane!=='XZ'){
+    errors.push('Coordinate system must use Y-up with an XZ floor plane.');
+  }
+
+  const room=data?.room;
+  const roomCorners=room?.corners;
+  const roomWalls=room?.walls;
+  if(room?.closed!==true) errors.push('room.closed must be true.');
+  if(!Array.isArray(roomCorners) || roomCorners.length<3) errors.push('room.corners must contain at least three corners.');
+  if(Array.isArray(roomCorners) && roomCorners.length>256) errors.push('room.corners exceeds the 256-corner safety limit.');
+
+  const ids=new Set();
+  if(Array.isArray(roomCorners)){
+    roomCorners.forEach((corner,index)=>{
+      if(typeof corner?.id!=='string' || !corner.id) errors.push(`Corner ${index+1} needs an id.`);
+      else if(ids.has(corner.id)) errors.push(`Duplicate corner id ${corner.id}.`);
+      else ids.add(corner.id);
+      if(Number(corner?.order)!==index+1) errors.push(`Corner ${index+1} has an invalid order.`);
+      if(!finiteVector3(corner?.position_m)) errors.push(`Corner ${index+1} needs a finite canonical position_m.`);
+      if(!finiteVector3(corner?.tracking_position_m)) errors.push(`Corner ${index+1} needs a finite tracking_position_m.`);
+    });
+  }
+
+  if(!finite(room?.area_m2) || room.area_m2<=0) errors.push('room.area_m2 must be positive.');
+  if(!finite(room?.perimeter_m) || room.perimeter_m<=0) errors.push('room.perimeter_m must be positive.');
+  if(!Array.isArray(roomWalls) || (Array.isArray(roomCorners) && roomWalls.length!==roomCorners.length)){
+    errors.push('A closed room needs one wall per corner.');
+  }else{
+    roomWalls.forEach((wall,index)=>{
+      if(!ids.has(wall?.from_corner_id) || !ids.has(wall?.to_corner_id)) errors.push(`Wall ${index+1} references an unknown corner.`);
+      if(!finite(wall?.length_m) || wall.length_m<=0) errors.push(`Wall ${index+1} needs a positive length_m.`);
+    });
+  }
+
+  if(!finite(data?.tracking?.floor_y_m)) errors.push('tracking.floor_y_m must be finite.');
+  return {valid:errors.length===0,errors};
+}
+
+function buildSceneDataFromScanResult(scanResult){
+  const cornerNumberById=new Map(scanResult.room.corners.map((corner,index)=>[corner.id,index+1]));
+  return {
+    protocol_version:scanResult.app_protocol || EVENTVISION_APP_PROTOCOL,
+    scan_contract:{schema:scanResult.schema,version:Number(scanResult.version),scan_id:scanResult.scan_id},
+    source:cloneData(scanResult.source),
+    coordinate_system:{
+      unit:'meter',
+      floor_plane:'XZ',
+      vertical_axis:'Y',
+      ground_lock:true,
+      ground_y_m:Number(scanResult.tracking.floor_y_m),
+      plan_origin:'corner_01',
+      plan_x_axis:'corner_01_to_corner_02',
+      display_orientation:'auto_dominant_wall_axes_after_scan'
+    },
+    area_m2:Number(scanResult.room.area_m2),
+    perimeter_m:Number(scanResult.room.perimeter_m),
+    corners:scanResult.room.corners.map((corner,index)=>({
+      id:corner.id,
+      number:index+1,
+      world:cloneData(corner.tracking_position_m),
+      plan:{x:Number(corner.position_m.x),z:Number(corner.position_m.z)}
+    })),
+    walls:scanResult.room.walls.map((wall,index)=>({
+      id:wall.id || `wall_${String(index+1).padStart(2,'0')}`,
+      from:cornerNumberById.get(wall.from_corner_id),
+      to:cornerNumberById.get(wall.to_corner_id),
+      length_m:Number(wall.length_m)
+    })),
+    occlusion_geometry:{
+      enabled:WALL_OCCLUSION_ENABLED,
+      source:'scanned_room_wall_segments',
+      wall_height_m:WALL_OCCLUDER_HEIGHT_M,
+      wall_thickness_m:WALL_OCCLUDER_THICKNESS_M,
+      render_mode:'depth_only_color_write_false',
+      visible_to_user:false
+    }
+  };
+}
+
+function receiveEventVisionScanResult(input){
+  let incoming;
+  try{
+    incoming=parseEventVisionScanResult(input);
+  }catch(err){
+    return {accepted:false,errors:[`Invalid JSON: ${err?.message || err}`]};
+  }
+  const validation=validateEventVisionScanResult(incoming);
+  if(!validation.valid) return {accepted:false,errors:validation.errors};
+
+  const next=cloneData(incoming);
+  const nextCorners=next.room.corners.map(c=>new THREE.Vector3(
+    Number(c.tracking_position_m.x),
+    Number(c.tracking_position_m.y),
+    Number(c.tracking_position_m.z)
+  ));
+
+  activeScanResult=next;
+  trackingReferenceSpaceType=next.tracking.reference_space || 'provider_world';
+  floorY=Number(next.tracking.floor_y_m);
+  corners=nextCorners.map(p=>p.clone());
+  finishedCorners=nextCorners.map(p=>p.clone());
+  completed=true;
+  sessionCalibration={
+    mode:'shared_scan_result_import',
+    method:`${next.source?.provider || 'native'}_contract_v${next.version}`,
+    imported_at:new Date().toISOString()
+  };
+  planTransform=null;
+  phonePoseGroup=null;
+  lockedGenerationFrame=null;
+  latestXRViewData=null;
+  furnitureItems=[];
+  selectedFurnitureId=null;
+  furnitureIdCounter=1;
+  layoutGroupCounter=1;
+  clearFurnitureProxyGuide();
+  clearWallOccluders();
+  clearObjects();
+  if(scene) rebuildObjects();
+  drawResult(finishedCorners);
+  document.body.classList.remove('xr-active');
+  document.body.classList.add('layout-mode');
+  el.hud.classList.remove('active');
+  if(el.trackingBadge) el.trackingBadge.classList.add('paused');
+  if(el.trackingText) el.trackingText.textContent=`${next.source?.provider || 'Native'} scan imported`;
+
+  window.dispatchEvent(new CustomEvent('eventvision:scan-result-accepted',{
+    detail:{scan_id:next.scan_id,provider:next.source?.provider || null}
+  }));
+  return {accepted:true,scan_id:next.scan_id,corner_count:next.room.corners.length};
 }
 
 function renderCornerDetails(){
@@ -3684,7 +3971,10 @@ function drawResult(points = finishedCorners.length ? finishedCorners : corners)
   el.cornerMetric.textContent=points.length;
   el.areaMetric.textContent=areaXZ(points).toFixed(2)+' m²';
 
-  scanSceneData=buildSceneData(points);
+  const activeValidation=activeScanResult ? validateEventVisionScanResult(activeScanResult) : {valid:false};
+  scanSceneData=activeValidation.valid
+    ? buildSceneDataFromScanResult(activeScanResult)
+    : buildSceneData(points);
   renderCornerDetails();
   renderGenerationFrameDetails();
 
@@ -4419,7 +4709,7 @@ function buildSceneExportData(){
   });
 
   return {
-    protocol_version:'EventVision_v10_4_fullscreen_editor',
+    protocol_version:EVENTVISION_APP_PROTOCOL,
     exported_at:new Date().toISOString(),
     generation_contract:{
       schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
@@ -4482,6 +4772,7 @@ function buildSceneExportData(){
       future_extension_note:'The same nearest-camera-side ignore rule should also be applied to obstacle and column occluders once those geometries are added to the app.',
       generation_rule:'The capture screenshot visibility is authoritative. Do not hallucinate proxy/chair geometry through a scanned wall, except that the nearest wall is intentionally ignored when the camera is outside the room.'
     },
+    scan_result:cloneData(activeScanResult),
     room:scanSceneData,
     session_calibration:cloneData(sessionCalibration),
     capture_frame:{
@@ -4914,6 +5205,7 @@ el.scanAgain.addEventListener('click',()=>{
   planTransform=null;
   phonePoseGroup=null;
   scanSceneData=null;
+  activeScanResult=null;
   lockedGenerationFrame=null;
   latestXRViewData=null;
   renderGenerationFrameDetails();
@@ -5986,6 +6278,21 @@ originalScanAgain?.addEventListener('click', () => {
   resetPlanView();
   renderFurniture();
 });
+
+// Stable public bridge for future native scanners.
+// Swift/ARKit will call: window.EventVisionScan.receive(scanResultObject)
+window.EventVisionScan=Object.freeze({
+  schema:EVENTVISION_SCAN_SCHEMA,
+  version:EVENTVISION_SCAN_VERSION,
+  appProtocol:EVENTVISION_APP_PROTOCOL,
+  validate:input=>validateEventVisionScanResult(input),
+  receive:input=>receiveEventVisionScanResult(input),
+  getCurrent:()=>cloneData(activeScanResult)
+});
+
+window.dispatchEvent(new CustomEvent('eventvision:scan-contract-ready',{
+  detail:{schema:EVENTVISION_SCAN_SCHEMA,version:EVENTVISION_SCAN_VERSION}
+}));
 
 </script>
 </body>
