@@ -701,11 +701,7 @@ body.xr-active.layout-mode canvas{
   display:block;
 }
 
-/* v10.6 — screenshot UI auto-hide.
-   Only HUD layers fade; the WebXR canvas and 3D proxies are untouched. */
-.screenshotTop,
-.screenshotGuide,
-.screenshotBottom,
+/* Capture HUD stays visible so the digital shutter is always reachable. */
 .projectionDebug{
   transition:opacity .18s ease;
 }
@@ -795,17 +791,18 @@ body.xr-active.layout-mode canvas{
   left:10px;
   right:10px;
   bottom:calc(14px + env(safe-area-inset-bottom));
-  display:flex;
-  justify-content:center;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 76px minmax(0,1fr);
+  align-items:center;
   gap:10px;
   pointer-events:auto;
 }
 
 .screenshotLock,
 .screenshotBack{
-  min-width:150px;
+  min-width:0;
   min-height:48px;
-  padding:0 14px;
+  padding:0 10px;
   border:1px solid rgba(255,255,255,.18);
   border-radius:14px;
   background:rgba(15,15,18,.72);
@@ -816,6 +813,33 @@ body.xr-active.layout-mode canvas{
 }
 .screenshotLock{background:rgba(53,93,255,.72);}
 .screenshotLock.locked{background:rgba(25,142,84,.78);}
+
+.screenshotShutter{
+  width:72px;
+  height:72px;
+  justify-self:center;
+  padding:0;
+  border:3px solid rgba(255,255,255,.95);
+  border-radius:50%;
+  background:rgba(12,12,16,.48);
+  box-shadow:0 4px 18px rgba(0,0,0,.35);
+  position:relative;
+  -webkit-tap-highlight-color:transparent;
+}
+.screenshotShutter::after{
+  content:"";
+  position:absolute;
+  inset:7px;
+  border-radius:50%;
+  background:#fff;
+  transition:transform .12s ease,opacity .12s ease;
+}
+.screenshotShutter:active::after{transform:scale(.9);}
+.screenshotShutter.capturing::after{
+  transform:scale(.72);
+  opacity:.55;
+}
+.screenshotShutter:disabled{opacity:.42;}
 
 body.xr-active.screenshot-mode{
   overflow:hidden;
@@ -1239,7 +1263,7 @@ body.ar-performance.xr-active *{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.6.0 CLEAN</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.7.0 DIGITAL PHOTO</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1398,19 +1422,20 @@ body.ar-performance.xr-active *{
   <svg id="projectionDebug" class="projectionDebug" aria-label="Projected furniture targets"></svg>
   <div class="screenshotTop">
     <div class="pill" id="screenshotPoseStatus">Live pose</div>
-    <div class="pill">Save a phone screenshot</div>
+    <div class="pill">Digital AR photo</div>
   </div>
 
   <div class="screenshotGuide">
-    <div class="screenshotGuideTitle">Screenshot mode</div>
+    <div class="screenshotGuideTitle">Capture mode</div>
     <div class="screenshotGuideText" id="screenshotGuideText">
-      Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically. Take a screenshot as soon as it says <b>FRAME LOCKED</b>.
+      Frame the scene however you want. At least one chair must intersect the photo. Chairs outside the frame are allowed and will be marked out of frame in the exported scene data. Tap the round shutter button to capture the real camera view together with the visible 3D furniture proxies.
     </div>
   </div>
 
   <div class="screenshotBottom">
-    <button id="lockGenerationFrame" class="screenshotLock">Prepare capture</button>
-    <button id="backFromScreenshot" class="screenshotBack">← Back to plan</button>
+    <button id="backFromScreenshot" class="screenshotBack">← Back</button>
+    <button id="takePhoto" class="screenshotShutter" type="button" aria-label="Take AR photo" title="Take AR photo"></button>
+    <button id="lockGenerationFrame" class="screenshotLock">Prepare</button>
   </div>
 </div>
 
@@ -1483,6 +1508,7 @@ const el = {
   screenshotPoseStatus: document.getElementById('screenshotPoseStatus'),
   screenshotGuideText: document.getElementById('screenshotGuideText'),
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
+  takePhoto: document.getElementById('takePhoto'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
   cornerDetails: document.getElementById('cornerDetails'),
@@ -1514,8 +1540,13 @@ let trackingReferenceSpaceType = null;
 let screenshotModeActive = false;
 let lockedGenerationFrame = null;
 let capturePreparationActive = false;
+let photoCaptureRequested = false;
+let photoCaptureInFlight = false;
+let xrCameraBinding = null;
+let photoReadbackFramebuffer = null;
+let lastCapturedPhotoMeta = null;
 
-const APP_VERSION='10.6.0';
+const APP_VERSION='10.7.0';
 const EVENTVISION_APP_PROTOCOL='EventVision_v10_5_shared_scan_contract';
 const EVENTVISION_SCAN_SCHEMA='eventvision_scan_result';
 const EVENTVISION_SCAN_VERSION=1;
@@ -1528,12 +1559,7 @@ const IS_IOS=/iPad|iPhone|iPod/i.test(USER_AGENT) ||
   (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
 const PLATFORM_KIND=IS_ANDROID ? 'android' : (IS_IOS ? 'ios' : 'web');
 
-// Screenshot HUD auto-hide is deliberately independent from room/proxy transforms.
-const SCREENSHOT_UI_HIDE_AFTER_MS = 1000;
-const SCREENSHOT_UI_MAX_POSITION_SPREAD_M = 0.025;
-const SCREENSHOT_UI_MAX_ROTATION_SPREAD_DEG = 2.2;
-let screenshotUiPoseSamples = [];
-let screenshotUiHidden = false;
+// Capture preparation still uses a short pose-stability window for the optional Prepare action.
 let captureStabilitySamples = [];
 let capturePreparationStartedAt = 0;
 
@@ -2127,11 +2153,11 @@ async function enterAR(mode='scan'){
   const androidAR=IS_ANDROID;
   const sessionOptions=androidAR ? {
     requiredFeatures:['local','hit-test'],
-    optionalFeatures:['dom-overlay'],
+    optionalFeatures:['dom-overlay','camera-access'],
     domOverlay:{root:document.body}
   } : {
     requiredFeatures:['hit-test'],
-    optionalFeatures:['local-floor','dom-overlay','computerVision'],
+    optionalFeatures:['local-floor','dom-overlay','computerVision','camera-access'],
     domOverlay:{root:document.body}
   };
 
@@ -2162,6 +2188,10 @@ async function enterAR(mode='scan'){
     latestXRViewData=null;
     capturePreparationActive=false;
     captureStabilitySamples=[];
+    photoCaptureRequested=false;
+    photoCaptureInFlight=false;
+    xrCameraBinding=null;
+    lastCapturedPhotoMeta=null;
     resetScreenshotUiAutoHide(true);
     clearFurnitureProxyGuide();
     clearWallOccluders();
@@ -3061,11 +3091,23 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
   const dy=frontCenter?.uv?.y-backCenter?.uv?.y;
   const directionLength=Math.hypot(Number(dx),Number(dy));
 
-  const orientationValid=uvInsidePhoto(frontCenter?.uv) && uvInsidePhoto(backCenter?.uv) && Number.isFinite(directionLength) && directionLength>1e-6;
-  const placementValid=uvInsidePhoto(center?.uv) && floor.filter(p=>uvInsidePhoto(p?.uv)).length>=2;
-  const sizeValid=!!heightFloor && !!heightTop && Number.isFinite(heightWorld.height_m);
+  // Projection validity is now independent from being fully inside the photo.
+  // A chair can be partially visible or completely out of frame and still have a
+  // perfectly valid world-to-image projection. Capture eligibility is evaluated
+  // separately below, at the frame level.
+  const orientationProjectable=
+    isFiniteUv(frontCenter?.uv) && isFiniteUv(backCenter?.uv) &&
+    Number(frontCenter?.depth_m)>0 && Number(backCenter?.depth_m)>0 &&
+    Number.isFinite(directionLength) && directionLength>1e-6;
+  const placementProjectable=
+    isFiniteUv(center?.uv) && Number(center?.depth_m)>0 &&
+    floor.filter(p=>isFiniteUv(p?.uv) && Number(p?.depth_m)>0).length>=2;
+  const sizeValid=
+    !!heightFloor && !!heightTop &&
+    Number(heightFloor?.depth_m)>0 && Number(heightTop?.depth_m)>0 &&
+    Number.isFinite(heightWorld.height_m);
 
-  return {
+  const projected={
     id:`${item.type}_${String(item.id).padStart(2,'0')}`,
     center,
     floor,
@@ -3076,13 +3118,90 @@ function projectFurnitureForFrame(item,viewData,imageGeometry){
     heightFloor,
     heightTop,
     height_m:heightWorld.height_m,
-    orientation_vector:orientationValid ? {x:dx/directionLength,y:dy/directionLength} : null,
+    orientation_vector:orientationProjectable ? {x:dx/directionLength,y:dy/directionLength} : null,
     validation:{
-      valid:orientationValid && placementValid && sizeValid,
-      orientation:orientationValid,
-      placement:placementValid,
-      size:sizeValid
+      valid:orientationProjectable && placementProjectable && sizeValid,
+      orientation:orientationProjectable,
+      placement:placementProjectable,
+      size:sizeValid,
+      fully_inside_frame:false,
+      intersects_frame:false
     }
+  };
+
+  projected.frame_visibility=classifyProjectionFrameVisibility(projected);
+  projected.validation.fully_inside_frame=projected.frame_visibility.state==='visible';
+  projected.validation.intersects_frame=['visible','partially_visible'].includes(projected.frame_visibility.state);
+  return projected;
+}
+
+function classifyProjectionFrameVisibility(projected){
+  if(!projected) return {state:'unavailable',intersects:false,inside_anchor_count:0,bounds_uv:null};
+
+  const anchors=[];
+  const push=(p)=>{
+    if(!p || !isFiniteUv(p.uv) || !Number.isFinite(Number(p.depth_m)) || Number(p.depth_m)<=0) return;
+    anchors.push(p);
+  };
+  projected.floor?.forEach(push);
+  push(projected.center);
+  push(projected.frontCenter);
+  push(projected.backCenter);
+  push(projected.heightFloor);
+  push(projected.heightTop);
+  projected.frontEdge?.forEach(push);
+  projected.backEdge?.forEach(push);
+
+  if(!anchors.length){
+    return {state:'out_of_frame',intersects:false,inside_anchor_count:0,bounds_uv:null};
+  }
+
+  const xs=anchors.map(p=>Number(p.uv.x));
+  const ys=anchors.map(p=>Number(p.uv.y));
+  const bounds={min_x:Math.min(...xs),max_x:Math.max(...xs),min_y:Math.min(...ys),max_y:Math.max(...ys)};
+  const intersects=
+    bounds.max_x>=0 && bounds.min_x<=1 &&
+    bounds.max_y>=0 && bounds.min_y<=1;
+  const insideCount=anchors.filter(p=>p.inside_view || uvInsidePhoto(p.uv)).length;
+
+  if(!intersects){
+    return {state:'out_of_frame',intersects:false,inside_anchor_count:insideCount,bounds_uv:bounds};
+  }
+
+  const keyAnchors=[
+    ...(projected.floor || []),
+    projected.center,
+    projected.frontCenter,
+    projected.backCenter,
+    projected.heightFloor,
+    projected.heightTop
+  ].filter(Boolean);
+  const fullyInside=keyAnchors.length>0 && keyAnchors.every(p=>!!p.inside_view);
+
+  return {
+    state:fullyInside ? 'visible' : 'partially_visible',
+    intersects:true,
+    inside_anchor_count:insideCount,
+    bounds_uv:bounds
+  };
+}
+
+function getFurnitureCaptureVisibility(item,projected,cameraPoint){
+  const frame=projected?.frame_visibility || classifyProjectionFrameVisibility(projected);
+  const wall=classifyFurnitureWallOcclusion(item,cameraPoint);
+  let state=projected?.validation?.valid ? (frame?.state || 'unavailable') : 'unavailable';
+
+  if(state==='visible' || state==='partially_visible'){
+    if(wall?.state==='occluded') state='occluded';
+    else if(state==='partially_visible' || wall?.state==='partially_occluded') state='partially_visible';
+    else state='visible';
+  }
+
+  return {
+    state,
+    eligible_for_generation:state==='visible' || state==='partially_visible',
+    frame:cloneData(frame),
+    wall_occlusion:cloneData(wall)
   };
 }
 
@@ -3177,18 +3296,50 @@ function serializeGenerationTarget(projected,dims){
   };
 }
 
-function validateLockedProjection(items){
+function validateLockedProjection(items,cameraPoint=null){
   const issues=[];
-  for(const projected of items){
-    if(!projected){
-      issues.push('A furniture item could not be projected.');
-      continue;
-    }
-    if(!projected.validation.orientation) issues.push(`${projected.id}: FRONT/BACK anchors are not both inside the locked image.`);
-    if(!projected.validation.placement) issues.push(`${projected.id}: footprint center is outside the locked image.`);
-    if(!projected.validation.size) issues.push(`${projected.id}: height projection is unavailable.`);
+  const visibleItemIds=[];
+  const outOfFrameItemIds=[];
+  const occludedItemIds=[];
+
+  if(!Array.isArray(items) || items.length===0){
+    return {
+      valid:false,
+      issues:['Add at least one furniture item before taking a photo.'],
+      visible_item_ids:[],
+      out_of_frame_item_ids:[],
+      occluded_item_ids:[],
+      visible_count:0,
+      total_count:0
+    };
   }
-  return {valid:issues.length===0,issues};
+
+  items.forEach((projected,index)=>{
+    if(!projected){
+      outOfFrameItemIds.push(`furniture_${index+1}`);
+      return;
+    }
+    const item=furnitureItems[index] || null;
+    const visibility=getFurnitureCaptureVisibility(item,projected,cameraPoint);
+    projected.capture_visibility=visibility;
+    if(visibility.eligible_for_generation) visibleItemIds.push(projected.id);
+    else if(visibility.state==='occluded') occludedItemIds.push(projected.id);
+    else outOfFrameItemIds.push(projected.id);
+  });
+
+  if(visibleItemIds.length===0){
+    issues.push('No furniture is visible in this framing. Aim so at least one chair is visible, then take the photo.');
+  }
+
+  return {
+    valid:visibleItemIds.length>0,
+    issues,
+    visible_item_ids:visibleItemIds,
+    out_of_frame_item_ids:outOfFrameItemIds,
+    occluded_item_ids:occludedItemIds,
+    visible_count:visibleItemIds.length,
+    total_count:items.length
+  };
 }
 
 function getProjectionSnapshotForOverlay(){
@@ -3276,6 +3427,7 @@ function getCaptureImageGeometry(){
 }
 
 function render(_time,frame){
+  let primaryViewForFrame=null;
   const updateUi=!androidPerformanceMode || _time-lastARUiUpdate>=100;
   if(updateUi) lastARUiUpdate=_time;
   if(fpsDisplay){
@@ -3295,6 +3447,7 @@ function render(_time,frame){
       const tp = viewerPose.transform.position;
       const tq = viewerPose.transform.orientation;
       const primaryView=viewerPose.views?.[0] || null;
+      primaryViewForFrame=primaryView;
 
       if(!latestViewerPosition) latestViewerPosition=new THREE.Vector3();
       if(!latestViewerOrientation) latestViewerOrientation=new THREE.Quaternion();
@@ -3373,10 +3526,10 @@ function render(_time,frame){
     }
   }
 
-  if(screenshotModeActive){
-    updateScreenshotUiAutoHide(_time);
-  }
   renderer.render(scene,camera);
+  if(photoCaptureRequested && primaryViewForFrame){
+    processDigitalPhotoCapture(primaryViewForFrame,_time);
+  }
 }
 
 function placeCurrentHit(){
@@ -4450,64 +4603,10 @@ function getPlanPositionFromWorld(worldPosition){
   };
 }
 
-function setScreenshotUiHidden(hidden){
-  screenshotUiHidden=!!hidden;
-  el.screenshotHud?.classList.toggle('ui-hidden',screenshotUiHidden);
-}
-
-function resetScreenshotUiAutoHide(showUi=true){
-  screenshotUiPoseSamples=[];
-  if(showUi) setScreenshotUiHidden(false);
-}
-
-function updateScreenshotUiAutoHide(frameTimeMs){
-  if(!screenshotModeActive || !latestViewerPosition || !latestViewerOrientation){
-    resetScreenshotUiAutoHide(true);
-    return;
-  }
-
-  const t=Number.isFinite(frameTimeMs) ? Number(frameTimeMs) : performance.now();
-  const newest={
-    t,
-    position:latestViewerPosition.clone(),
-    orientation:latestViewerOrientation.clone()
-  };
-
-  screenshotUiPoseSamples.push(newest);
-  const cutoff=t-SCREENSHOT_UI_HIDE_AFTER_MS;
-  screenshotUiPoseSamples=screenshotUiPoseSamples.filter(sample=>sample.t>=cutoff);
-
-  let maxPositionSpread=0;
-  let maxRotationSpreadDeg=0;
-  for(const sample of screenshotUiPoseSamples){
-    maxPositionSpread=Math.max(
-      maxPositionSpread,
-      newest.position.distanceTo(sample.position)
-    );
-    maxRotationSpreadDeg=Math.max(
-      maxRotationSpreadDeg,
-      newest.orientation.angleTo(sample.orientation)*180/Math.PI
-    );
-  }
-
-  const stable=
-    maxPositionSpread<=SCREENSHOT_UI_MAX_POSITION_SPREAD_M &&
-    maxRotationSpreadDeg<=SCREENSHOT_UI_MAX_ROTATION_SPREAD_DEG;
-
-  if(!stable){
-    // Immediate reveal on movement, then begin a fresh one-second stability window.
-    setScreenshotUiHidden(false);
-    screenshotUiPoseSamples=[newest];
-    return;
-  }
-
-  const duration=screenshotUiPoseSamples.length
-    ? t-screenshotUiPoseSamples[0].t
-    : 0;
-
-  if(duration>=SCREENSHOT_UI_HIDE_AFTER_MS){
-    setScreenshotUiHidden(true);
-  }
+function resetScreenshotUiAutoHide(){
+  // Kept as a compatibility helper for existing call sites. The capture HUD no
+  // longer auto-hides because the on-screen shutter must always stay reachable.
+  el.screenshotHud?.classList.remove('ui-hidden');
 }
 
 function stopCapturePreparation(message=''){
@@ -4515,7 +4614,7 @@ function stopCapturePreparation(message=''){
   captureStabilitySamples=[];
   capturePreparationStartedAt=0;
   if(el.lockGenerationFrame && !lockedGenerationFrame){
-    el.lockGenerationFrame.textContent='Prepare capture';
+    el.lockGenerationFrame.textContent='Prepare';
     el.lockGenerationFrame.classList.remove('locked');
   }
   if(message && el.screenshotPoseStatus && screenshotModeActive){
@@ -4524,24 +4623,298 @@ function stopCapturePreparation(message=''){
 }
 
 function invalidateGenerationFrame(reason='Furniture layout changed'){
+  lastCapturedPhotoMeta=null;
   if(capturePreparationActive){
     stopCapturePreparation('Layout changed · prepare again');
   }
   if(!lockedGenerationFrame) return;
   lockedGenerationFrame=null;
   if(el.lockGenerationFrame){
-    el.lockGenerationFrame.textContent='Prepare capture';
+    el.lockGenerationFrame.textContent='Prepare';
     el.lockGenerationFrame.classList.remove('locked');
   }
   if(el.screenshotPoseStatus && screenshotModeActive){
     el.screenshotPoseStatus.textContent='Frame invalidated · prepare again';
   }
   if(el.screenshotGuideText && screenshotModeActive){
-    el.screenshotGuideText.innerHTML='Aim the phone, tap <b>Prepare capture</b>, and hold it roughly steady. The app will lock automatically.';
+    el.screenshotGuideText.innerHTML='Frame the scene however you want. Keep at least <b>one chair visible</b>, then tap the round shutter. Chairs outside the frame are allowed.';
   }
   renderGenerationFrameDetails(reason);
   setExportStatus('Frame changed. Prepare and lock a new generation frame before exporting.','warn');
   if(screenshotModeActive) updateProjectionDebugOverlay();
+}
+
+function buildLockedGenerationFrameFromView(xrView,{captureMethod='manual_frame_lock',stabilityRequirement=null}={}){
+  if(!xrView?.view_matrix || !xrView?.projection_matrix){
+    return {ok:false,error:'Camera projection is not ready yet. Keep the phone aimed at the scene and try again.'};
+  }
+
+  const image=getCaptureImageGeometry();
+  const cameraMeta=getCurrentCameraMetadata();
+  const projections=furnitureItems.map(item=>projectFurnitureForFrame(item,xrView,image));
+  const validation=validateLockedProjection(projections,xrView?.position || cameraMeta?.position || null);
+
+  if(!validation.valid){
+    return {ok:false,error:validation.issues.join('\n'),validation,projections};
+  }
+
+  lockedGenerationFrame={
+    locked_at:new Date().toISOString(),
+    camera:cameraMeta,
+    xr_view:cloneData(xrView),
+    image,
+    projections,
+    validation,
+    capture_method:captureMethod,
+    stability_requirement:stabilityRequirement ? cloneData(stabilityRequirement) : null
+  };
+
+  return {ok:true,frame:lockedGenerationFrame};
+}
+
+function getRawCameraBinding(){
+  if(xrCameraBinding) return xrCameraBinding;
+  if(!session || !renderer || typeof XRWebGLBinding==='undefined') return null;
+  try{
+    xrCameraBinding=new XRWebGLBinding(session,renderer.getContext());
+    return xrCameraBinding;
+  }catch(err){
+    console.warn('Raw camera binding unavailable',err);
+    return null;
+  }
+}
+
+function restoreThreeRendererState(){
+  try{ renderer?.state?.reset?.(); }catch(_){ }
+}
+
+function readRawCameraPixels(view){
+  if(!view?.camera) throw new Error('Raw camera access was not granted by this browser. Use Chrome on Android and allow camera access for the AR session.');
+  const binding=getRawCameraBinding();
+  if(!binding) throw new Error('WebXR raw camera access is unavailable in this browser.');
+
+  const gl=renderer.getContext();
+  const texture=binding.getCameraImage(view.camera);
+  if(!texture) throw new Error('The AR camera image is not ready yet. Keep the phone aimed at the scene and try again.');
+
+  const width=Number(view.camera.width || 0);
+  const height=Number(view.camera.height || 0);
+  if(width<1 || height<1) throw new Error('The AR camera returned an invalid image size.');
+
+  if(!photoReadbackFramebuffer) photoReadbackFramebuffer=gl.createFramebuffer();
+  const previousFramebuffer=gl.getParameter(gl.FRAMEBUFFER_BINDING);
+  const previousTexture=gl.getParameter(gl.TEXTURE_BINDING_2D);
+  const pixels=new Uint8Array(width*height*4);
+
+  try{
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,photoReadbackFramebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE){
+      throw new Error('The AR camera framebuffer is not readable on this device.');
+    }
+    gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    const glError=gl.getError();
+    if(glError!==gl.NO_ERROR) throw new Error(`Camera pixel readback failed (WebGL ${glError}).`);
+  }finally{
+    try{ gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,null,0); }catch(_){ }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,previousFramebuffer);
+    gl.bindTexture(gl.TEXTURE_2D,previousTexture);
+    restoreThreeRendererState();
+  }
+
+  return {pixels,width,height};
+}
+
+function readXrOverlayPixels(view){
+  const gl=renderer?.getContext?.();
+  const baseLayer=session?.renderState?.baseLayer;
+  const viewport=baseLayer?.getViewport?.(view);
+  if(!gl || !baseLayer?.framebuffer || !viewport) throw new Error('The rendered AR overlay is not available for capture.');
+
+  const width=Number(viewport.width || 0);
+  const height=Number(viewport.height || 0);
+  if(width<1 || height<1) throw new Error('The rendered AR overlay has an invalid size.');
+
+  const previousFramebuffer=gl.getParameter(gl.FRAMEBUFFER_BINDING);
+  const pixels=new Uint8Array(width*height*4);
+  try{
+    gl.bindFramebuffer(gl.FRAMEBUFFER,baseLayer.framebuffer);
+    gl.readPixels(Number(viewport.x||0),Number(viewport.y||0),width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    const glError=gl.getError();
+    if(glError!==gl.NO_ERROR) throw new Error(`AR overlay readback failed (WebGL ${glError}).`);
+  }finally{
+    gl.bindFramebuffer(gl.FRAMEBUFFER,previousFramebuffer);
+    restoreThreeRendererState();
+  }
+  return {pixels,width,height};
+}
+
+function pixelBufferToFlippedCanvas(pixels,width,height,{unpremultiply=false}={}){
+  const clamped=new Uint8ClampedArray(pixels.length);
+  clamped.set(pixels);
+
+  if(unpremultiply){
+    for(let i=0;i<clamped.length;i+=4){
+      const a=clamped[i+3];
+      if(a>0 && a<255){
+        const factor=255/a;
+        clamped[i]=Math.min(255,Math.round(clamped[i]*factor));
+        clamped[i+1]=Math.min(255,Math.round(clamped[i+1]*factor));
+        clamped[i+2]=Math.min(255,Math.round(clamped[i+2]*factor));
+      }
+    }
+  }
+
+  const raw=document.createElement('canvas');
+  raw.width=width;
+  raw.height=height;
+  raw.getContext('2d',{alpha:true}).putImageData(new ImageData(clamped,width,height),0,0);
+
+  const flipped=document.createElement('canvas');
+  flipped.width=width;
+  flipped.height=height;
+  const ctx=flipped.getContext('2d',{alpha:true});
+  ctx.translate(0,height);
+  ctx.scale(1,-1);
+  ctx.drawImage(raw,0,0);
+  return flipped;
+}
+
+function composeArPhoto(cameraReadback,overlayReadback){
+  const cameraCanvas=pixelBufferToFlippedCanvas(cameraReadback.pixels,cameraReadback.width,cameraReadback.height);
+  const overlayCanvas=pixelBufferToFlippedCanvas(overlayReadback.pixels,overlayReadback.width,overlayReadback.height,{unpremultiply:true});
+  const output=document.createElement('canvas');
+  output.width=cameraReadback.width;
+  output.height=cameraReadback.height;
+  const ctx=output.getContext('2d',{alpha:false});
+  ctx.drawImage(cameraCanvas,0,0,output.width,output.height);
+  ctx.drawImage(overlayCanvas,0,0,output.width,output.height);
+  return output;
+}
+
+function showDigitalCaptureFlash(){
+  const flash=document.createElement('div');
+  flash.className='captureFlash';
+  document.body.appendChild(flash);
+  setTimeout(()=>flash.remove(),260);
+}
+
+function setPhotoCaptureBusy(busy){
+  photoCaptureInFlight=!!busy;
+  if(el.takePhoto){
+    el.takePhoto.disabled=!!busy;
+    el.takePhoto.classList.toggle('capturing',!!busy);
+  }
+}
+
+function requestDigitalPhoto(){
+  resetScreenshotUiAutoHide(true);
+  if(!screenshotModeActive || !session){
+    alert('Open Capture mode while live AR tracking is active.');
+    return;
+  }
+  if(photoCaptureInFlight || photoCaptureRequested) return;
+  if(!furnitureItems.length){
+    alert('Add at least one chair before taking a photo.');
+    return;
+  }
+  if(capturePreparationActive) stopCapturePreparation();
+  photoCaptureRequested=true;
+  setPhotoCaptureBusy(true);
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Capturing…';
+}
+
+function processDigitalPhotoCapture(view,frameTimeMs){
+  if(!photoCaptureRequested || photoCaptureInFlight===false || !screenshotModeActive) return;
+  photoCaptureRequested=false;
+  const previousLockedFrame=lockedGenerationFrame;
+
+  try{
+    const xrView=captureXRViewData(view,frameTimeMs);
+    const lockResult=buildLockedGenerationFrameFromView(xrView,{captureMethod:'digital_ui_raw_camera_snapshot'});
+    if(!lockResult.ok){
+      throw new Error(lockResult.error || 'No furniture is visible in this framing.');
+    }
+    stopCapturePreparation();
+
+    // Both readbacks happen synchronously inside this exact XR animation frame,
+    // so the camera pixels, rendered proxy overlay and saved XR pose stay aligned.
+    const cameraReadback=readRawCameraPixels(view);
+    const overlayReadback=readXrOverlayPixels(view);
+    const outputCanvas=composeArPhoto(cameraReadback,overlayReadback);
+    const capturedAt=new Date().toISOString();
+    const filename=`eventvision-ar-photo-${timestampForFilename()}.png`;
+
+    lockedGenerationFrame.image.actual_photo_width_px=cameraReadback.width;
+    lockedGenerationFrame.image.actual_photo_height_px=cameraReadback.height;
+    lockedGenerationFrame.image.expected_screenshot_width_px=cameraReadback.width;
+    lockedGenerationFrame.image.expected_screenshot_height_px=cameraReadback.height;
+    lockedGenerationFrame.image.capture_source='webxr_raw_camera_access_plus_rendered_overlay';
+    lockedGenerationFrame.captured_photo={
+      filename,
+      mime_type:'image/png',
+      captured_at:capturedAt,
+      width_px:cameraReadback.width,
+      height_px:cameraReadback.height,
+      visible_furniture_count:lockedGenerationFrame.validation.visible_count,
+      visible_item_ids:cloneData(lockedGenerationFrame.validation.visible_item_ids),
+      out_of_frame_item_ids:cloneData(lockedGenerationFrame.validation.out_of_frame_item_ids),
+      occluded_item_ids:cloneData(lockedGenerationFrame.validation.occluded_item_ids),
+      capture_source:'webxr_raw_camera_access_plus_rendered_overlay'
+    };
+    lastCapturedPhotoMeta=cloneData(lockedGenerationFrame.captured_photo);
+
+    if(el.lockGenerationFrame){
+      el.lockGenerationFrame.textContent='Unlock frame';
+      el.lockGenerationFrame.classList.add('locked');
+    }
+    showDigitalCaptureFlash();
+    try{ navigator.vibrate?.(55); }catch(_){ }
+    renderGenerationFrameDetails();
+    updateProjectionDebugOverlay();
+
+    outputCanvas.toBlob(blob=>{
+      if(!blob){
+        setPhotoCaptureBusy(false);
+        if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo encoding failed';
+        alert('The photo was captured but could not be encoded as PNG.');
+        return;
+      }
+
+      try{
+        // On Android this saves directly as a PNG download instead of asking the
+        // user to press the phone's physical screenshot buttons.
+        triggerBlobDownload(blob,filename);
+        if(el.screenshotPoseStatus){
+          const n=lockedGenerationFrame?.validation?.visible_count || 0;
+          el.screenshotPoseStatus.textContent=`PHOTO SAVED ✓ · ${n} in frame`;
+        }
+        if(el.screenshotGuideText){
+          el.screenshotGuideText.innerHTML='<b>PHOTO SAVED ✓</b><br>You can move to another angle and tap the shutter again. Only furniture visible in each photo is included in that photo\'s generation payload.';
+        }
+        setExportStatus('Digital AR photo saved. Scene JSON now matches this exact photo pose.','good');
+      }catch(err){
+        console.error('Digital photo save failed',err);
+        if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo captured · save failed';
+        alert(`The AR photo was captured, but the browser blocked the PNG download.\n\n${err?.message || err}`);
+      }finally{
+        setPhotoCaptureBusy(false);
+      }
+    },'image/png',1);
+  }catch(err){
+    console.error('Digital AR photo capture failed',err);
+    // A failed camera readback must never replace a previously valid locked frame.
+    lockedGenerationFrame=previousLockedFrame;
+    renderGenerationFrameDetails();
+    updateProjectionDebugOverlay();
+    setPhotoCaptureBusy(false);
+    if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Capture failed · adjust view';
+    if(el.screenshotGuideText){
+      el.screenshotGuideText.innerHTML='Frame the scene however you want, but keep <b>at least one chair visible</b>. Chairs outside the frame are allowed.';
+    }
+    alert(`Could not take the AR photo.\n\n${err?.message || err}`);
+  }
 }
 
 function captureCurrentGenerationFrame(){
@@ -4552,32 +4925,21 @@ function captureCurrentGenerationFrame(){
   }
 
   const xrView=cloneData(latestXRViewData);
-  const image=getCaptureImageGeometry();
-  const cameraMeta=getCurrentCameraMetadata();
-  const projections=furnitureItems.map(item=>projectFurnitureForFrame(item,xrView,image));
-  const validation=validateLockedProjection(projections);
-
-  if(!validation.valid){
-    stopCapturePreparation('Lock failed · adjust view');
-    alert('Cannot lock this generation frame yet:\n\n'+validation.issues.join('\n'));
-    return false;
-  }
-
-  lockedGenerationFrame={
-    locked_at:new Date().toISOString(),
-    camera:cameraMeta,
-    xr_view:xrView,
-    image,
-    projections,
-    validation,
-    capture_method:'automatic_pose_stability_lock',
-    stability_requirement:{
+  const result=buildLockedGenerationFrameFromView(xrView,{
+    captureMethod:'automatic_pose_stability_lock',
+    stabilityRequirement:{
       window_ms:CAPTURE_STABILITY_WINDOW_MS,
       minimum_stable_ms:CAPTURE_STABILITY_MIN_MS,
       max_position_spread_m:CAPTURE_MAX_POSITION_SPREAD_M,
       max_rotation_spread_deg:CAPTURE_MAX_ROTATION_SPREAD_DEG
     }
-  };
+  });
+
+  if(!result.ok){
+    stopCapturePreparation('Lock failed · adjust view');
+    alert('Cannot lock this generation frame yet:\n\n'+result.error);
+    return false;
+  }
 
   stopCapturePreparation();
 
@@ -4585,12 +4947,12 @@ function captureCurrentGenerationFrame(){
     el.lockGenerationFrame.textContent='Unlock frame';
     el.lockGenerationFrame.classList.add('locked');
   }
-  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='FRAME LOCKED ✓ · TAKE SCREENSHOT NOW';
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent=`FRAME READY ✓ · ${lockedGenerationFrame.validation.visible_count} in frame`;
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='<b>FRAME LOCKED ✓</b><br>Take the phone screenshot now. After the screenshot is saved, you can move the phone freely and export the JSON later.';
+    el.screenshotGuideText.innerHTML='<b>FRAME READY ✓</b><br>Tap the round shutter button to save the digital AR photo. Chairs outside the frame are allowed.';
   }
-  try{ navigator.vibrate?.(80); }catch(_){ }
-  setExportStatus('Frame locked. Take the screenshot now; after that you may move freely. JSON and 2D plan can be exported later.','good');
+  try{ navigator.vibrate?.(55); }catch(_){ }
+  setExportStatus('Frame prepared. Tap the round shutter to save the AR photo, or simply take the photo from a different angle.','good');
   renderGenerationFrameDetails();
   updateProjectionDebugOverlay();
   return true;
@@ -4649,14 +5011,14 @@ function lockGenerationFrame(){
     lockedGenerationFrame=null;
     stopCapturePreparation();
     if(el.lockGenerationFrame){
-      el.lockGenerationFrame.textContent='Prepare capture';
+      el.lockGenerationFrame.textContent='Prepare';
       el.lockGenerationFrame.classList.remove('locked');
     }
     if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Frame the scene however you want. Keep at least <b>one chair visible</b>, then tap the round shutter. Chairs outside the frame are allowed.';
     }
-    setExportStatus('Frame unlocked. Prepare capture again before exporting.','warn');
+    setExportStatus('Frame unlocked. Take a new digital AR photo or prepare a new frame before exporting.','warn');
     renderGenerationFrameDetails();
     updateProjectionDebugOverlay();
     return;
@@ -4665,7 +5027,7 @@ function lockGenerationFrame(){
   if(capturePreparationActive){
     stopCapturePreparation('Capture cancelled');
     if(el.screenshotGuideText){
-      el.screenshotGuideText.innerHTML='Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      el.screenshotGuideText.innerHTML='Frame the scene however you want. Keep at least <b>one chair visible</b>, then tap the round shutter. Chairs outside the frame are allowed.';
     }
     return;
   }
@@ -4684,7 +5046,7 @@ function lockGenerationFrame(){
   }
   if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Hold roughly steady…';
   if(el.screenshotGuideText){
-    el.screenshotGuideText.innerHTML='Keep the framing you want and check that every solid 3D proxy backrest is on the intended white/BACK side. Only the solid proxies stay visible in the screenshot. You do <b>not</b> need to be perfectly motionless; the app will lock after a short stable moment.';
+    el.screenshotGuideText.innerHTML='Keep the framing you want. At least one chair must remain visible; any other chairs may be outside the frame. You do <b>not</b> need to be perfectly motionless; the app will prepare after a short stable moment.';
   }
 }
 
@@ -4709,7 +5071,7 @@ function renderGenerationFrameDetails(message=''){
         ${Number.isFinite(yaw) ? `<br>Direction ${yaw.toFixed(1)}°` : ''}
         ${img ? `<br>Viewport ${img.viewport_css_width} × ${img.viewport_css_height} CSS px` : ''}
         ${calibrationLine}
-        <br>${lockedGenerationFrame.projections.length} furniture target${lockedGenerationFrame.projections.length===1?'':'s'} validated
+        <br>${lockedGenerationFrame.validation?.visible_count || 0} of ${lockedGenerationFrame.projections.length} furniture target${lockedGenerationFrame.projections.length===1?'':'s'} visible in this capture
       </span>
     </div>`;
 }
@@ -4729,16 +5091,22 @@ function enterScreenshotMode(){
   resetScreenshotUiAutoHide(true);
 
   if(el.lockGenerationFrame){
-    el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : (capturePreparationActive ? 'Cancel preparation' : 'Prepare capture');
+    el.lockGenerationFrame.textContent=lockedGenerationFrame ? 'Unlock frame' : (capturePreparationActive ? 'Cancel' : 'Prepare');
     el.lockGenerationFrame.classList.toggle('locked',!!lockedGenerationFrame);
   }
+  if(el.takePhoto){
+    el.takePhoto.disabled=false;
+    el.takePhoto.classList.remove('capturing');
+  }
   if(el.screenshotPoseStatus){
-    el.screenshotPoseStatus.textContent=lockedGenerationFrame ? 'FRAME LOCKED ✓ · TAKE SCREENSHOT NOW' : (capturePreparationActive ? 'Hold roughly steady…' : 'Live AR pose · ready');
+    el.screenshotPoseStatus.textContent=lockedGenerationFrame
+      ? `Frame ready · ${lockedGenerationFrame.validation?.visible_count || 0} in frame`
+      : (capturePreparationActive ? 'Hold roughly steady…' : 'Live AR pose · ready');
   }
   if(el.screenshotGuideText){
     el.screenshotGuideText.innerHTML=lockedGenerationFrame
-      ? '<b>FRAME LOCKED ✓</b><br>Take the phone screenshot now. After it is saved, you can move freely.'
-      : 'Aim the phone using the clean solid 3D chair proxies as pose guides. Invisible scanned-wall occluders are active, so proxy parts behind walls are automatically masked. If the camera is outside the scanned room, the nearest boundary wall is ignored so you can shoot from farther away. Tap <b>Prepare capture</b>, then hold roughly steady. The app will lock automatically.';
+      ? '<b>FRAME READY ✓</b><br>Tap the round shutter to save a digital AR photo. You may also move to a completely different angle and take a new photo.'
+      : 'Frame the scene however you want. Keep at least <b>one chair visible</b>. Chairs outside the frame are allowed. Tap the round shutter to capture the real camera image plus the visible 3D proxies.';
   }
   rebuildWallOccluders();
   setWallOccludersActive(true);
@@ -4750,6 +5118,8 @@ function enterScreenshotMode(){
 }
 
 function exitScreenshotMode(){
+  photoCaptureRequested=false;
+  setPhotoCaptureBusy(false);
   if(capturePreparationActive) stopCapturePreparation();
   screenshotModeActive=false;
   resetScreenshotUiAutoHide(true);
@@ -4765,6 +5135,7 @@ function exitScreenshotMode(){
 }
 
 el.screenshotMode?.addEventListener('click',enterScreenshotMode);
+el.takePhoto?.addEventListener('click',requestDigitalPhoto);
 el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
@@ -4900,7 +5271,8 @@ function buildSceneExportData(){
     const semantics=computeOrientationSemantics(projected);
     const id=`chair_${String(item.id).padStart(2,'0')}`;
     const captureCamera=lockedGenerationFrame?.xr_view?.position || lockedGenerationFrame?.camera?.position || null;
-    const wallOcclusion=classifyFurnitureWallOcclusion(item,captureCamera);
+    const captureVisibility=cloneData(projected?.capture_visibility || getFurnitureCaptureVisibility(item,projected,captureCamera));
+    const wallOcclusion=cloneData(captureVisibility?.wall_occlusion || classifyFurnitureWallOcclusion(item,captureCamera));
     return {
       id,
       type:'chair',
@@ -4921,6 +5293,8 @@ function buildSceneExportData(){
       generation_target:generationTarget,
       proxy_guide:serializeProxyGuide(dims),
       wall_occlusion:wallOcclusion,
+      capture_visibility:captureVisibility,
+      eligible_for_generation:!!captureVisibility?.eligible_for_generation,
       semantics,
       orientation_contract:{
         authoritative:true,
@@ -4936,18 +5310,22 @@ function buildSceneExportData(){
     };
   });
 
-  const orderedByDepth=[...rawFurniture].sort((a,b)=>{
+  // The room inventory remains complete, but a particular photo only generates
+  // furniture that is actually visible or partially visible in that capture.
+  const captureFurniture=rawFurniture.filter(item=>item.eligible_for_generation);
+  const orderedByDepth=[...captureFurniture].sort((a,b)=>{
     const ay=a?.generation_target?.placement?.center_uv?.y ?? 0;
     const by=b?.generation_target?.placement?.center_uv?.y ?? 0;
     return ay-by;
   });
 
   orderedByDepth.forEach((item,index)=>{ item.depth_rank_far_to_near=index+1; });
-  const idToIndex=new Map(orderedByDepth.map((item,index)=>[item.id,index]));
-  rawFurniture.sort((a,b)=>(idToIndex.get(a.id) ?? 0)-(idToIndex.get(b.id) ?? 0));
 
   const exactIds=orderedByDepth.map(item=>item.id);
-  const layoutGroups=buildStrictLayoutGroups(rawFurniture);
+  const allFurnitureIds=rawFurniture.map(item=>item.id);
+  const outOfFrameIds=rawFurniture.filter(item=>item.capture_visibility?.state==='out_of_frame').map(item=>item.id);
+  const occludedIds=rawFurniture.filter(item=>item.capture_visibility?.state==='occluded').map(item=>item.id);
+  const layoutGroups=buildStrictLayoutGroups(captureFurniture);
   const multiLayoutGroups=layoutGroups.filter(group=>group.item_count>1 && group.strict_alignment);
 
   layoutGroups.forEach(group=>{
@@ -4965,14 +5343,16 @@ function buildSceneExportData(){
     protocol_version:EVENTVISION_APP_PROTOCOL,
     exported_at:new Date().toISOString(),
     generation_contract:{
-      schema:'eventvision_generation_first_v6_occlusion_aware_sequential_proxy_edit',
+      schema:'eventvision_generation_first_v7_capture_visibility_aware_sequential_proxy_edit',
       exact_inventory:true,
+      inventory_scope:'capture-visible furniture only',
       allow_extra_furniture:false,
       allow_missing_furniture:false,
+      out_of_frame_furniture_must_not_be_generated:true,
       architecture_source:'original_room_photo',
-      placement_source:'furniture[].generation_target.placement.floor_polygon_uv',
-      size_source:'furniture[].generation_target.size',
-      orientation_source:'furniture[].generation_target.orientation BACK→FRONT vector only',
+      placement_source:'generation_payload.chairs[].generation_target.placement.floor_polygon_uv',
+      size_source:'generation_payload.chairs[].generation_target.size',
+      orientation_source:'generation_payload.chairs[].generation_target.orientation BACK→FRONT vector only',
       plan_image_role:'orientation cross-check only; never override photo-space placement or scale',
       reference_image_role:'appearance/material/design only; never inherit reference pose',
       screenshot_proxy_role:'deterministic solid 3D pose guide. Replace each proxy with the reference chair while preserving proxy pose, scale, footprint and BACK/FRONT orientation. The screenshot intentionally hides scan/debug overlays so only the room photo and solid chair proxies remain. The proxy no longer uses extra colored floor-edge lines; orientation is conveyed by the backrest location and shading.',
@@ -4980,7 +5360,8 @@ function buildSceneExportData(){
       recommended_render_strategy:'SEQUENTIAL MASKED EDITING: replace exactly one proxy per pass in render_order_far_to_near. Preserve every pixel outside that chair focus region and preserve all other proxies/chairs unchanged.',
       hard_rules:[
         'Preserve the original room architecture and camera exactly.',
-        'Insert exactly the listed number of chairs and no extra chairs.',
+        'Insert exactly the capture-visible chairs listed in generation_payload.inventory and no extra chairs.',
+        'Do not generate furniture marked out_of_frame or occluded for this capture, even though it remains in the full room inventory.',
         'Use the reference image only for chair appearance and materials.',
         'For every chair, the BACK edge means backrest side and the FRONT edge means open seat/front side.',
         'Never rotate a chair 180 degrees relative to its BACK→FRONT vector.',
@@ -4989,13 +5370,13 @@ function buildSceneExportData(){
         'Replace the proxy with the reference chair without changing its position, scale, yaw, front/back direction or footprint.',
         'Process exactly ONE chair proxy per edit pass; never redraw the whole room or all chairs together.',
         'Preserve all pixels outside the active chair focus region and keep all other proxies/already-rendered chairs unchanged.',
-        'Respect real-room occlusion exactly: if the proxy is hidden or partially hidden by an invisible scanned-wall depth occluder in the capture screenshot, the generated chair must remain hidden by that same real wall.',
+        'Respect real-room occlusion exactly: if the proxy is hidden or partially hidden by an invisible scanned-wall depth occluder in the capture photo, the generated chair must remain hidden by that same real wall.',
         'Never generate missing chair parts through a wall simply because the full furniture object exists in the plan.',
         'Apply rigid alignment rules only to true multi-chair layout groups with more than one member.'
       ]
     },
     generation_summary:{
-      global_instruction:`Perform ${rawFurniture.length} sequential image-edit passes, one chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. The AR screenshot already applies scanned-wall occlusion; preserve that visibility exactly and never reconstruct chair geometry through a real wall. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
+      global_instruction:`Perform ${captureFurniture.length} sequential image-edit passes, one capture-visible chair at a time, in render_order_far_to_near. In each pass replace only the active solid 3D proxy with the reference chair. Preserve all other proxies, already-rendered chairs, architecture, camera, lighting and background pixels unchanged. Never globally regenerate the scene. The active proxy position, footprint, scale, yaw and BACK→FRONT direction are authoritative. The digital AR photo already applies scanned-wall occlusion; preserve that visibility exactly and never reconstruct chair geometry through a real wall. Apply rigid same-direction/even-spacing rules only to true multi-chair groups listed in layout_contract.groups.`,
       generation_mode:'sequential_masked_proxy_replacement',
       render_order_far_to_near:exactIds
     },
@@ -5023,7 +5404,7 @@ function buildSceneExportData(){
       occluders:wallOccluderExportData(),
       camera_outside_room_rule:'If the capture camera is outside the scanned room boundary, the nearest boundary wall to the camera is ignored for masking. All other scanned walls remain active occluders.',
       future_extension_note:'The same nearest-camera-side ignore rule should also be applied to obstacle and column occluders once those geometries are added to the app.',
-      generation_rule:'The capture screenshot visibility is authoritative. Do not hallucinate proxy/chair geometry through a scanned wall, except that the nearest wall is intentionally ignored when the camera is outside the room.'
+      generation_rule:'The capture photo visibility is authoritative. Do not hallucinate proxy/chair geometry through a scanned wall, except that the nearest wall is intentionally ignored when the camera is outside the room.'
     },
     scan_result:cloneData(activeScanResult),
     room:scanSceneData,
@@ -5032,6 +5413,8 @@ function buildSceneExportData(){
       locked_at:lockedGenerationFrame.locked_at,
       camera:cloneData(lockedGenerationFrame.camera),
       image:cloneData(lockedGenerationFrame.image),
+      validation:cloneData(lockedGenerationFrame.validation),
+      captured_photo:cloneData(lockedGenerationFrame.captured_photo || null),
       xr_view:{
         position:cloneData(lockedGenerationFrame.xr_view?.position || null),
         orientation_quaternion:cloneData(lockedGenerationFrame.xr_view?.orientation_quaternion || null),
@@ -5041,20 +5424,28 @@ function buildSceneExportData(){
       }
     },
     inventory:{
+      scope:'full_room_world_inventory',
       exact_count:rawFurniture.length,
       allow_extra_objects:false,
       allow_missing_objects:false,
-      item_ids:exactIds
+      item_ids:allFurnitureIds,
+      capture_visible_count:captureFurniture.length,
+      capture_visible_item_ids:exactIds,
+      out_of_frame_item_ids:outOfFrameIds,
+      occluded_item_ids:occludedIds
     },
     furniture:rawFurniture,
     generation_payload:{
       inventory:{
-        exact_count:rawFurniture.length,
+        scope:'this_capture_visible_inventory',
+        exact_count:captureFurniture.length,
         allow_extra_objects:false,
         allow_missing_objects:false,
-        item_ids:exactIds
+        item_ids:exactIds,
+        excluded_out_of_frame_item_ids:outOfFrameIds,
+        excluded_occluded_item_ids:occludedIds
       },
-      scene_instruction:`Do not regenerate the whole scene. Run sequential edit passes in render_order_far_to_near. In each pass replace exactly one visible solid 3D proxy with the reference chair, using that chair's focus_region_uv as the edit region. Preserve every pixel outside the active region, preserve all other proxies/already-rendered chairs, and preserve architecture/camera exactly. Keep the active proxy's exact position, footprint, scale and BACK→FRONT orientation. Preserve the wall occlusion visible in the capture screenshot; never infer or draw hidden chair parts through scanned walls.`,
+      scene_instruction:`Do not regenerate the whole scene. Generate only furniture listed in generation_payload.inventory.item_ids. Never add out-of-frame or fully occluded furniture to this photo. Run sequential edit passes in render_order_far_to_near. In each pass replace exactly one visible solid 3D proxy with the reference chair, using that chair's focus_region_uv as the edit region. Preserve every pixel outside the active region, preserve all other proxies/already-rendered chairs, and preserve architecture/camera exactly. Keep the active proxy's exact position, footprint, scale and BACK→FRONT orientation. Preserve the wall occlusion visible in the capture photo; never infer or draw hidden chair parts through scanned walls.`,
       sequential_edit_contract:{
         mode:'one_proxy_per_pass',
         order:exactIds,
@@ -5063,7 +5454,7 @@ function buildSceneExportData(){
         preserve_pixels_outside_active_region:true,
         preserve_other_proxies:true,
         preserve_already_rendered_chairs:true,
-        passes:rawFurniture.map(item=>({
+        passes:captureFurniture.map(item=>({
           chair_id:item.id,
           depth_rank_far_to_near:item.depth_rank_far_to_near,
           edit_region_uv:item.generation_target?.placement?.focus_region_uv || null,
@@ -5080,7 +5471,7 @@ function buildSceneExportData(){
         allow_random_rotation_jitter:false,
         groups:multiLayoutGroups
       },
-      chairs:rawFurniture.map(item=>({
+      chairs:captureFurniture.map(item=>({
         id:item.id,
         type:item.type,
         depth_rank_far_to_near:item.depth_rank_far_to_near,
@@ -5088,6 +5479,7 @@ function buildSceneExportData(){
         generation_target:item.generation_target,
         proxy_guide:item.proxy_guide,
         wall_occlusion:item.wall_occlusion,
+        capture_visibility:item.capture_visibility,
         semantics:item.semantics,
         orientation_contract:item.orientation_contract,
         edit_contract:{
@@ -5411,6 +5803,14 @@ function endAR(){
 
   capturePreparationActive=false;
   captureStabilitySamples=[];
+  photoCaptureRequested=false;
+  photoCaptureInFlight=false;
+  xrCameraBinding=null;
+  lastCapturedPhotoMeta=null;
+  if(photoReadbackFramebuffer && renderer?.getContext){
+    try{ renderer.getContext().deleteFramebuffer(photoReadbackFramebuffer); }catch(_){ }
+  }
+  photoReadbackFramebuffer=null;
   resetScreenshotUiAutoHide(true);
   currentIgnoredCameraSideWallId=null;
 
@@ -5463,6 +5863,9 @@ el.scanAgain.addEventListener('click',()=>{
   activeScanResult=null;
   lockedGenerationFrame=null;
   latestXRViewData=null;
+  photoCaptureRequested=false;
+  setPhotoCaptureBusy(false);
+  lastCapturedPhotoMeta=null;
   renderGenerationFrameDetails();
 
   clearFurnitureProxyGuide();
