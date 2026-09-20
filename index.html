@@ -1231,11 +1231,16 @@ body.xr-active.layout-mode #introCard{display:none !important;}
   #furnitureToolbar.editorSelectionToolbar{left:9px;right:9px;bottom:calc(84px + env(safe-area-inset-bottom));}
   .editorUtilityPanel{right:8px;width:calc(100vw - 16px);top:calc(62px + env(safe-area-inset-top));bottom:calc(8px + env(safe-area-inset-bottom));}
 }
+/* Avoid live background blurs competing with the AR camera on Android. */
+body.ar-performance.xr-active *{
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+}
 </style>
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.3 AR CHECK</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.5.4 ANDROID LITE</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1936,12 +1941,27 @@ async function startSavedSpaceCalibration(){
   await enterAR('calibrate');
 }
 
+const androidPerformanceMode=/Android/i.test(navigator.userAgent);
+let lastARUiUpdate=-Infinity;
+let fpsWindowStart=null;
+let fpsFrameCount=0;
+let fpsDisplay=null;
+
 function createRenderer(){
-  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer = new THREE.WebGLRenderer({antialias:!androidPerformanceMode,alpha:true});
   renderer.xr.enabled = true;
+  // XR resolution is independent of the normal canvas pixel ratio.
+  renderer.xr.setFramebufferScaleFactor(androidPerformanceMode ? 0.75 : 1);
+  document.body.classList.toggle('ar-performance',androidPerformanceMode);
+  if(androidPerformanceMode && !fpsDisplay){
+    fpsDisplay=document.createElement('div');
+    fpsDisplay.className='pill';
+    fpsDisplay.textContent='FPS …';
+    document.querySelector('.hudTop').append(fpsDisplay);
+  }
   renderer.setClearColor(0x000000,0);
   renderer.setClearAlpha(0);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,androidPerformanceMode ? 1 : 2));
   renderer.setSize(window.innerWidth,window.innerHeight);
   renderer.domElement.style.position='fixed';
   renderer.domElement.style.inset='0';
@@ -2036,7 +2056,7 @@ function showARStartupTests(){
   explanation.textContent='Run both tests, then send a screenshot of the results. These briefly request AR and close it; they do not scan a room.';
   const result=document.createElement('pre');
   result.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px';
-  result.textContent='EventVision v10.5.3\n';
+  result.textContent='EventVision v10.5.4\n';
   const buttons=[];
   panel.append(heading,explanation);
   for(const withOverlay of [false,true]){
@@ -2118,7 +2138,7 @@ async function enterAR(mode='scan'){
   }catch(err){
     if(renderer?.domElement) renderer.domElement.style.display='none';
     console.error('EventVision AR session request failed',sessionOptions,err);
-    alert('EventVision v10.5.3 — AR session request failed\n'+
+    alert('EventVision v10.5.4 — AR session request failed\n'+
       err.name+': '+err.message+'\nRequired: '+sessionOptions.requiredFeatures.join(', ')+
       '\nOptional: '+sessionOptions.optionalFeatures.join(', ')+
       '\n\nRun the two AR startup tests shown below the introduction.');
@@ -2193,6 +2213,9 @@ async function enterAR(mode='scan'){
 
   session.addEventListener('end',endAR);
 
+  fpsWindowStart=null;
+  fpsFrameCount=0;
+  lastARUiUpdate=-Infinity;
   renderer.setAnimationLoop(render);
 }
 
@@ -3189,6 +3212,18 @@ function getCaptureImageGeometry(){
 }
 
 function render(_time,frame){
+  const updateUi=!androidPerformanceMode || _time-lastARUiUpdate>=100;
+  if(updateUi) lastARUiUpdate=_time;
+  if(fpsDisplay){
+    if(fpsWindowStart===null) fpsWindowStart=_time;
+    else fpsFrameCount++;
+    const elapsed=_time-fpsWindowStart;
+    if(elapsed>=1000){
+      fpsDisplay.textContent=Math.round(fpsFrameCount*1000/elapsed)+' FPS';
+      fpsWindowStart=_time;
+      fpsFrameCount=0;
+    }
+  }
   if(frame && refSpace){
     const viewerPose = frame.getViewerPose(refSpace);
 
@@ -3197,11 +3232,13 @@ function render(_time,frame){
       const tq = viewerPose.transform.orientation;
       const primaryView=viewerPose.views?.[0] || null;
 
-      latestViewerPosition = new THREE.Vector3(tp.x,tp.y,tp.z);
-      latestViewerOrientation = new THREE.Quaternion(tq.x,tq.y,tq.z,tq.w);
+      if(!latestViewerPosition) latestViewerPosition=new THREE.Vector3();
+      if(!latestViewerOrientation) latestViewerOrientation=new THREE.Quaternion();
+      latestViewerPosition.set(tp.x,tp.y,tp.z);
+      latestViewerOrientation.set(tq.x,tq.y,tq.z,tq.w);
       latestXRViewData = captureXRViewData(primaryView,_time);
 
-      if(completed && planTransform){
+      if(completed && planTransform && updateUi){
         updatePhonePoseMarker();
       }
 
@@ -3209,13 +3246,13 @@ function render(_time,frame){
         if(el.screenshotPoseStatus && !lockedGenerationFrame && !capturePreparationActive){
           el.screenshotPoseStatus.textContent='Live AR pose · ready';
         }
-        if(!lockedGenerationFrame) updateProjectionDebugOverlay();
+        if(!lockedGenerationFrame && updateUi) updateProjectionDebugOverlay();
         if(capturePreparationActive && !lockedGenerationFrame){
           updateCapturePreparation(_time);
         }
       }
 
-      updateCornerLabelScales();
+      if(updateUi) updateCornerLabelScales();
       if(screenshotModeActive) updateWallOccluderCameraRule();
     }
   }
@@ -3245,7 +3282,7 @@ function render(_time,frame){
 
         if(calibrationMode){
           reticle.material.color.set(0x63efb0);
-          updateCalibrationHud();
+          if(updateUi) updateCalibrationHud();
         }else if(corners.length>=3 && distanceXZ(groundPoint,corners[0])<.25){
           reticle.material.color.set(0x43d47c);
           el.hint.textContent='Near first corner — tap to close · ground locked';
@@ -3261,7 +3298,7 @@ function render(_time,frame){
       hitValid=false;
       latestHit=null;
       el.addCorner.disabled=true;
-      if(calibrationMode) updateCalibrationHud();
+      if(calibrationMode){ if(updateUi) updateCalibrationHud(); }
       else el.hint.textContent='Finding floor — first corner will lock ground height';
     }
   }else if(completed || (calibrationMode && calibrationPhase==='verify')){
