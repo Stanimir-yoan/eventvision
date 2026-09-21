@@ -841,6 +841,89 @@ body.xr-active.layout-mode canvas{
 }
 .screenshotShutter:disabled{opacity:.42;}
 
+
+.photoPreviewPanel{
+  position:absolute;
+  inset:0;
+  z-index:120;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:calc(18px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom));
+  background:rgba(5,5,8,.86);
+  pointer-events:auto;
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.photoPreviewPanel.show{display:flex;}
+.photoPreviewCard{
+  width:min(100%,520px);
+  max-height:100%;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:20px;
+  background:#111116;
+  box-shadow:0 24px 70px rgba(0,0,0,.48);
+}
+.photoPreviewHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 13px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.photoPreviewHeader strong{font-size:14px;}
+.photoPreviewHeader span{
+  color:var(--muted);
+  font-size:10px;
+}
+.photoPreviewImageWrap{
+  min-height:0;
+  flex:1 1 auto;
+  display:grid;
+  place-items:center;
+  background:#050507;
+}
+.photoPreviewImage{
+  display:block;
+  width:100%;
+  height:auto;
+  max-height:68dvh;
+  object-fit:contain;
+  background:#050507;
+}
+.photoPreviewActions{
+  display:grid;
+  grid-template-columns:1fr 1.2fr;
+  gap:8px;
+  padding:12px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.photoPreviewBtn{
+  min-height:50px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:13px;
+  color:#fff;
+  background:#202027;
+  font-weight:850;
+}
+.photoPreviewBtn.primary{
+  border-color:transparent;
+  background:var(--accent);
+}
+.photoPreviewBtn:disabled{opacity:.45;}
+.photoPreviewStatus{
+  grid-column:1 / -1;
+  min-height:15px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.35;
+  text-align:center;
+}
+
 body.xr-active.screenshot-mode{
   overflow:hidden;
   background:transparent !important;
@@ -1263,7 +1346,7 @@ body.ar-performance.xr-active *{
 </head>
 <body>
 <main class="shell" id="mainShell">
-  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.7.2 AR PHOTO</span></div>
+  <div class="homeMeta"><div class="eyebrow">EVENTVISION · FLOORPLAN SCANNER</div><span class="versionBadge">v10.7.4 PHOTO PREVIEW</span></div>
   <h1>Create your event floorplan</h1>
   <p>Scan the room with your phone, build the layout and prepare it for visualization.</p>
 
@@ -1437,6 +1520,25 @@ body.ar-performance.xr-active *{
     <button id="takePhoto" class="screenshotShutter" type="button" aria-label="Take AR photo" title="Take AR photo"></button>
     <button id="lockGenerationFrame" class="screenshotLock">Prepare</button>
   </div>
+
+  <div id="photoPreviewPanel" class="photoPreviewPanel" aria-hidden="true">
+    <div class="photoPreviewCard" role="dialog" aria-modal="true" aria-label="Captured AR photo preview">
+      <div class="photoPreviewHeader">
+        <div>
+          <strong>AR photo captured</strong>
+          <span id="photoPreviewMeta">Preview</span>
+        </div>
+      </div>
+      <div class="photoPreviewImageWrap">
+        <img id="photoPreviewImage" class="photoPreviewImage" alt="Captured AR photo preview">
+      </div>
+      <div class="photoPreviewActions">
+        <button id="photoPreviewClose" class="photoPreviewBtn" type="button">Take another</button>
+        <button id="photoPreviewSave" class="photoPreviewBtn primary" type="button">Save / Share</button>
+        <div id="photoPreviewStatus" class="photoPreviewStatus" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1509,6 +1611,12 @@ const el = {
   screenshotGuideText: document.getElementById('screenshotGuideText'),
   lockGenerationFrame: document.getElementById('lockGenerationFrame'),
   takePhoto: document.getElementById('takePhoto'),
+  photoPreviewPanel: document.getElementById('photoPreviewPanel'),
+  photoPreviewImage: document.getElementById('photoPreviewImage'),
+  photoPreviewMeta: document.getElementById('photoPreviewMeta'),
+  photoPreviewClose: document.getElementById('photoPreviewClose'),
+  photoPreviewSave: document.getElementById('photoPreviewSave'),
+  photoPreviewStatus: document.getElementById('photoPreviewStatus'),
   screenshotPoseDetails: document.getElementById('screenshotPoseDetails'),
   backFromScreenshot: document.getElementById('backFromScreenshot'),
   cornerDetails: document.getElementById('cornerDetails'),
@@ -1548,8 +1656,11 @@ let photoCameraCopyResources = null;
 let photoOverlayRenderTarget = null;
 let photoOverlayCamera = null;
 let lastCapturedPhotoMeta = null;
+let lastCapturedPhotoBlob = null;
+let lastCapturedPhotoUrl = null;
+let lastCapturedPhotoFilename = null;
 
-const APP_VERSION='10.7.3';
+const APP_VERSION='10.7.4';
 const EVENTVISION_APP_PROTOCOL='EventVision_v10_5_shared_scan_contract';
 const EVENTVISION_SCAN_SCHEMA='eventvision_scan_result';
 const EVENTVISION_SCAN_VERSION=1;
@@ -5127,6 +5238,101 @@ function showCaptureFeedback(title,message,{error=false}={}){
   }
 }
 
+
+function clearCapturedPhotoPreview(){
+  if(lastCapturedPhotoUrl){
+    try{ URL.revokeObjectURL(lastCapturedPhotoUrl); }catch(_){}
+  }
+  lastCapturedPhotoUrl=null;
+  lastCapturedPhotoBlob=null;
+  lastCapturedPhotoFilename=null;
+  if(el.photoPreviewImage) el.photoPreviewImage.removeAttribute('src');
+  if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='';
+  if(el.photoPreviewPanel){
+    el.photoPreviewPanel.classList.remove('show');
+    el.photoPreviewPanel.setAttribute('aria-hidden','true');
+  }
+}
+
+function showCapturedPhotoPreview(blob,filename,meta={}){
+  if(lastCapturedPhotoUrl){
+    try{ URL.revokeObjectURL(lastCapturedPhotoUrl); }catch(_){}
+  }
+  lastCapturedPhotoBlob=blob;
+  lastCapturedPhotoFilename=filename;
+  lastCapturedPhotoUrl=URL.createObjectURL(blob);
+
+  if(el.photoPreviewImage) el.photoPreviewImage.src=lastCapturedPhotoUrl;
+  if(el.photoPreviewMeta){
+    const w=meta.width_px || 0;
+    const h=meta.height_px || 0;
+    const count=meta.visible_furniture_count ?? 0;
+    const size=(blob.size/1024/1024).toFixed(blob.size>=1024*1024 ? 1 : 2);
+    el.photoPreviewMeta.textContent=`${w}×${h}px · ${count} visible · ${size} MB`;
+  }
+  if(el.photoPreviewStatus){
+    el.photoPreviewStatus.textContent=IS_IOS
+      ? 'Tap Save / Share to save the PNG to Photos or Files.'
+      : 'Photo captured. Save or share it, or take another angle.';
+  }
+  if(el.photoPreviewPanel){
+    el.photoPreviewPanel.classList.add('show');
+    el.photoPreviewPanel.setAttribute('aria-hidden','false');
+  }
+}
+
+async function saveLastCapturedPhoto(){
+  if(!lastCapturedPhotoBlob || !lastCapturedPhotoFilename){
+    if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='No captured photo is available yet.';
+    return;
+  }
+
+  const blob=lastCapturedPhotoBlob;
+  const filename=lastCapturedPhotoFilename;
+
+  if(el.photoPreviewSave) el.photoPreviewSave.disabled=true;
+  if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='Opening save options…';
+
+  try{
+    // iOS requires the share/save action to originate from this explicit user tap.
+    const shareResult=await tryNativeShare(blob,filename,'EventVision AR photo');
+    if(shareResult==='shared'){
+      if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='Photo shared/saved successfully.';
+      return;
+    }
+    if(shareResult==='cancelled'){
+      if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='Save cancelled. Tap Save / Share to try again.';
+      return;
+    }
+
+    // Browser download fallback. This path remains useful on Android/desktop.
+    try{
+      triggerBlobDownload(blob,filename);
+      if(el.photoPreviewStatus){
+        el.photoPreviewStatus.textContent=IS_IOS
+          ? 'Download requested. If iOS does not show it, use Save / Share again.'
+          : 'Photo download requested.';
+      }
+      return;
+    }catch(err){
+      console.warn('Photo download fallback failed',err);
+    }
+
+    // Last-resort image viewer. A direct user tap makes this much more reliable on iOS.
+    if(lastCapturedPhotoUrl){
+      const opened=window.open(lastCapturedPhotoUrl,'_blank','noopener');
+      if(opened){
+        if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='Image opened. Use the browser share/save controls.';
+        return;
+      }
+    }
+
+    if(el.photoPreviewStatus) el.photoPreviewStatus.textContent='Could not open a save destination on this device.';
+  }finally{
+    if(el.photoPreviewSave) el.photoPreviewSave.disabled=false;
+  }
+}
+
 function requestDigitalPhoto(){
   resetScreenshotUiAutoHide(true);
   if(!screenshotModeActive || !session){
@@ -5212,21 +5418,29 @@ function processDigitalPhotoCapture(view,frameTimeMs){
       }
 
       try{
-        // On Android this saves directly as a PNG download instead of asking the
-        // user to press the phone's physical screenshot buttons.
-        triggerBlobDownload(blob,filename);
+        // Capture success is shown inside the app first. iOS often ignores synthetic
+        // <a download> clicks, and navigator.share() is most reliable when called from
+        // a later explicit user tap on the Preview's Save / Share button.
+        showCapturedPhotoPreview(blob,filename,lockedGenerationFrame.captured_photo);
+
+        if(!IS_IOS){
+          // Preserve the existing fast Android/desktop behavior while still showing
+          // a preview so the user can verify exactly what was captured.
+          try{ triggerBlobDownload(blob,filename); }catch(err){ console.warn('Automatic photo download failed',err); }
+        }
+
         if(el.screenshotPoseStatus){
           const n=lockedGenerationFrame?.validation?.visible_count || 0;
-          el.screenshotPoseStatus.textContent=`PHOTO SAVED ✓ · ${n} in frame`;
+          el.screenshotPoseStatus.textContent=`PHOTO CAPTURED ✓ · ${n} in frame`;
         }
         if(el.screenshotGuideText){
-          el.screenshotGuideText.innerHTML='<b>AR PHOTO SAVED ✓</b><br>The real camera image and visible 3D chair proxies were composited from the same XR frame. Move to another angle and tap the shutter again whenever you want.';
+          el.screenshotGuideText.innerHTML='<b>AR PHOTO CAPTURED ✓</b><br>Review the image, then tap <b>Save / Share</b>. On iPhone this opens the native save/share sheet from a real user tap.';
         }
-        setExportStatus('AR photo saved with chair proxies. Scene JSON matches this exact photo pose.','good');
+        setExportStatus('AR photo captured with chair proxies. Preview it and save/share when ready.','good');
       }catch(err){
-        console.error('Digital photo save failed',err);
-        if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo captured · save failed';
-        showCaptureFeedback('Photo save blocked',`The camera frame was captured, but the browser blocked the PNG save.<br>${String(err?.message || err)}`,{error:true});
+        console.error('Digital photo preview failed',err);
+        if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Photo captured · preview failed';
+        showCaptureFeedback('Preview unavailable',`The camera frame was captured, but the preview could not be shown.<br>${String(err?.message || err)}`,{error:true});
       }finally{
         setPhotoCaptureBusy(false);
       }
@@ -5407,6 +5621,7 @@ function renderGenerationFrameDetails(message=''){
 }
 
 function enterScreenshotMode(){
+  clearCapturedPhotoPreview();
   if(!session || !completed){
     setExportStatus('Live AR tracking is not active. Finish the room scan and keep the AR session open before Capture.','warn');
     return;
@@ -5448,6 +5663,7 @@ function enterScreenshotMode(){
 }
 
 function exitScreenshotMode(){
+  clearCapturedPhotoPreview();
   photoCaptureRequested=false;
   setPhotoCaptureBusy(false);
   if(capturePreparationActive) stopCapturePreparation();
@@ -5466,6 +5682,15 @@ function exitScreenshotMode(){
 
 el.screenshotMode?.addEventListener('click',enterScreenshotMode);
 el.takePhoto?.addEventListener('click',requestDigitalPhoto);
+el.photoPreviewClose?.addEventListener('click',()=>{
+  clearCapturedPhotoPreview();
+  resetScreenshotUiAutoHide(true);
+  if(el.screenshotPoseStatus) el.screenshotPoseStatus.textContent='Live AR pose · ready';
+  if(el.screenshotGuideText){
+    el.screenshotGuideText.innerHTML='Frame the scene however you want. Keep at least <b>one chair visible</b>, then tap the round shutter. Chairs outside the frame are allowed.';
+  }
+});
+el.photoPreviewSave?.addEventListener('click',saveLastCapturedPhoto);
 el.lockGenerationFrame?.addEventListener('click',lockGenerationFrame);
 el.backFromScreenshot?.addEventListener('click',exitScreenshotMode);
 
